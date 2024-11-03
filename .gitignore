@@ -1,0 +1,15 @@
+.ccls-cache/
+.vscode/
+.vs/
+*.aps
+out/
+build/
+/build*/
+Debug/
+Release/
+MinSizeRel/
+CMakeSettings.json
+CMakeUserPresets.json
+compile_commands.json
+runme
+*.log
