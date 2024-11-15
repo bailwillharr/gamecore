@@ -15,7 +15,9 @@ set(SRC_FILES
 	"src/gc_app.cpp"
   "src/gc_assert.cpp"
   "src/gc_logger.cpp"
-  "src/gc_logger_debug.cpp"
+  "src/gc_logger_null.cpp"
+  "src/gc_logger_spdlog.cpp"
+  "src/gc_jobs.cpp"
 )
 
 # Public API includes
@@ -24,7 +26,10 @@ set(INCLUDE_FILES
 	"include/gamecore/gc_app.h"
   "include/gamecore/gc_assert.h"
   "include/gamecore/gc_logger.h"
-  "include/gamecore/gc_logger_debug.h"
+  "include/gamecore/gc_logger_null.h"
+  "include/gamecore/gc_logger_spdlog.h"
+  "include/gamecore/gc_jobs.h"
+  "include/gamecore/gc_ring_buffer.h"
 )
 
 # gamecore is a static library
@@ -43,7 +48,8 @@ if (WIN32)
 endif()
 
 if (GC_DEV_BUILD)
-  target_compile_definitions(${PROJECT_NAME} PRIVATE GC_DEV_BUILD)
+  target_compile_definitions(${PROJECT_NAME} PRIVATE GC_DO_ASSERTS) # gc_assert.h
+  target_compile_definitions(${PROJECT_NAME} PRIVATE GC_LOG_TRACE_DEBUG) # gc_logger.cpp
 endif()
 
 # This project uses C++20
@@ -62,3 +68,10 @@ endif()
 
 target_include_directories(${PROJECT_NAME} PRIVATE include)
 target_include_directories(${PROJECT_NAME} PRIVATE src)
+
+# spdlog
+set(SPDLOG_BUILD_SHARED OFF)
+set(SPDLOG_SYSTEM_INCLUDES ON)
+set(SPDLOG_USE_STD_FORMAT ON) # uses builtin fmt and C++20
+add_subdirectory(vendor/spdlog)
+target_link_libraries(${PROJECT_NAME} PUBLIC spdlog::spdlog)
