@@ -19,6 +19,8 @@ class App {
 
     std::unique_ptr<Jobs> m_jobs;
 
+    
+
 private:
     /* application lifetime is controlled by static variable 'instance' in instance() static method */
     App();

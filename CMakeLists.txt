@@ -30,6 +30,7 @@ set(INCLUDE_FILES
   "include/gamecore/gc_logger_spdlog.h"
   "include/gamecore/gc_jobs.h"
   "include/gamecore/gc_ring_buffer.h"
+  "include/gamecore/gc_defines.h"
 )
 
 # gamecore is a static library
@@ -51,6 +52,7 @@ if (GC_DEV_BUILD)
   target_compile_definitions(${PROJECT_NAME} PRIVATE GC_DO_ASSERTS) # gc_assert.h
   target_compile_definitions(${PROJECT_NAME} PRIVATE GC_LOG_TRACE_DEBUG) # gc_logger.cpp
 endif()
+target_compile_definitions(${PROJECT_NAME} PRIVATE GC_LOGGER=GC_LOGGER_SPDLOG) # GC_LOGGER_SPDLOG or GC_LOGGER_NULL
 
 # This project uses C++20
 set_property(TARGET ${PROJECT_NAME} PROPERTY CXX_STANDARD 20)

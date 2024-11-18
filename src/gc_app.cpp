@@ -5,12 +5,23 @@
 #include <thread>
 
 #include "gamecore/gc_assert.h"
+#include "gamecore/gc_defines.h"
 #include "gamecore/gc_logger_null.h"
+#include "gamecore/gc_logger_spdlog.h"
 #include "gamecore/gc_jobs.h"
 
 namespace gc {
 
-App::App() : m_logger(std::make_unique<LoggerNull>()), m_jobs(std::make_unique<Jobs>(std::thread::hardware_concurrency())) {}
+App::App()
+    :
+#if GC_LOGGER == GC_LOGGER_SPDLOG
+      m_logger(std::make_unique<LoggerSpdlog>()),
+#else
+      m_logger(std::make_unique<LoggerNull>()),
+#endif
+      m_jobs(std::make_unique<Jobs>(std::thread::hardware_concurrency()))
+{
+}
 
 App::~App()
 {
