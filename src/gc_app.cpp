@@ -5,47 +5,46 @@
 #include <thread>
 
 #include "gamecore/gc_assert.h"
+#include "gamecore/gc_abort.h"
 #include "gamecore/gc_defines.h"
-#include "gamecore/gc_logger_null.h"
-#include "gamecore/gc_logger_spdlog.h"
+#include "gamecore/gc_logger.h"
 #include "gamecore/gc_jobs.h"
+#include "gamecore/gc_content.h"
 
 namespace gc {
 
-App::App()
-    :
-#if GC_LOGGER == GC_LOGGER_SPDLOG
-      m_logger(std::make_unique<LoggerSpdlog>()),
-#else
-      m_logger(std::make_unique<LoggerNull>()),
-#endif
-      m_jobs(std::make_unique<Jobs>(std::thread::hardware_concurrency()))
-{
-}
+// empty ptr, it is initialised manually in application
+App* App::s_app = nullptr;
+
+App::App() : m_jobs(std::make_unique<Jobs>(std::thread::hardware_concurrency())), m_assets(std::make_unique<Content>()) {}
 
 App::~App()
 {
     // job threads should be stopped here because otherwise other engine systems may shut down while still in use by those threads.
     // Ideally, job system shouldn't be busy at this point anyway since jobs shouldn't be left running.
     if (jobs().isBusy()) {
-        logger().error("Jobs were still running at time of application shutdown!");
+        Logger::instance().error("Jobs were still running at time of application shutdown!");
         jobs().wait();
     }
 }
 
-App& App::instance()
+void App::initialise()
 {
-    static App app;
-    return app;
+    if (s_app) {
+        abortGame("App::initialise() called when App is already initialised!");
+    }
+    s_app = new App;
 }
 
-Logger& App::logger()
-{
-    GC_ASSERT_NOLOG(m_logger);
-    return *m_logger;
+void App::shutdown() { 
+    if (!s_app) {
+        abortGame("App::shutdown() called when App is not initialised!");
+    }
+    delete s_app;
+    s_app = nullptr;
 }
 
-void App::setLogger(std::unique_ptr<Logger>&& logger) { m_logger = std::move(logger); }
+App& App::instance() { return *s_app; }
 
 Jobs& App::jobs()
 {

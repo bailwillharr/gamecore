@@ -7,7 +7,6 @@
 
 #include "gamecore/gc_assert.h"
 
-#include "gamecore/gc_app.h"
 #include "gamecore/gc_logger.h"
 
 namespace gc {
@@ -35,26 +34,30 @@ Jobs::Jobs(unsigned int num_threads)
                 ring_buffer_mutex.unlock();
                 if (job.has_value()) {
                     // execute new job
-                    App::instance().logger().trace("Running job from ring buffer...");
+                    Logger::instance().trace("Running job from ring buffer...");
                     job.value().operator()();
                     finished_label.fetch_add(1);
                 }
                 else {
                     // no job right now. make thread sleep
                     {
-                        App::instance().logger().trace("Thread going to sleep...");
+                        Logger::instance().trace("Thread going to sleep...");
                         std::unique_lock<std::mutex> lock(wake_condition_mutex);
                         wake_condition.wait(lock);
-                        App::instance().logger().trace("Thread woke up");
+                        Logger::instance().trace("Thread woke up");
                     }
                     if (shutdown_threads.load()) {
-                        App::instance().logger().trace("Shutting down thread...");
+                        Logger::instance().trace("Shutting down thread...");
                         num_threads_running.fetch_sub(1);
                         return; // end thread
                     }
                 }
             }
         });
+    }
+    // now ensure threads have actually started
+    while (m_num_threads_running < m_num_threads) {
+        std::this_thread::yield();
     }
 }
 
@@ -98,7 +101,7 @@ void Jobs::dispatch(unsigned int job_count, unsigned int group_size, const std::
     }
 
     const unsigned int group_count = static_cast<unsigned int>(std::ceil(static_cast<double>(job_count) / static_cast<double>(group_size)));
-    GC_ASSERT(group_count * group_size >= job_count)
+    GC_ASSERT(group_count * group_size >= job_count);
 
     m_current_label += group_count;
 

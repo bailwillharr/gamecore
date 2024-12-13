@@ -12,6 +12,11 @@
 
 /* multithreaded job system */
 
+/* using a simple prime finder function to test: */
+/* No job system, single thread: 60s */
+/* 8 Threads (multithreading): 18s */
+/* 4 Threads: 37s */
+
 namespace gc {
 
 struct JobDispatchArgs {
@@ -42,10 +47,12 @@ public:
     Jobs& operator=(const Jobs&) = delete;
     Jobs& operator=(Jobs&&) = delete;
 
-    /* add a job to execute asynchronously, any idle thread will execute this job. */
+    /* Add a job to execute asynchronously, any idle thread will execute this job. */
+    /* If the job buffer is full, this function will block until space is available. */
     void execute(const std::function<void()>& func);
 
-    /* divide a job onto multiple jobs and execute in parallel. */
+    /* Divide a job onto multiple jobs and execute in parallel. */
+    /* If the job buffer is full, this function will block until space is available. */
     /*    job_count       : how many jobs to generate for this task */
     /*    group_size      : how many jobs to execute per thread */
     /*                      less threads may be used depending on how fast jobs take */

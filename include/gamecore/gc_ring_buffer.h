@@ -1,5 +1,8 @@
 #pragma once
 
+// A basic fixed-size ring buffer.
+// This class is not thread safe
+
 #include <cstddef>
 
 #include <array>

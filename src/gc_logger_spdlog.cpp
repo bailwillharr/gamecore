@@ -16,6 +16,7 @@ LoggerSpdlog::LoggerSpdlog() : m_spdlogger(nullptr)
     sinks.back()->set_pattern("[%H:%M:%S.%e] [%^%l%$] [thread:%t] %v");
     m_spdlogger = std::make_unique<spdlog::logger>("gamecore", sinks.begin(), sinks.end());
     m_spdlogger->set_level(spdlog::level::trace);
+    trace("Initialised logger");
 }
 
 LoggerSpdlog::~LoggerSpdlog() {}
@@ -23,22 +24,22 @@ LoggerSpdlog::~LoggerSpdlog() {}
 void LoggerSpdlog::log(std::string_view message, LogLevel level)
 {
     switch (level) {
-        case LogLevel::TRACE:
+        case LogLevel::LVL_TRACE:
             m_spdlogger->trace("{}", message);
             break;
-        case LogLevel::DEBUG:
+        case LogLevel::LVL_DEBUG:
             m_spdlogger->debug("{}", message);
             break;
-        case LogLevel::INFO:
+        case LogLevel::LVL_INFO:
             m_spdlogger->info("{}", message);
             break;
-        case LogLevel::WARN:
+        case LogLevel::LVL_WARN:
             m_spdlogger->warn("{}", message);
             break;
-        case LogLevel::ERROR:
+        case LogLevel::LVL_ERROR:
             m_spdlogger->error("{}", message);
             break;
-        case LogLevel::CRITICAL:
+        case LogLevel::LVL_CRITICAL:
             m_spdlogger->critical("{}", message);
             break;
     }

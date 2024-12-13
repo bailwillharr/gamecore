@@ -4,7 +4,8 @@
 
 namespace gc {
 
-enum class LogLevel { TRACE = 0, DEBUG = 1, INFO = 2, WARN = 3, ERROR = 4, CRITICAL = 5 };
+/* 'ERROR' is defined as a macro in Windows.h so LVL_ is prepended */
+enum class LogLevel { LVL_TRACE = 0, LVL_DEBUG = 1, LVL_INFO = 2, LVL_WARN = 3, LVL_ERROR = 4, LVL_CRITICAL = 5 };
 
 class Logger {
 
@@ -18,8 +19,10 @@ public:
     void error(std::string_view message);
     void critical(std::string_view message);
 
+    static Logger& instance();
+
 private:
-    virtual void log(std::string_view message, LogLevel level) = 0;
+    virtual void log(std::string_view message, LogLevel level);
 };
 
 } // namespace gc

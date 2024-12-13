@@ -28,5 +28,5 @@ namespace gc {
         ::std::abort();       \
     }
 #else
-#define GC_ASSERT(expr) ((void)0)
+#define GC_ASSERT_NOLOG(expr) ((void)0)
 #endif

@@ -11,15 +11,16 @@ namespace gc {
 
 class Logger; // forward-dec
 class Jobs;   // forward-dec
+class Content; // forward-dec
 
 class App {
 
-    /* Default instance is LoggerNull which does nothing (logging off) */
-    std::unique_ptr<Logger> m_logger;
+    // Lifetime must be explicitly controlled using initialise() and shutdown()
+    static App* s_app;
 
     std::unique_ptr<Jobs> m_jobs;
 
-    
+    std::unique_ptr<Content> m_assets;
 
 private:
     /* application lifetime is controlled by static variable 'instance' in instance() static method */
@@ -33,18 +34,11 @@ public:
     App& operator=(const App&) = delete;
     App& operator=(App&&) = delete;
 
-    /* The app is created on first call to this method. */
-    /* App is destroyed at the end of the program */
+    static void initialise();
+    static void shutdown();
+
+    /* no nullptr checking is done here so ensure initialise() was called */
     static App& instance();
-
-    /* Get logger instance. */
-    /* Logger is internally synchronised so logging can be performed from any thread. */
-    Logger& logger();
-
-    /* Set the logger to use. */
-    /* Ensure that no other threads are running that ever use the logger() reference. */
-    /* This will invalidate any existing logger() reference. */
-    void setLogger(std::unique_ptr<Logger>&& logger);
 
     /* Get Job instance (run functions in parallel) */
     Jobs& jobs();

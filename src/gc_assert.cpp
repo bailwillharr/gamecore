@@ -5,7 +5,6 @@
 
 #include <array>
 
-#include "gamecore/gc_app.h"
 #include "gamecore/gc_logger.h"
 
 namespace gc {
@@ -14,7 +13,7 @@ namespace gc {
 {
     std::array<char, 256> buf{};
     snprintf(buf.data(), buf.size(), "Assert fail: %s, File: %s, Line: %u\n", assertion, file, line);
-    gc::App::instance().logger().critical(buf.data());
+    Logger::instance().critical(buf.data());
     std::abort();
 }
 
