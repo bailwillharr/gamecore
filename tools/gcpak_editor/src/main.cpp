@@ -5,6 +5,8 @@
 #include <iostream>
 #include <fstream>
 #include <unordered_map>
+#include <vector>
+#include <format>
 
 #ifdef _WIN32
 #include <windows.h>
@@ -59,7 +61,7 @@ struct GcpakHeader {
 };
 
 struct GcpakAssetEntry {
-    std::size_t offset;              // absolute positition of start of asset data in the file
+    std::size_t offset; // absolute positition of start of asset data in the file
     std::uint32_t crc32_id;
     std::uint32_t reserved;          // leave as zero for now
     std::uint32_t size_uncompressed; // set to zero for no compression
@@ -150,10 +152,10 @@ static std::vector<std::uint8_t> loadAsset(std::istream& file, const GcpakAssetE
 }
 
 // returns entries.end() if not found
-static std::vector<GcpakAssetEntry>::iterator findAsset(std::vector<GcpakAssetEntry>& entries, std::uint32_t asset_id)
+static std::vector<GcpakAssetEntry>::iterator findAsset(std::vector<GcpakAssetEntry>& entries, std::uint32_t asset_crc)
 {
     for (auto it = entries.begin(); it != entries.end(); ++it) {
-        if (it->crc32_id == asset_id) return it;
+        if (it->crc32_id == asset_crc) return it;
     }
     return entries.end();
 }
@@ -257,7 +259,11 @@ static std::filesystem::path openFileDialog(const std::vector<std::string>& exte
 #else
     // only Windows dialogs supported at the moment
     std::cerr << "Open file dialog not supported on this platform";
-    return "";
+    std::cout << "Enter file path: ";
+    std::string file_path_str;
+    std::getline(std::cin, file_path_str);
+
+    return std::filesystem::path(file_path_str);
 #endif
 }
 
@@ -279,6 +285,14 @@ static std::unordered_map<std::uint32_t, std::string> parseHashFile(std::istream
     return map;
 }
 
+static void saveHashFile(std::ostream& file, const std::unordered_map<std::uint32_t, std::string>& reverse_crcs)
+{
+    file.seekp(0, std::ios::beg);
+    for (const auto& crc : reverse_crcs) {
+        file << std::setfill('0') << std::setw(8) << std::hex << crc.first << " " << crc.second << std::endl;
+    }
+}
+
 int main()
 {
 
@@ -296,14 +310,18 @@ int main()
         writeEmptyHeader(file);
     }
 
+    std::filesystem::path hash_path = gcpak_path;
+    hash_path.replace_extension("txt");
+
     // attempt to load hash file
     {
-        std::filesystem::path hash_path = gcpak_path;
-        hash_path.replace_extension("txt");
         std::ifstream hash_file(hash_path);
-        if (hash_file.is_open()) {
+        if (hash_file) {
             reverse_crcs = parseHashFile(hash_file);
-            std::cout << "Loaded hash file!";
+            std::cout << "Loaded hash file!\n";
+        }
+        else {
+            std::cout << "Will create new hash file on exit.\n";
         }
     }
 
@@ -339,7 +357,7 @@ int main()
             std::cout << svFromVec(asset_data) << "\n\n";
         }
 
-        std::cout << "Options: (A)dd asset, (Q)uit, (L)oad hash LUT: ";
+        std::cout << "Options: (A)dd asset, (Q)uit: ";
         std::string prompt_buf;
         while (prompt_buf.empty()) {
             std::getline(std::cin, prompt_buf);
@@ -359,16 +377,20 @@ int main()
 
                 // then ask for asset name
                 std::cout << "Enter asset ID: ";
-                std::string asset_id;
-                std::cin >> asset_id;
-                asset_id += "\ntest";
-                if (std::string::size_type idx = asset_id.find('\n'); idx != std::string::npos) {
+                std::string asset_name;
+                std::cin >> asset_name;
+                asset_name += "\ntest";
+                if (std::string::size_type idx = asset_name.find('\n'); idx != std::string::npos) {
                     // remove newline
-                    asset_id.resize(idx);
+                    asset_name.resize(idx);
                 }
 
                 // convert to crc32
-                const std::uint32_t asset_crc = assetIDRuntime(asset_id);
+                const std::uint32_t asset_crc = assetIDRuntime(asset_name);
+
+                if (!reverse_crcs.contains(asset_crc)) {
+                    reverse_crcs.emplace(asset_crc, asset_name);
+                }
 
                 // see if asset already exists
                 if (findAsset(entries, asset_crc) != entries.end()) {
@@ -415,22 +437,6 @@ int main()
                 writeHeader(file, header);
 
             } break;
-            case 'L': {
-                if (reverse_crcs.empty()) {
-                    std::filesystem::path hash_path = openFileDialog({"txt"});
-                    std::ifstream hash_file(hash_path);
-                    if (hash_file.is_open()) {
-                        reverse_crcs = parseHashFile(hash_file);
-                    }
-                    else {
-                        std::cerr << "Failed to open file!\n";
-                    }
-                }
-                else {
-                    std::cerr << "Hash LUT already loaded\n";
-                }
-
-            } break;
             case 'Q':
                 quit = true;
                 break;
@@ -438,5 +444,15 @@ int main()
         std::cin.clear();
     }
 
+    // save reverse crc table
+    {
+        std::ofstream hash_file(hash_path, std::ios::out | std::ios::trunc);
+        if (hash_file) {
+            saveHashFile(hash_file, reverse_crcs);
+        }
+        else {
+            std::cerr << "Failed to open " << hash_path.string() << " for writing!\n";
+        }
+    }
     return 0;
 }
