@@ -4,7 +4,7 @@
 
 /*
 This is the root of the entire game.
-Call App::instance() to initialise. App is shutdown at end of program.
+Call App::initialise() to initialise. Call shutdown() at end of program
 */
 
 namespace gc {

@@ -5,6 +5,7 @@
 #include <iostream>
 #include <fstream>
 #include <unordered_map>
+#include <map>
 #include <vector>
 #include <format>
 
@@ -53,6 +54,27 @@ static consteval std::uint32_t assetID(std::string_view id) { return crc32(id); 
 static std::uint32_t assetIDRuntime(std::string_view id) { return crc32(id); }
 
 /* see gamecore/include/gamecore/gc_gcpak.h */
+/*
+ * The gcpak file format contains many game assets each of which can either be compressed or decompressed.
+ *
+ * Version 1
+ *
+ * File format layout:
+ *  -- HEADER
+ *  -- ASSET DATA
+ *  -- ASSET DATA
+ *  -- ASSET DATA
+ *  -- ...
+ *  -- ASSET 1 INFO ENTRY (crc32 id, compressed yes/no, uncompressed size, compressed size, offset)
+ *  -- ASSET 2 INFO ENTRY
+ *  -- ASSET 3 INFO ENTRY
+ *  -- ...
+ *
+ * Max size of an asset is 4 GiB.
+ * Max number of assets is UINT32_MAX + 1
+ * Max size of the gcpak file is very large (64-bit offsets)
+ */
+
 
 struct GcpakHeader {
     std::array<std::uint8_t, 6> format_identifier; // null-terminated "GCPAK"
@@ -61,7 +83,7 @@ struct GcpakHeader {
 };
 
 struct GcpakAssetEntry {
-    std::size_t offset; // absolute positition of start of asset data in the file
+    std::size_t offset;              // absolute positition of start of asset data in the file
     std::uint32_t crc32_id;
     std::uint32_t reserved;          // leave as zero for now
     std::uint32_t size_uncompressed; // set to zero for no compression
@@ -267,9 +289,9 @@ static std::filesystem::path openFileDialog(const std::vector<std::string>& exte
 #endif
 }
 
-static std::unordered_map<std::uint32_t, std::string> parseHashFile(std::istream& file)
+static std::map<std::uint32_t, std::string> parseHashFile(std::istream& file)
 {
-    std::unordered_map<std::uint32_t, std::string> map{};
+    std::map<std::uint32_t, std::string> map{};
     std::string line{};
     file.seekg(0);
     while (std::getline(file, line)) {
@@ -285,22 +307,31 @@ static std::unordered_map<std::uint32_t, std::string> parseHashFile(std::istream
     return map;
 }
 
-static void saveHashFile(std::ostream& file, const std::unordered_map<std::uint32_t, std::string>& reverse_crcs)
+static void saveHashFile(std::ostream& file, const std::map<std::uint32_t, std::string>& reverse_crcs)
 {
     file.seekp(0, std::ios::beg);
-    for (const auto& crc : reverse_crcs) {
-        file << std::setfill('0') << std::setw(8) << std::hex << crc.first << " " << crc.second << std::endl;
+    for (const auto& [hash, name] : reverse_crcs) {
+        file << std::setfill('0') << std::setw(8) << std::hex << hash << " " << name << std::endl;
     }
 }
 
-int main()
+int main(int argc, char* argv[])
 {
-
-    std::unordered_map<std::uint32_t, std::string> reverse_crcs{};
-
     // edit .gcpak files
-    const std::filesystem::path gcpak_path = openFileDialog({"gcpak"});
+
+    std::map<std::uint32_t, std::string> reverse_crcs{};
+
+    std::filesystem::path gcpak_path{};
+    if (argc >= 2) {
+        gcpak_path = argv[1];
+    }
+    else {
+        gcpak_path = openFileDialog({"gcpak"});
+    }
+    
     auto file = openGcpak(gcpak_path);
+
+    std::cout << "Opened " << gcpak_path.filename().string() << "\n";
 
     // check if file is new (size is zero)
     file.seekg(0, std::ios::end);
@@ -318,7 +349,7 @@ int main()
         std::ifstream hash_file(hash_path);
         if (hash_file) {
             reverse_crcs = parseHashFile(hash_file);
-            std::cout << "Loaded hash file!\n";
+            std::cout << "Opened hash file " << hash_path.filename().string() << "\n";
         }
         else {
             std::cout << "Will create new hash file on exit.\n";
@@ -326,8 +357,7 @@ int main()
     }
 
     // prompt loop
-    bool quit = false;
-    while (!quit) {
+    for (bool quit = false; !quit;) {
 
         std::cout << "\n";
 
@@ -449,6 +479,7 @@ int main()
         std::ofstream hash_file(hash_path, std::ios::out | std::ios::trunc);
         if (hash_file) {
             saveHashFile(hash_file, reverse_crcs);
+            std::cout << "Saved hash file " << hash_path.filename().string() << "\n";
         }
         else {
             std::cerr << "Failed to open " << hash_path.string() << " for writing!\n";
