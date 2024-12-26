@@ -82,10 +82,12 @@ struct GcpakHeader {
     std::uint32_t num_entries;
 };
 
+enum class GcpakAssetType : std::uint32_t { RAW = 0, };
+
 struct GcpakAssetEntry {
     std::size_t offset;              // absolute positition of start of asset data in the file
     std::uint32_t crc32_id;
-    std::uint32_t reserved;          // leave as zero for now
+    GcpakAssetType asset_type;
     std::uint32_t size_uncompressed; // set to zero for no compression
     std::uint32_t size;              // size of data in file (compressed size if compression enabled)
 };
@@ -189,7 +191,7 @@ static std::vector<GcpakAssetEntry>::iterator findAsset(std::vector<GcpakAssetEn
 static std::streampos writeAssetData(std::ostream& file, const std::vector<std::uint8_t>& data, std::uint32_t num_entries)
 {
     // find where the entries start (file data ends) relative to std::ios::end
-    std::streamoff entries_start_offset = -(sizeof(GcpakAssetEntry) * num_entries);
+    std::streamoff entries_start_offset = -static_cast<std::streamoff>(sizeof(GcpakAssetEntry) * num_entries);
     file.seekp(entries_start_offset, std::ios::end);
     file.write(reinterpret_cast<const char*>(data.data()), data.size());
     if (file.fail()) {
@@ -442,7 +444,7 @@ int main(int argc, char* argv[])
                 std::vector<std::uint8_t> asset_data(asset_file.tellg());
                 asset_file.seekg(0);
                 asset_file.read(reinterpret_cast<char*>(asset_data.data()), asset_data.size());
-                if (asset_file.gcount() != asset_data.size()) {
+                if (asset_file.gcount() != static_cast<std::streamsize>(asset_data.size())) {
                     std::cerr << "Failed to read file!\n";
                     std::abort();
                 }
@@ -454,9 +456,9 @@ int main(int argc, char* argv[])
                 GcpakAssetEntry asset_entry{};
                 asset_entry.offset = new_entry_table_offset - asset_data.size();
                 asset_entry.crc32_id = asset_crc;
-                asset_entry.reserved = 0;
+                asset_entry.asset_type = GcpakAssetType::RAW;
                 asset_entry.size_uncompressed = 0;
-                asset_entry.size = asset_data.size();
+                asset_entry.size = static_cast<std::uint32_t>(asset_data.size());
                 entries.push_back(asset_entry);
 
                 // re-write entry table

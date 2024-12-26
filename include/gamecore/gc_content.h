@@ -5,16 +5,27 @@
 #include <filesystem>
 #include <string_view>
 #include <vector>
+#include <fstream>
+#include <unordered_map>
+#include <tuple>
+#include <mutex>
+
+#include "gc_gcpak.h"
 
 // A wrapper around access to game engine assets:
-// - Ensures the correct content directory is used
-// - Maps game file resource identifiers to the corresponding files on disk
-// - Decompresses game data files if they need to be
+// - Ensures the correct content directory is used and finds all .gcpak files
+// - Uses game file resource IDs to look up assets in .gcpak files
+// - Decompresses game data files if they need to be (WIP)
 
 namespace gc {
 
+struct PackageAssetInfo; // forward-dec
+
 class Content {
-    std::filesystem::path m_content_dir;
+    std::vector<std::ifstream> m_package_files;
+    std::vector<std::mutex> m_package_file_mutexes;
+
+    std::unordered_map<std::uint32_t, PackageAssetInfo> m_asset_infos;
 
 public:
     Content();
@@ -27,7 +38,9 @@ public:
     Content& operator=(Content&&) = delete;
 
     /* use gc::assetID(std::string_view id) */
-    std::vector<uint8_t> loadBin(std::uint32_t id);
+    /* This function is thread-safe */
+    /* Returns empty vector on failure */
+    std::vector<uint8_t> loadAsset(std::uint32_t id);
 };
 
 } // namespace gc

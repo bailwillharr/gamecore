@@ -28,9 +28,9 @@ set_property(TARGET ${PROJECT_NAME} PROPERTY CXX_EXTENSIONS OFF)
 
 # compiler warnings
 if (MSVC)
-	target_compile_options(${PROJECT_NAME} PRIVATE /W3)
+	target_compile_options(${PROJECT_NAME} PRIVATE /W4)
 	target_compile_options(${PROJECT_NAME} PRIVATE /MP)
-	target_compile_definitions(${PROJECT_NAME} PRIVATE _CRT_SECURE_NO_WARNINGS)
+	#target_compile_definitions(${PROJECT_NAME} PRIVATE _CRT_SECURE_NO_WARNINGS)
 else()
 	target_compile_options(${PROJECT_NAME} PRIVATE -Wall -Wextra -pedantic)
 endif()

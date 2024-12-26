@@ -28,6 +28,10 @@ namespace gc {
  * Max size of the gcpak file is very large (64-bit offsets)
  */
 
+enum class GcpakAssetType : std::uint32_t {
+    RAW = 0,
+};
+
 struct GcpakHeader {
     std::array<std::uint8_t, 6> format_identifier; // null-terminated "GCPAK"
     std::uint16_t format_version;                  // currently 1
@@ -35,10 +39,14 @@ struct GcpakHeader {
 };
 
 struct GcpakAssetEntry {
-    std::size_t offset;              // absolute positition of start of asset data in the file
+    std::size_t offset; // absolute positition of start of asset data in the file
     std::uint32_t crc32_id;
+    GcpakAssetType asset_type;
     std::uint32_t size_uncompressed; // set to zero for no compression
     std::uint32_t size;              // size of data in file (compressed size if compression enabled)
 };
+
+inline constexpr std::array<std::uint8_t, 6> GCPAK_FORMAT_IDENTIFIER{"GCPAK"};
+inline constexpr std::uint16_t GCPAK_FORMAT_VERSION = 1; // current version
 
 } // namespace gc

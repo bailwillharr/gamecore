@@ -34,20 +34,20 @@ Jobs::Jobs(unsigned int num_threads)
                 ring_buffer_mutex.unlock();
                 if (job.has_value()) {
                     // execute new job
-                    Logger::instance().trace("Running job from ring buffer...");
+                    GC_TRACE("Running job from ring buffer...");
                     job.value().operator()();
                     finished_label.fetch_add(1);
                 }
                 else {
                     // no job right now. make thread sleep
                     {
-                        Logger::instance().trace("Thread going to sleep...");
+                        //GC_TRACE("Thread going to sleep...");
                         std::unique_lock<std::mutex> lock(wake_condition_mutex);
                         wake_condition.wait(lock);
-                        Logger::instance().trace("Thread woke up");
+                        //GC_TRACE("Thread woke up");
                     }
                     if (shutdown_threads.load()) {
-                        Logger::instance().trace("Shutting down thread...");
+                        //GC_TRACE("Shutting down thread...");
                         num_threads_running.fetch_sub(1);
                         return; // end thread
                     }
@@ -59,10 +59,12 @@ Jobs::Jobs(unsigned int num_threads)
     while (m_num_threads_running < m_num_threads) {
         std::this_thread::yield();
     }
+    GC_TRACE("Initialised job system");
 }
 
 Jobs::~Jobs()
 {
+    GC_TRACE("Shutting down job system");
     wait();
     m_shutdown_threads.store(true);
     while (m_num_threads_running.load() > 0) { // wait until all threads have stopped running

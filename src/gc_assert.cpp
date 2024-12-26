@@ -11,9 +11,7 @@ namespace gc {
 
 [[noreturn]] void reportAssertionFailure(const char* assertion, const char* file, unsigned int line)
 {
-    std::array<char, 256> buf{};
-    snprintf(buf.data(), buf.size(), "Assert fail: %s, File: %s, Line: %u\n", assertion, file, line);
-    Logger::instance().critical(buf.data());
+    GC_CRITICAL("Assert fail: {}, File: {}, Line: {}", assertion, file, line);
     std::abort();
 }
 

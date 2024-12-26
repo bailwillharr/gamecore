@@ -9,7 +9,7 @@ namespace gc {
 [[noreturn]] void abortGame(std::string_view msg)
 {
     // test
-    Logger::instance().critical(msg);
+    GC_CRITICAL("{}", msg);
     std::abort();
 }
 

@@ -19,13 +19,15 @@ class App {
     static App* s_app;
 
     std::unique_ptr<Jobs> m_jobs;
-
-    std::unique_ptr<Content> m_assets;
+    std::unique_ptr<Content> m_content;
 
 private:
     /* application lifetime is controlled by static variable 'instance' in instance() static method */
     App();
     ~App();
+
+    /* no nullptr checking is done here so ensure initialise() was called */
+    static App& instance();
 
 public:
     App(const App&) = delete;
@@ -37,11 +39,8 @@ public:
     static void initialise();
     static void shutdown();
 
-    /* no nullptr checking is done here so ensure initialise() was called */
-    static App& instance();
-
-    /* Get Job instance (run functions in parallel) */
-    Jobs& jobs();
+    static Jobs& jobs();
+    static Content& content();
 };
 
 } // namespace gc

@@ -3,6 +3,7 @@
 #include <cstdlib>
 
 #include <filesystem>
+#include <optional>
 
 #ifdef WIN32
 #include <Windows.h>
@@ -13,10 +14,15 @@
 
 namespace gc {
 
-std::filesystem::path findContentDir()
+std::optional<std::filesystem::path> findContentDir()
 {
-    // get resource path relative to exe directory if on windows
 #ifdef WIN32
+    // get resource path relative to exe directory if on windows
+
+    // Copied from github.com/libsdl-org/SDL
+    // src/filesystem/windows/SDL_sysfilesystem.c
+    // SDL_SYS_GetBasePath(void)
+
     DWORD buflen = 128;
     WCHAR* path = NULL;
     std::filesystem::path content_dir{};
@@ -45,7 +51,7 @@ std::filesystem::path findContentDir()
 
     if (len == 0) {
         free(path);
-        Logger::instance().error("Couldn't locate our .exe");
+        GC_ERROR("Couldn't locate our .exe");
         return {};
     }
 
@@ -66,7 +72,7 @@ std::filesystem::path findContentDir()
 #endif
     content_dir /= "content";
     if (std::filesystem::is_directory(content_dir) == false) {
-        Logger::instance().error("Unable to find game resources directory");
+        GC_ERROR("Unable to find game resources directory");
         return {};
     }
     else {

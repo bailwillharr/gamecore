@@ -18,7 +18,7 @@ inline Tick tick(std::string name)
 inline void tock(Tick tick)
 {
     const auto duration = std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::steady_clock::now() - tick.second);
-    Logger::instance().debug(std::format("Stopwatch '{}' took {}", tick.first, duration));
+    GC_DEBUG("Stopwatch '{}' took {}", tick.first, duration);
 }
 
 } // namespace gc

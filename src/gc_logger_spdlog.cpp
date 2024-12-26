@@ -16,10 +16,10 @@ LoggerSpdlog::LoggerSpdlog() : m_spdlogger(nullptr)
     sinks.back()->set_pattern("[%H:%M:%S.%e] [%^%l%$] [thread:%t] %v");
     m_spdlogger = std::make_unique<spdlog::logger>("gamecore", sinks.begin(), sinks.end());
     m_spdlogger->set_level(spdlog::level::trace);
-    trace("Initialised logger");
+    trace("Initialised LoggerSpdlog");
 }
 
-LoggerSpdlog::~LoggerSpdlog() {}
+LoggerSpdlog::~LoggerSpdlog() { trace("Shutting down LoggerSpdlog"); }
 
 void LoggerSpdlog::log(std::string_view message, LogLevel level)
 {

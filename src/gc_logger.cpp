@@ -11,8 +11,6 @@
 
 namespace gc {
 
-Logger::~Logger() {}
-
 void Logger::trace(std::string_view message)
 {
 #ifdef GC_LOG_TRACE_DEBUG

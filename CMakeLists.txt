@@ -20,6 +20,8 @@ set(SRC_FILES
 	"src/gc_content.cpp"
 	"src/gc_abort.cpp"
 	"src/gc_disk_io.cpp"
+	"src/gc_asset_id.cpp"
+	"src/gc_units.cpp"
 )
 
 # Public API includes
@@ -39,6 +41,7 @@ set(INCLUDE_FILES
 	"include/gamecore/gc_asset_id.h"
 	"include/gamecore/gc_gcpak.h"
 	"include/gamecore/gc_stopwatch.h"
+	"include/gamecore/gc_units.h"
 )
 
 # gamecore is a static library
@@ -59,6 +62,7 @@ endif()
 if (GC_DEV_BUILD)
   target_compile_definitions(${PROJECT_NAME} PRIVATE GC_DO_ASSERTS) # gc_assert.h
   target_compile_definitions(${PROJECT_NAME} PRIVATE GC_LOG_TRACE_DEBUG) # gc_logger.cpp
+  target_compile_definitions(${PROJECT_NAME} PRIVATE GC_LOOKUP_ASSET_IDS)
 endif()
 target_compile_definitions(${PROJECT_NAME} PRIVATE GC_LOGGER=GC_LOGGER_SPDLOG) # GC_LOGGER_SPDLOG or GC_LOGGER_NULL
 
@@ -69,9 +73,9 @@ set_property(TARGET ${PROJECT_NAME} PROPERTY CXX_EXTENSIONS OFF)
 
 # compiler warnings
 if (MSVC)
-	target_compile_options(${PROJECT_NAME} PRIVATE /W3)
+	target_compile_options(${PROJECT_NAME} PRIVATE /W4)
 	target_compile_options(${PROJECT_NAME} PRIVATE /MP)
-	target_compile_definitions(${PROJECT_NAME} PRIVATE _CRT_SECURE_NO_WARNINGS)
+	#target_compile_definitions(${PROJECT_NAME} PRIVATE _CRT_SECURE_NO_WARNINGS)
 else()
 	target_compile_options(${PROJECT_NAME} PRIVATE -Wall -Wextra -pedantic)
 endif()
@@ -104,12 +108,13 @@ endif()
 if (GC_DEV_BUILD)
   target_compile_definitions(${PROJECT_NAME}_test PRIVATE GC_DO_ASSERTS) # gc_assert.h
   target_compile_definitions(${PROJECT_NAME}_test PRIVATE GC_LOG_TRACE_DEBUG) # gc_logger.cpp
+  target_compile_definitions(${PROJECT_NAME}_test PRIVATE GC_LOOKUP_ASSET_IDS)
 endif()
 target_compile_definitions(${PROJECT_NAME}_test PRIVATE GC_LOGGER=GC_LOGGER_SPDLOG) # GC_LOGGER_SPDLOG or GC_LOGGER_NULL
 # Copy test resources to the output directory
 add_custom_command(
     TARGET ${PROJECT_NAME}_test POST_BUILD
-    COMMAND ${CMAKE_COMMAND} -E copy_directory
+    COMMAND ${CMAKE_COMMAND} -E create_symlink
             "${CMAKE_SOURCE_DIR}/test/content"
             "${CMAKE_BINARY_DIR}/content"
     COMMENT "Copying content directory to the output binary directory"

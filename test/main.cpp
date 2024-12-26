@@ -1,25 +1,23 @@
 #include <gamecore/gc_app.h>
-#include <gamecore/gc_jobs.h>
 #include <gamecore/gc_logger.h>
 #include <gamecore/gc_content.h>
 #include <gamecore/gc_asset_id.h>
-#include <gamecore/gc_stopwatch.h>
+#include <gamecore/gc_jobs.h>
 
 int main()
 {
-
-    auto lifetime_stopwatch = gc::tick("App lifetime");
-
-    // initialise gamecore
     gc::App::initialise();
 
-    gc::Jobs& jobs = gc::App::instance().jobs();
+    gc::App::jobs().dispatch(4, 1, [](gc::JobDispatchArgs args) {
+        auto data = gc::App::content().loadAsset(gc::assetIDRuntime(std::format("temple{}", args.job_index + 1)));
+        GC_INFO("data size: {}", data.size());
+    });
+    gc::App::jobs().wait();
 
-    gc::Logger& logger = gc::Logger::instance();
-
-    logger.info(std::format("CRC32 of 'test' is: {:8X}", gc::assetID("test")));
+    for (int i = 0; i < 4; ++i) {
+        auto data = gc::App::content().loadAsset(gc::assetIDRuntime(std::format("temple{}", i + 1)));
+        GC_INFO("data size: {}", data.size());
+    }
 
     gc::App::shutdown();
-
-    gc::tock(lifetime_stopwatch);
 }

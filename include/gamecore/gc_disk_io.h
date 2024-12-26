@@ -1,9 +1,11 @@
 #pragma once
 
 #include <filesystem>
+#include <optional>
 
 namespace gc {
 
-std::filesystem::path findContentDir();
+/* path.empty() == true on failure */
+std::optional<std::filesystem::path> findContentDir();
 
 }

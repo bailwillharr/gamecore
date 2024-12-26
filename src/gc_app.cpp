@@ -16,14 +16,19 @@ namespace gc {
 // empty ptr, it is initialised manually in application
 App* App::s_app = nullptr;
 
-App::App() : m_jobs(std::make_unique<Jobs>(std::thread::hardware_concurrency())), m_assets(std::make_unique<Content>()) {}
+App::App()
+    : m_jobs(std::make_unique<Jobs>(std::thread::hardware_concurrency())), m_content(std::make_unique<Content>())
+{
+    GC_TRACE("Initialised application");
+}
 
 App::~App()
 {
+    GC_TRACE("Shutting down application");
     // job threads should be stopped here because otherwise other engine systems may shut down while still in use by those threads.
     // Ideally, job system shouldn't be busy at this point anyway since jobs shouldn't be left running.
     if (jobs().isBusy()) {
-        Logger::instance().error("Jobs were still running at time of application shutdown!");
+        GC_ERROR("Jobs were still running at time of application shutdown!");
         jobs().wait();
     }
 }
@@ -48,8 +53,16 @@ App& App::instance() { return *s_app; }
 
 Jobs& App::jobs()
 {
-    GC_ASSERT(m_jobs);
-    return *m_jobs;
+    App& inst = instance();
+    GC_ASSERT(inst.m_jobs);
+    return *inst.m_jobs;
+}
+
+Content& App::content()
+{
+    App& inst = instance();
+    GC_ASSERT(inst.m_content);
+    return *inst.m_content;
 }
 
 } // namespace gc
