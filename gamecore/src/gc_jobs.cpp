@@ -112,7 +112,7 @@ void Jobs::dispatch(unsigned int job_count, unsigned int group_size, const std::
             const unsigned int group_job_offset = group_index * group_size;
             const unsigned int group_job_end = std::min(group_job_offset + group_size, job_count);
 
-            JobDispatchArgs args;
+            JobDispatchArgs args{};
             args.group_index = group_index;
 
             for (unsigned int i = group_job_offset; i < group_job_end; ++i) {

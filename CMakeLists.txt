@@ -6,6 +6,7 @@ set(CMAKE_CONFIGURATION_TYPES "Debug;Release;RelWithDebInfo")
 set(SPDLOG_BUILD_SHARED OFF)
 set(SPDLOG_SYSTEM_INCLUDES ON)
 set(SPDLOG_USE_STD_FORMAT ON) # uses builtin fmt and C++20
+set(SPDLOG_NO_ATOMIC_LEVELS ON) # log levels aren't modified concurrently
 add_subdirectory(vendor/spdlog)
 
 # options:
