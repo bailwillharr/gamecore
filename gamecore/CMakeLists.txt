@@ -37,6 +37,7 @@ set(INCLUDE_FILES
 	"include/gamecore/gc_gcpak.h"
 	"include/gamecore/gc_stopwatch.h"
 	"include/gamecore/gc_units.h"
+	"include/gamecore/gc_game_main.h"
 )
 
 # gamecore is a static library
@@ -75,3 +76,6 @@ target_include_directories(${PROJECT_NAME} PRIVATE src)
 
 # spdlog
 target_link_libraries(${PROJECT_NAME} PRIVATE spdlog::spdlog)
+
+# SDL3
+target_link_libraries(${PROJECT_NAME} PUBLIC SDL3::SDL3)

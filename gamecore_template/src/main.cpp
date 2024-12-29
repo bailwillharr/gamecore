@@ -1,0 +1,1 @@
+#include <gamecore/gc_game_main.h>

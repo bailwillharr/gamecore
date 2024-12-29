@@ -17,8 +17,9 @@ namespace gc {
 App* App::s_app = nullptr;
 
 App::App()
-    : m_jobs(std::make_unique<Jobs>(std::thread::hardware_concurrency())), m_content(std::make_unique<Content>())
 {
+    m_jobs = std::make_unique<Jobs>(std::thread::hardware_concurrency());
+    m_content = std::make_unique<Content>();
     GC_TRACE("Initialised application");
 }
 
@@ -41,7 +42,8 @@ void App::initialise()
     s_app = new App;
 }
 
-void App::shutdown() { 
+void App::shutdown()
+{
     if (!s_app) {
         abortGame("App::shutdown() called when App is not initialised!");
     }

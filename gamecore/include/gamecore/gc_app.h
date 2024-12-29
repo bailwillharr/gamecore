@@ -18,8 +18,8 @@ class App {
     // Lifetime must be explicitly controlled using initialise() and shutdown()
     static App* s_app;
 
-    std::unique_ptr<Jobs> m_jobs;
-    std::unique_ptr<Content> m_content;
+    std::unique_ptr<Jobs> m_jobs{};
+    std::unique_ptr<Content> m_content{};
 
 private:
     /* application lifetime is controlled by static variable 'instance' in instance() static method */
