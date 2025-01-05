@@ -6,9 +6,15 @@ set(SRC_FILES
 	"src/main.cpp"
 )
 
-add_executable(${PROJECT_NAME}
-	${SRC_FILES}
-)
+if (WIN32)
+	option(GAMECORE_TEMPLATE_WIN32_BUILD "Build as a standalone win32 app (no console window)" OFF)
+endif()
+
+if (WIN32 AND GAMECORE_TEMPLATE_WIN32_BUILD)
+	add_executable(${PROJECT_NAME} WIN32 ${SRC_FILES} "gamecore_template.rc")
+else()
+	add_executable(${PROJECT_NAME} ${SRC_FILES})
+endif()
 
 # compiling options:
 
@@ -38,3 +44,10 @@ if(WIN32)
         VERBATIM
     )
 endif()
+
+# link game content directory to output directory
+add_custom_command(
+	TARGET ${PROJECT_NAME} POST_BUILD
+	COMMAND ${CMAKE_COMMAND} -E create_symlink ${PROJECT_SOURCE_DIR}/content ${PROJECT_BINARY_DIR}/content
+	VERBATIM
+)

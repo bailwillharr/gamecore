@@ -5,16 +5,16 @@
 
 /* Logger macros that cut TRACE and DEBUG from release builds */
 #ifdef GC_LOG_TRACE_DEBUG
-#define GC_TRACE(...) ::gc::Logger::instance().trace(std::format(__VA_ARGS__))
-#define GC_DEBUG(...) ::gc::Logger::instance().debug(std::format(__VA_ARGS__))
+#define GC_TRACE(...) ::gc::Logger::instance().trace(::std::format(__VA_ARGS__))
+#define GC_DEBUG(...) ::gc::Logger::instance().debug(::std::format(__VA_ARGS__))
 #else
 #define GC_TRACE(...) (void)0
 #define GC_DEBUG(...) (void)0
 #endif
-#define GC_INFO(...) ::gc::Logger::instance().info(std::format(__VA_ARGS__))
-#define GC_WARN(...) ::gc::Logger::instance().warn(std::format(__VA_ARGS__))
-#define GC_ERROR(...) ::gc::Logger::instance().error(std::format(__VA_ARGS__))
-#define GC_CRITICAL(...) ::gc::Logger::instance().critical(std::format(__VA_ARGS__))
+#define GC_INFO(...) ::gc::Logger::instance().info(::std::format(__VA_ARGS__))
+#define GC_WARN(...) ::gc::Logger::instance().warn(::std::format(__VA_ARGS__))
+#define GC_ERROR(...) ::gc::Logger::instance().error(::std::format(__VA_ARGS__))
+#define GC_CRITICAL(...) ::gc::Logger::instance().critical(::std::format(__VA_ARGS__))
 
 namespace gc {
 

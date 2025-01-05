@@ -10,15 +10,35 @@ set(SPDLOG_NO_ATOMIC_LEVELS ON) # log levels aren't modified concurrently
 add_subdirectory(vendor/spdlog EXCLUDE_FROM_ALL)
 
 # SDL3
-set(SDL_TESTS OFF)
-set(SDL_EXAMPLES OFF)
 set(SDL_SHARED ON)
 set(SDL_STATIC OFF)
+
+set(SDL_TESTS OFF)
 set(SDL_TEST_LIBRARY OFF)
-set(SDL_DISABLE_INSTALL ON)
-set(SDL_DISABLE_INSTALL_DOCS ON)
 set(SDL_INSTALL_TESTS OFF)
+set(SDL_EXAMPLES OFF)
+set(SDL_DISABLE_INSTALL ON)
+set(SDL_DISABLE_UNINSTALL ON)
+set(SDL_DISABLE_INSTALL_DOCS ON)
 set(SDL_LIBC ON)
+
+set(SDL_VULKAN ON)
+# don't need windowing support for these APIs
+set(SDL_OPENGL OFF)
+set(SDL_OPENGLES OFF)
+set(SDL_DIRECTX OFF)
+
+# turn off some subsystems
+set(SDL_AUDIO OFF)
+set(SDL_GPU OFF)
+set(SDL_RENDER OFF)
+set(SDL_CAMERA OFF)
+set(SDL_JOYSTICK OFF)
+set(SDL_HAPTIC OFF)
+set(SDL_HIDAPI OFF)
+set(SDL_POWER OFF)
+set(SDL_SENSOR OFF)
+
 add_subdirectory(vendor/SDL EXCLUDE_FROM_ALL)
 
 # options:

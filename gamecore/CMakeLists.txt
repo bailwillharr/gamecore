@@ -17,7 +17,7 @@ set(SRC_FILES
 	"src/gc_disk_io.cpp"
 	"src/gc_asset_id.cpp"
 	"src/gc_units.cpp"
-)
+ "src/gc_window.cpp")
 
 # Public API includes
 # Care must be taken to ensure these headers do not reference private headers from src/
@@ -37,7 +37,7 @@ set(INCLUDE_FILES
 	"include/gamecore/gc_gcpak.h"
 	"include/gamecore/gc_stopwatch.h"
 	"include/gamecore/gc_units.h"
-	"include/gamecore/gc_game_main.h"
+	"include/gamecore/gc_window.h"
 )
 
 # gamecore is a static library

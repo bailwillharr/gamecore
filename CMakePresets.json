@@ -59,7 +59,8 @@
       "inherits": "x64-debug-windows",
       "cacheVariables": {
         "CMAKE_BUILD_TYPE": "Release",
-        "GC_DEV_BUILD": "OFF"
+        "GC_DEV_BUILD": "OFF",
+        "GAMECORE_TEMPLATE_WIN32_BUILD":  "ON"
       },
       "condition": {
         "type": "equals",
