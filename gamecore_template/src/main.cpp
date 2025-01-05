@@ -6,11 +6,11 @@
 #include <SDL3/SDL_main.h>
 #include <SDL3/SDL.h>
 
-int main(int argc, char* argv[])
+int main([[maybe_unused]] int argc, [[maybe_unused]] char* argv[])
 {
     gc::App::initialise();
     gc::app().window().setTitle("Hello world!");
-    gc::app().window().setSize(1280, 1024, false);
+    gc::app().window().setSize(1280, 1024, true);
     gc::app().window().setWindowVisibility(true);
 
     const uint64_t counts_per_second = SDL_GetPerformanceFrequency();
