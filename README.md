@@ -27,5 +27,7 @@ Where `$BUILD_PRESET` is one of `x64-debug-linux`, `x64-release-linux`, or `x64-
 
 Ensure you have Visual Studio 2022 installed with the 'Desktop development with C++' workload with the 'C++ CMake tools for Windows' component.
 
+Ensure the Vulkan SDK is installed and 'volk' was selected during installation.
+
 Select 'File -> Clone Repository...' in Visual Studio and use the URL `https://github.com/bailwillharr/gamecore.git`.
 Once opened, select the appropriate build preset and build the project.
