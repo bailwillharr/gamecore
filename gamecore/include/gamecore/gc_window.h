@@ -12,6 +12,7 @@ namespace gc {
 
 struct WindowInitInfo {
     bool load_vulkan;
+    bool resizable;
 };
 
 class Window {

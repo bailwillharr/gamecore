@@ -1,6 +1,7 @@
 #include "gamecore/gc_window.h"
 
-#include <SDL3/SDL.h>
+#include <SDL3/SDL_init.h>
+#include <SDL3/SDL_video.h>
 
 #include "gamecore/gc_logger.h"
 #include "gamecore/gc_abort.h"
@@ -21,13 +22,10 @@ Window::Window(const WindowInitInfo& info) : m_should_quit(false)
     SDL_WindowFlags window_flags{};
     window_flags |= SDL_WINDOW_HIDDEN; // window is shown later
     // no resize:
-    // window_flags |= SDL_WINDOW_RESIZABLE;
-    if (info.load_vulkan) {
-        window_flags |= SDL_WINDOW_VULKAN;
-    }
+    window_flags |= info.resizable ? SDL_WINDOW_RESIZABLE : 0;
+    window_flags |= info.load_vulkan ? SDL_WINDOW_VULKAN : 0;
     m_window_handle = SDL_CreateWindow(INITIAL_TITLE, INITIAL_WIDTH, INITIAL_HEIGHT, window_flags);
     if (!m_window_handle) {
-        SDL_Quit();
         GC_ERROR("SDL_CreateWindow() error: {}", SDL_GetError());
         abortGame("Failed to create window.");
     }
@@ -52,6 +50,7 @@ Window::Window(const WindowInitInfo& info) : m_should_quit(false)
     }
     else {
         GC_ERROR("SDL_GetPrimaryDisplay() failed: {}", SDL_GetError());
+        // it is safe to continue, there will just be no available fullscreen display modes
     }
 }
 
@@ -145,6 +144,7 @@ bool Window::setSize(int width, int height, bool fullscreen)
             success = false;
         }
     }
+
     SDL_ClearError(); // not sure if SDL_SyncWindow() always calls SDL_SetError()
     if (!SDL_SyncWindow(m_window_handle)) {
         GC_ERROR("SDL_SyncWindow() error: {}", SDL_GetError());

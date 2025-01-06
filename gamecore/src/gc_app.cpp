@@ -4,7 +4,7 @@
 #include <memory>
 #include <thread>
 
-#include <SDL3/SDL.h>
+#include <SDL3/SDL_init.h>
 
 #include "gamecore/gc_assert.h"
 #include "gamecore/gc_abort.h"
@@ -42,6 +42,7 @@ App::App() : m_main_thread_id(std::this_thread::get_id())
 
     WindowInitInfo window_init_info{};
     window_init_info.load_vulkan = true;
+    window_init_info.resizable = false;
     m_window = std::make_unique<Window>(window_init_info);
 
     GC_TRACE("Initialised application");
