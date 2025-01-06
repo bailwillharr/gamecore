@@ -1,4 +1,4 @@
-# GameCore -- A better game engine than my other one
+# GameCore, another game engine
 
 ## Build instructions
 
