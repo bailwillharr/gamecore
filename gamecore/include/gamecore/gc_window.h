@@ -10,13 +10,17 @@ struct SDL_Window; // forward-dec
 
 namespace gc {
 
+struct WindowInitInfo {
+    bool load_vulkan;
+};
+
 class Window {
     SDL_Window* m_window_handle;
     std::vector<SDL_DisplayMode> m_display_modes;
     bool m_should_quit;
 
 public:
-    Window();
+    explicit Window(const WindowInitInfo& info);
     Window(const Window&) = delete;
     Window(Window&&) = delete;
 
@@ -38,7 +42,6 @@ public:
 
 private:
     std::optional<SDL_DisplayMode> findDisplayMode(int width, int height);
-
 };
 
 } // namespace gc

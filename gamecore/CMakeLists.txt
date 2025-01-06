@@ -1,4 +1,4 @@
-cmake_minimum_required(VERSION 3.24)
+cmake_minimum_required(VERSION 3.25)
 
 option(GC_DEV_BUILD "Log trace and debug messages, run asserts" ON)
 
@@ -79,3 +79,5 @@ target_link_libraries(${PROJECT_NAME} PRIVATE spdlog::spdlog)
 
 # SDL3
 target_link_libraries(${PROJECT_NAME} PUBLIC SDL3::SDL3)
+
+target_link_libraries(${PROJECT_NAME} PUBLIC Vulkan::volk)

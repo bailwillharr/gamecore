@@ -12,7 +12,7 @@ static constexpr const char* INITIAL_TITLE = "Gamecore Game Window";
 static constexpr int INITIAL_WIDTH = 1024;
 static constexpr int INITIAL_HEIGHT = 768;
 
-Window::Window() : m_should_quit(false)
+Window::Window(const WindowInitInfo& info) : m_should_quit(false)
 {
     if (!SDL_InitSubSystem(SDL_INIT_VIDEO)) {
         GC_ERROR("SDL_InitSubSystem() error: {}", SDL_GetError());
@@ -22,6 +22,9 @@ Window::Window() : m_should_quit(false)
     window_flags |= SDL_WINDOW_HIDDEN; // window is shown later
     // no resize:
     // window_flags |= SDL_WINDOW_RESIZABLE;
+    if (info.load_vulkan) {
+        window_flags |= SDL_WINDOW_VULKAN;
+    }
     m_window_handle = SDL_CreateWindow(INITIAL_TITLE, INITIAL_WIDTH, INITIAL_HEIGHT, window_flags);
     if (!m_window_handle) {
         SDL_Quit();

@@ -1,4 +1,6 @@
-cmake_minimum_required(VERSION 3.24)
+cmake_minimum_required(VERSION 3.25)
+
+project(gamecore_repo)
 
 set(CMAKE_CONFIGURATION_TYPES "Debug;Release;RelWithDebInfo")
 
@@ -40,6 +42,15 @@ set(SDL_POWER OFF CACHE INTERNAL "" FORCE)
 set(SDL_SENSOR OFF CACHE INTERNAL "" FORCE)
 
 add_subdirectory(vendor/SDL EXCLUDE_FROM_ALL)
+
+# Vulkan SDK
+find_package(Vulkan REQUIRED COMPONENTS volk)
+if (NOT Vulkan_FOUND)
+	message(FATAL_ERROR "Vulkan not found")
+endif()
+if (NOT Vulkan_volk_FOUND)
+	message(FATAL_ERROR "Volk not found")
+endif()
 
 # options:
 # GC_DEV_BUILD (ON/OFF) - enable trace/debug logging, asserts, etc.

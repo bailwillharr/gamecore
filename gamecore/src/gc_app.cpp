@@ -39,7 +39,10 @@ App::App() : m_main_thread_id(std::this_thread::get_id())
             GC_WARN("Failed setting one or more SDL App Metadata properties");
         }
     }
-    m_window = std::make_unique<Window>();
+
+    WindowInitInfo window_init_info{};
+    window_init_info.load_vulkan = true;
+    m_window = std::make_unique<Window>(window_init_info);
 
     GC_TRACE("Initialised application");
 }
