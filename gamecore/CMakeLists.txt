@@ -81,3 +81,5 @@ target_link_libraries(${PROJECT_NAME} PRIVATE spdlog::spdlog)
 target_link_libraries(${PROJECT_NAME} PUBLIC SDL3::SDL3)
 
 target_link_libraries(${PROJECT_NAME} PUBLIC Vulkan::volk)
+
+target_link_directories(${PROJECT_NAME} PUBLIC llfio)

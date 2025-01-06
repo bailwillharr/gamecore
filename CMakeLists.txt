@@ -52,6 +52,9 @@ if (NOT Vulkan_volk_FOUND)
 	message(FATAL_ERROR "Volk not found")
 endif()
 
+# llfio
+add_subdirectory(vendor/llfio EXCLUDE_FROM_ALL)
+
 # options:
 # GC_DEV_BUILD (ON/OFF) - enable trace/debug logging, asserts, etc.
 add_subdirectory(gamecore)

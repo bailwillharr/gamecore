@@ -4,6 +4,3 @@
 [submodule "vendor/SDL"]
 	path = vendor/SDL
 	url = https://github.com/libsdl-org/SDL
-[submodule "vendor/llfio"]
-	path = vendor/llfio
-	url = https://github.com/ned14/llfio
