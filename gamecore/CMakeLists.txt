@@ -17,7 +17,9 @@ set(SRC_FILES
 	"src/gc_disk_io.cpp"
 	"src/gc_asset_id.cpp"
 	"src/gc_units.cpp"
- "src/gc_window.cpp")
+	"src/gc_window.cpp"
+	"src/gc_vulkan_instance.cpp"
+ "src/gc_vulkan_device.cpp")
 
 # Public API includes
 # Care must be taken to ensure these headers do not reference private headers from src/
@@ -38,7 +40,9 @@ set(INCLUDE_FILES
 	"include/gamecore/gc_stopwatch.h"
 	"include/gamecore/gc_units.h"
 	"include/gamecore/gc_window.h"
-)
+	"include/gamecore/gc_vulkan_common.h"
+	"include/gamecore/gc_vulkan_instance.h"
+ "include/gamecore/gc_vulkan_device.h")
 
 # gamecore is a static library
 add_library(${PROJECT_NAME} STATIC
@@ -80,6 +84,6 @@ target_link_libraries(${PROJECT_NAME} PRIVATE spdlog::spdlog)
 # SDL3
 target_link_libraries(${PROJECT_NAME} PUBLIC SDL3::SDL3)
 
+# Vulkan
+target_link_libraries(${PROJECT_NAME} PUBLIC Vulkan::Headers)
 target_link_libraries(${PROJECT_NAME} PUBLIC Vulkan::volk)
-
-target_link_directories(${PROJECT_NAME} PUBLIC llfio)
