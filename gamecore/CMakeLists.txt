@@ -19,7 +19,7 @@ set(SRC_FILES
 	"src/gc_units.cpp"
 	"src/gc_window.cpp"
 	"src/gc_vulkan_instance.cpp"
- "src/gc_vulkan_device.cpp")
+ "src/gc_vulkan_device.cpp" "src/gc_vulkan_allocator.cpp" "src/gc_vk_mem_alloc_impl.cpp")
 
 # Public API includes
 # Care must be taken to ensure these headers do not reference private headers from src/
@@ -42,7 +42,7 @@ set(INCLUDE_FILES
 	"include/gamecore/gc_window.h"
 	"include/gamecore/gc_vulkan_common.h"
 	"include/gamecore/gc_vulkan_instance.h"
- "include/gamecore/gc_vulkan_device.h")
+ "include/gamecore/gc_vulkan_device.h" "include/gamecore/gc_vulkan_allocator.h")
 
 # gamecore is a static library
 add_library(${PROJECT_NAME} STATIC

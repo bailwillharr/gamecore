@@ -7,6 +7,8 @@
 
 #include <Volk/volk.h>
 
+#include "gamecore/gc_logger.h"
+
 namespace gc {
 
 inline constexpr uint32_t REQUIRED_VULKAN_VERSION = VK_API_VERSION_1_3;
