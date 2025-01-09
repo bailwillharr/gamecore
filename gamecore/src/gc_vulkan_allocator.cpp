@@ -15,34 +15,33 @@ namespace gc {
 
 VulkanAllocator::VulkanAllocator(const VulkanDevice& device)
 {
-    VmaVulkanFunctions functions{
-        .vkGetInstanceProcAddr = nullptr,
-        .vkGetDeviceProcAddr = nullptr,
-        .vkGetPhysicalDeviceProperties = vkGetPhysicalDeviceProperties,
-        .vkGetPhysicalDeviceMemoryProperties = vkGetPhysicalDeviceMemoryProperties,
-        .vkAllocateMemory = vkAllocateMemory,
-        .vkFreeMemory = vkFreeMemory,
-        .vkMapMemory = vkMapMemory,
-        .vkUnmapMemory = vkUnmapMemory,
-        .vkFlushMappedMemoryRanges = vkFlushMappedMemoryRanges,
-        .vkInvalidateMappedMemoryRanges = vkInvalidateMappedMemoryRanges,
-        .vkBindBufferMemory = vkBindBufferMemory,
-        .vkBindImageMemory = vkBindImageMemory,
-        .vkGetBufferMemoryRequirements = vkGetBufferMemoryRequirements,
-        .vkGetImageMemoryRequirements = vkGetImageMemoryRequirements,
-        .vkCreateBuffer = vkCreateBuffer,
-        .vkDestroyBuffer = vkDestroyBuffer,
-        .vkCreateImage = vkCreateImage,
-        .vkDestroyImage = vkDestroyImage,
-        .vkCmdCopyBuffer = vkCmdCopyBuffer,
-        .vkGetBufferMemoryRequirements2KHR = vkGetBufferMemoryRequirements2,
-        .vkGetImageMemoryRequirements2KHR = vkGetImageMemoryRequirements2,
-        .vkBindBufferMemory2KHR = vkBindBufferMemory2,
-        .vkBindImageMemory2KHR = vkBindImageMemory2,
-        .vkGetPhysicalDeviceMemoryProperties2KHR = vkGetPhysicalDeviceMemoryProperties2,
-        .vkGetDeviceBufferMemoryRequirements = vkGetDeviceBufferMemoryRequirements,
-        .vkGetDeviceImageMemoryRequirements = vkGetDeviceImageMemoryRequirements,
-    };
+    VmaVulkanFunctions functions{.vkGetInstanceProcAddr = nullptr,
+                                 .vkGetDeviceProcAddr = nullptr,
+                                 .vkGetPhysicalDeviceProperties = vkGetPhysicalDeviceProperties,
+                                 .vkGetPhysicalDeviceMemoryProperties = vkGetPhysicalDeviceMemoryProperties,
+                                 .vkAllocateMemory = vkAllocateMemory,
+                                 .vkFreeMemory = vkFreeMemory,
+                                 .vkMapMemory = vkMapMemory,
+                                 .vkUnmapMemory = vkUnmapMemory,
+                                 .vkFlushMappedMemoryRanges = vkFlushMappedMemoryRanges,
+                                 .vkInvalidateMappedMemoryRanges = vkInvalidateMappedMemoryRanges,
+                                 .vkBindBufferMemory = vkBindBufferMemory,
+                                 .vkBindImageMemory = vkBindImageMemory,
+                                 .vkGetBufferMemoryRequirements = vkGetBufferMemoryRequirements,
+                                 .vkGetImageMemoryRequirements = vkGetImageMemoryRequirements,
+                                 .vkCreateBuffer = vkCreateBuffer,
+                                 .vkDestroyBuffer = vkDestroyBuffer,
+                                 .vkCreateImage = vkCreateImage,
+                                 .vkDestroyImage = vkDestroyImage,
+                                 .vkCmdCopyBuffer = vkCmdCopyBuffer,
+                                 .vkGetBufferMemoryRequirements2KHR = vkGetBufferMemoryRequirements2,
+                                 .vkGetImageMemoryRequirements2KHR = vkGetImageMemoryRequirements2,
+                                 .vkBindBufferMemory2KHR = vkBindBufferMemory2,
+                                 .vkBindImageMemory2KHR = vkBindImageMemory2,
+                                 .vkGetPhysicalDeviceMemoryProperties2KHR = vkGetPhysicalDeviceMemoryProperties2,
+                                 .vkGetDeviceBufferMemoryRequirements = vkGetDeviceBufferMemoryRequirements,
+                                 .vkGetDeviceImageMemoryRequirements = vkGetDeviceImageMemoryRequirements,
+                                 .vkGetMemoryWin32HandleKHR = nullptr};
 
     VmaAllocatorCreateInfo createInfo{.flags = 0,
                                       .physicalDevice = device.getPhysicalDevice(),
@@ -74,8 +73,10 @@ VulkanAllocator::VulkanAllocator(const VulkanDevice& device)
     GC_TRACE("Initialised VulkanAllocator");
 }
 
-VulkanAllocator::~VulkanAllocator() { 
+VulkanAllocator::~VulkanAllocator()
+{
     GC_TRACE("Destroying VulkanAllocator...");
-    vmaDestroyAllocator(m_handle); }
+    vmaDestroyAllocator(m_handle);
+}
 
 } // namespace gc

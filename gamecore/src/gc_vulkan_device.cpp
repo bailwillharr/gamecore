@@ -178,8 +178,7 @@ VulkanDevice::VulkanDevice()
         {
             // print debug info about available queues
             for (const VkQueueFamilyProperties& props : queue_family_properties) {
-                props.
-            }
+                        }
         }
         std::vector<VkDeviceQueueCreateInfo> queue_infos{};
 
