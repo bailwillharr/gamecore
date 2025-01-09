@@ -4,7 +4,7 @@
 #include <string>
 #include <optional>
 
-#include <Volk/volk.h>
+#include <volk.h>
 
 namespace gc {
 

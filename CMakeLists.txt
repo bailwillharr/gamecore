@@ -12,6 +12,7 @@ set(SPDLOG_NO_ATOMIC_LEVELS ON CACHE INTERNAL "" FORCE) # log levels aren't modi
 add_subdirectory(vendor/spdlog EXCLUDE_FROM_ALL)
 
 # SDL3
+# Maybe when SDL3 is added to linux distro package repos, find_package() can be used and only compile as fallback
 set(SDL_SHARED ON CACHE INTERNAL "" FORCE)
 set(SDL_STATIC OFF CACHE INTERNAL "" FORCE)
 
@@ -43,17 +44,14 @@ set(SDL_SENSOR OFF CACHE INTERNAL "" FORCE)
 
 add_subdirectory(vendor/SDL EXCLUDE_FROM_ALL)
 
-# Vulkan SDK
-find_package(Vulkan REQUIRED COMPONENTS volk)
-if (NOT Vulkan_FOUND)
-	message(FATAL_ERROR "Vulkan not found")
-endif()
-if (NOT Vulkan_volk_FOUND)
-	message(FATAL_ERROR "Volk not found")
-endif()
+# Volk
+set(VOLK_PULL_IN_VULKAN ON CACHE INTERNAL "" FORCE) # Get Vulkan header files from SDK
+add_subdirectory(vendor/volk)
 
-# options:
-# GC_DEV_BUILD (ON/OFF) - enable trace/debug logging, asserts, etc.
+# VulkanMemoryAllocator
+set(VMA_ENABLE_INSTALL OFF CACHE INTERNAL "" FORCE)
+add_subdirectory(vendor/VulkanMemoryAllocator)
+
 add_subdirectory(gamecore)
 
 add_subdirectory(gamecore_template)

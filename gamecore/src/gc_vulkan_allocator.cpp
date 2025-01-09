@@ -2,9 +2,9 @@
 
 #include <cstdio> // snprintf for vma
 
-#include <Volk/volk.h>
+#include <volk.h>
 
-#include <vma/vk_mem_alloc.h>
+#include <vk_mem_alloc.h>
 
 #include "gamecore/gc_vulkan_common.h"
 #include "gamecore/gc_vulkan_device.h"

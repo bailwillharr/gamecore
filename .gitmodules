@@ -4,3 +4,9 @@
 [submodule "vendor/SDL"]
 	path = vendor/SDL
 	url = https://github.com/libsdl-org/SDL
+[submodule "vendor/volk"]
+	path = vendor/volk
+	url = https://github.com/zeux/volk
+[submodule "vendor/VulkanMemoryAllocator"]
+	path = vendor/VulkanMemoryAllocator
+	url = https://github.com/GPUOpen-LibrariesAndSDKs/VulkanMemoryAllocator

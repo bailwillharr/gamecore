@@ -5,7 +5,7 @@
 #include <format>
 #include <string>
 
-#include <Volk/volk.h>
+#include <volk.h>
 
 #include "gamecore/gc_logger.h"
 

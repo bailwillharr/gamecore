@@ -2,7 +2,7 @@
 
 #include <SDL3/SDL_vulkan.h>
 
-#include <Volk/volk.h>
+#include <volk.h>
 
 #include "gamecore/gc_vulkan_common.h"
 #include "gamecore/gc_logger.h"

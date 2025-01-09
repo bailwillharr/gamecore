@@ -12,7 +12,7 @@ class logger; // forward-dec
 namespace gc {
 
 /* Create with createLoggerSpdlog() */
-class LoggerSpdlog : public Logger {
+class LoggerSpdlog final : public Logger {
     std::unique_ptr<spdlog::logger> m_spdlogger;
 
 public:

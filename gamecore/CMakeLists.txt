@@ -85,5 +85,8 @@ target_link_libraries(${PROJECT_NAME} PRIVATE spdlog::spdlog)
 target_link_libraries(${PROJECT_NAME} PUBLIC SDL3::SDL3)
 
 # Vulkan
-target_link_libraries(${PROJECT_NAME} PUBLIC Vulkan::Headers)
-target_link_libraries(${PROJECT_NAME} PUBLIC Vulkan::volk)
+# volk::volk pulls in Vulkan headers
+target_link_libraries(${PROJECT_NAME} PUBLIC volk::volk)
+
+# VulkanMemoryAllocator
+target_link_libraries(${PROJECT_NAME} PUBLIC GPUOpen::VulkanMemoryAllocator)
