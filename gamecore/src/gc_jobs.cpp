@@ -64,7 +64,7 @@ Jobs::Jobs(unsigned int num_threads)
 
 Jobs::~Jobs()
 {
-    GC_TRACE("Shutting down job system");
+    GC_TRACE("Destroying job system...");
     wait();
     m_shutdown_threads.store(true);
     while (m_num_threads_running.load() > 0) { // wait until all threads have stopped running

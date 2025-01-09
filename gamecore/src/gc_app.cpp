@@ -13,6 +13,7 @@
 #include "gamecore/gc_jobs.h"
 #include "gamecore/gc_content.h"
 #include "gamecore/gc_window.h"
+#include "gamecore/gc_vulkan_renderer.h"
 
 namespace gc {
 
@@ -45,12 +46,14 @@ App::App() : m_main_thread_id(std::this_thread::get_id())
     window_init_info.resizable = false;
     m_window = std::make_unique<Window>(window_init_info);
 
+    m_vulkan_renderer = std::make_unique<VulkanRenderer>();
+
     GC_TRACE("Initialised application");
 }
 
 App::~App()
 {
-    GC_TRACE("Shutting down application");
+    GC_TRACE("Destroying application...");
     // job threads should be stopped here because otherwise other engine systems may shut down while still in use by those threads.
     // Ideally, job system shouldn't be busy at this point anyway since jobs shouldn't be left running.
     if (jobs().isBusy()) {

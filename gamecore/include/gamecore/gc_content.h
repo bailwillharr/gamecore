@@ -10,7 +10,7 @@
 #include <tuple>
 #include <mutex>
 
-#include "gc_gcpak.h"
+#include "gamecore/gc_gcpak.h"
 
 // A wrapper around access to game engine assets:
 // - Ensures the correct content directory is used and finds all .gcpak files

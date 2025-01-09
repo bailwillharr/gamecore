@@ -10,7 +10,12 @@
 
 namespace gc {
 
-std::optional<VmaAllocator> vulkanAllocatorCreate(VkInstance instance, const VulkanDevice& device);
-void vulkanAllocatorDestroy(VmaAllocator allocator);
+class VulkanAllocator {
+    VmaAllocator m_handle{};
+
+public:
+    VulkanAllocator(const VulkanDevice& device);
+    ~VulkanAllocator();
+};
 
 }

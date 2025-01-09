@@ -15,6 +15,7 @@ namespace gc {
 class Jobs;    // forward-dec
 class Content; // forward-dec
 class Window;  // forward-dec
+class VulkanRenderer; // forward-dec
 
 class App {
 
@@ -26,6 +27,7 @@ class App {
     std::unique_ptr<Jobs> m_jobs{};
     std::unique_ptr<Content> m_content{};
     std::unique_ptr<Window> m_window{};
+    std::unique_ptr<VulkanRenderer> m_vulkan_renderer{};
 
 private:
     /* application lifetime is controlled by static variable 'instance' in instance() static method */

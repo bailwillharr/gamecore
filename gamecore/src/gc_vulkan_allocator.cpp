@@ -9,10 +9,11 @@
 #include "gamecore/gc_vulkan_common.h"
 #include "gamecore/gc_vulkan_device.h"
 #include "gamecore/gc_logger.h"
+#include "gamecore/gc_abort.h"
 
 namespace gc {
 
-std::optional<VmaAllocator> vulkanAllocatorCreate(VkInstance instance, const VulkanDevice& device)
+VulkanAllocator::VulkanAllocator(const VulkanDevice& device)
 {
     VmaVulkanFunctions functions{
         .vkGetInstanceProcAddr = nullptr,
@@ -44,40 +45,37 @@ std::optional<VmaAllocator> vulkanAllocatorCreate(VkInstance instance, const Vul
     };
 
     VmaAllocatorCreateInfo createInfo{.flags = 0,
-                                      .physicalDevice = device.physical_device,
-                                      .device = device.device,
+                                      .physicalDevice = device.getPhysicalDevice(),
+                                      .device = device.getDevice(),
                                       .preferredLargeHeapBlockSize = 0, // set to zero for default, which is currently 256 MiB
                                       .pAllocationCallbacks = nullptr,
                                       .pDeviceMemoryCallbacks = nullptr,
                                       .pHeapSizeLimit = nullptr,
                                       .pVulkanFunctions = &functions,
-                                      .instance = instance,
+                                      .instance = device.getInstance(),
                                       .vulkanApiVersion = VK_API_VERSION_1_3,
                                       .pTypeExternalMemoryHandleTypes = nullptr};
 
-    if (std::find(device.extensions_enabled.begin(), device.extensions_enabled.end(), std::string(VK_KHR_MAINTENANCE_4_EXTENSION_NAME)) !=
-        device.extensions_enabled.end()) {
+    if (device.isExtensionEnabled(VK_KHR_MAINTENANCE_4_EXTENSION_NAME)) {
         createInfo.flags |= VMA_ALLOCATOR_CREATE_EXT_MEMORY_BUDGET_BIT;
     }
-    if (std::find(device.extensions_enabled.begin(), device.extensions_enabled.end(), std::string(VK_EXT_MEMORY_PRIORITY_EXTENSION_NAME)) !=
-        device.extensions_enabled.end()) {
+    if (device.isExtensionEnabled(VK_EXT_MEMORY_PRIORITY_EXTENSION_NAME)) {
         createInfo.flags |= VMA_ALLOCATOR_CREATE_EXT_MEMORY_PRIORITY_BIT;
     }
-    if (std::find(device.extensions_enabled.begin(), device.extensions_enabled.end(), std::string(VK_EXT_MEMORY_BUDGET_EXTENSION_NAME)) !=
-        device.extensions_enabled.end()) {
+    if (device.isExtensionEnabled(VK_EXT_MEMORY_BUDGET_EXTENSION_NAME)) {
         createInfo.flags |= VMA_ALLOCATOR_CREATE_EXT_MEMORY_BUDGET_BIT;
     }
     createInfo.flags |= VMA_ALLOCATOR_CREATE_KHR_MAINTENANCE4_BIT; // promoted to Vulkan 1.3
 
-    VmaAllocator allocator;
-    if (VkResult res = vmaCreateAllocator(&createInfo, &allocator); res != VK_SUCCESS) {
-        GC_ERROR("vmaCreateAllocator() error: {}", vulkanResToString(res));
-        return {};
+    if (VkResult res = vmaCreateAllocator(&createInfo, &m_handle); res != VK_SUCCESS) {
+        abortGame("vmaCreateAllocator() error: {}", vulkanResToString(res));
     }
 
-    return allocator;
+    GC_TRACE("Initialised VulkanAllocator");
 }
 
-void vulkanAllocatorDestroy(VmaAllocator allocator) { vmaDestroyAllocator(allocator); }
+VulkanAllocator::~VulkanAllocator() { 
+    GC_TRACE("Destroying VulkanAllocator...");
+    vmaDestroyAllocator(m_handle); }
 
 } // namespace gc

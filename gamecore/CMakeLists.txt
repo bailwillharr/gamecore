@@ -13,13 +13,12 @@ set(SRC_FILES
 	"src/gc_logger_spdlog.cpp"
 	"src/gc_jobs.cpp"
 	"src/gc_content.cpp"
-	"src/gc_abort.cpp"
+	
 	"src/gc_disk_io.cpp"
 	"src/gc_asset_id.cpp"
 	"src/gc_units.cpp"
 	"src/gc_window.cpp"
-	"src/gc_vulkan_instance.cpp"
- "src/gc_vulkan_device.cpp" "src/gc_vulkan_allocator.cpp" "src/gc_vk_mem_alloc_impl.cpp")
+ "src/gc_vulkan_device.cpp" "src/gc_vulkan_allocator.cpp" "src/gc_vk_mem_alloc_impl.cpp" "src/gc_vulkan_renderer.cpp")
 
 # Public API includes
 # Care must be taken to ensure these headers do not reference private headers from src/
@@ -41,8 +40,7 @@ set(INCLUDE_FILES
 	"include/gamecore/gc_units.h"
 	"include/gamecore/gc_window.h"
 	"include/gamecore/gc_vulkan_common.h"
-	"include/gamecore/gc_vulkan_instance.h"
- "include/gamecore/gc_vulkan_device.h" "include/gamecore/gc_vulkan_allocator.h")
+ "include/gamecore/gc_vulkan_device.h" "include/gamecore/gc_vulkan_allocator.h" "include/gamecore/gc_vulkan_renderer.h")
 
 # gamecore is a static library
 add_library(${PROJECT_NAME} STATIC
@@ -64,6 +62,7 @@ if (GC_DEV_BUILD)
 	target_compile_definitions(${PROJECT_NAME} PUBLIC GC_DO_ASSERTS)
 	target_compile_definitions(${PROJECT_NAME} PUBLIC GC_LOG_TRACE_DEBUG)
 	target_compile_definitions(${PROJECT_NAME} PUBLIC GC_LOOKUP_ASSET_IDS)
+	target_compile_definitions(${PROJECT_NAME} PUBLIC GC_VULKAN_DEBUG)
 endif()
 target_compile_definitions(${PROJECT_NAME} PUBLIC GC_LOGGER=GC_LOGGER_SPDLOG) # GC_LOGGER_SPDLOG or GC_LOGGER_NULL
 

@@ -8,7 +8,7 @@
 #include <condition_variable>
 #include <deque>
 
-#include "gc_ring_buffer.h"
+#include "gamecore/gc_ring_buffer.h"
 
 /* multithreaded job system */
 

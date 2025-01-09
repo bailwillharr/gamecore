@@ -19,7 +19,7 @@ LoggerSpdlog::LoggerSpdlog() : m_spdlogger(nullptr)
     trace("Initialised LoggerSpdlog");
 }
 
-LoggerSpdlog::~LoggerSpdlog() { trace("Shutting down LoggerSpdlog"); }
+LoggerSpdlog::~LoggerSpdlog() { trace("Destroying LoggerSpdlog..."); }
 
 void LoggerSpdlog::log(std::string_view message, LogLevel level)
 {

@@ -111,7 +111,7 @@ Content::Content()
     GC_TRACE("Initialised content manager");
 }
 
-Content::~Content() { GC_TRACE("Shutting down content manager"); }
+Content::~Content() { GC_TRACE("Destroying content manager..."); }
 
 std::vector<uint8_t> Content::loadAsset(std::uint32_t id)
 {
