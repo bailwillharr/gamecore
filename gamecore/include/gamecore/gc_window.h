@@ -30,11 +30,13 @@ public:
     Window& operator=(const Window&) = delete;
     Window& operator=(Window&&) = delete;
 
+    SDL_Window* getHandle();
+
     void processEvents();
 
     // can be internally set by Alt+F4, X button, etc
     void setQuitFlag();
-    bool shouldQuit();
+    bool shouldQuit() const;
 
     void setWindowVisibility(bool visible);
     void setTitle(const std::string& title);
@@ -42,7 +44,7 @@ public:
     bool setSize(int width, int height, bool fullscreen);
 
 private:
-    std::optional<SDL_DisplayMode> findDisplayMode(int width, int height);
+    std::optional<SDL_DisplayMode> findDisplayMode(int width, int height) const;
 };
 
 } // namespace gc

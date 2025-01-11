@@ -1,11 +1,15 @@
 #pragma once
 
+// Vulkan, Volk, VMA, and a bunch of helper functions
+
 #include <cstdint>
 
 #include <format>
 #include <string>
 
 #include <volk.h>
+
+#include <vk_mem_alloc.h>
 
 #include "gamecore/gc_logger.h"
 

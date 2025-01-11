@@ -112,8 +112,21 @@ VulkanDevice::VulkanDevice()
     }
 
     { // create instance
-        const std::vector<const char*> instance_extensions{};
-        const std::vector<const char*> instance_layers{};
+        std::vector<const char*> instance_extensions{};
+
+#ifdef GC_VULKAN_DEBUG
+        instance_extensions.push_back(VK_EXT_DEBUG_UTILS_EXTENSION_NAME);
+#endif
+
+        /* get SDL window required extensions for swapchain */
+        uint32_t window_extension_count{};
+        const char* const* const window_extensions = SDL_Vulkan_GetInstanceExtensions(&window_extension_count);
+        if (!window_extensions) {
+            abortGame("SDL_Vulkan_GetInstanceExtensions() error: ", SDL_GetError());
+        }
+        for (uint32_t i = 0; i < window_extension_count; ++i) {
+            instance_extensions.push_back(window_extensions[i]);
+        }
 
         VkDebugUtilsMessengerCreateInfoEXT debug_messenger_info{};
         debug_messenger_info.sType = VK_STRUCTURE_TYPE_DEBUG_UTILS_MESSENGER_CREATE_INFO_EXT;
@@ -123,7 +136,6 @@ VulkanDevice::VulkanDevice()
         debug_messenger_info.pfnUserCallback = vulkanMessageCallback;
         debug_messenger_info.pUserData = nullptr;
 
-        const char* const ext_debug_utils_extension_name = VK_EXT_DEBUG_UTILS_EXTENSION_NAME;
         const char* const khronos_validation_layer_name = "VK_LAYER_KHRONOS_validation";
 
         VkApplicationInfo app_info{};
@@ -137,12 +149,12 @@ VulkanDevice::VulkanDevice()
         VkInstanceCreateInfo instance_info{};
         instance_info.sType = VK_STRUCTURE_TYPE_INSTANCE_CREATE_INFO;
         instance_info.pApplicationInfo = &app_info;
+        instance_info.enabledExtensionCount = static_cast<uint32_t>(instance_extensions.size());
+        instance_info.ppEnabledExtensionNames = instance_extensions.data();
 #ifdef GC_VULKAN_DEBUG
         instance_info.pNext = &debug_messenger_info;
         instance_info.enabledLayerCount = 1;
         instance_info.ppEnabledLayerNames = &khronos_validation_layer_name;
-        instance_info.enabledExtensionCount = 1;
-        instance_info.ppEnabledExtensionNames = &ext_debug_utils_extension_name;
 #endif
 
         if (VkResult res = vkCreateInstance(&instance_info, nullptr, &m_instance); res != VK_SUCCESS) {
@@ -178,15 +190,48 @@ VulkanDevice::VulkanDevice()
         {
             // print debug info about available queues
             for (const VkQueueFamilyProperties& props : queue_family_properties) {
-                props.
+                GC_DEBUG("Queue Family:");
+                GC_DEBUG("\t\tQueue count: {}", props.queueCount);
+                std::string flags_str{};
+                if (props.queueFlags & VK_QUEUE_GRAPHICS_BIT) {
+                    flags_str += "GRAPHICS ";
+                }
+                if (props.queueFlags & VK_QUEUE_COMPUTE_BIT) {
+                    flags_str += "COMPUTE ";
+                }
+                if (props.queueFlags & VK_QUEUE_TRANSFER_BIT) {
+                    flags_str += "TRANSFER ";
+                }
+                if (props.queueFlags & VK_QUEUE_SPARSE_BINDING_BIT) {
+                    flags_str += "SPARSE_BINDING ";
+                }
+                if (props.queueFlags & VK_QUEUE_PROTECTED_BIT) {
+                    flags_str += "PROTECTED ";
+                }
+                if (props.queueFlags & VK_QUEUE_VIDEO_DECODE_BIT_KHR) {
+                    flags_str += "VIDEO_DECODE_KHR ";
+                }
+                if (props.queueFlags & VK_QUEUE_VIDEO_ENCODE_BIT_KHR) {
+                    flags_str += "VIDEO_ENCODE_KHR ";
+                }
+                if (props.queueFlags & VK_QUEUE_OPTICAL_FLOW_BIT_NV) {
+                    flags_str += "OPTICAL_FLOW_NV ";
+                }
+                GC_DEBUG("\t\tFlags: {}", flags_str);
+                GC_DEBUG("\t\tTimestamp valid bits: {}", props.timestampValidBits);
+                GC_DEBUG("\t\tMin image transfer granularity: {}, {}, {}", props.minImageTransferGranularity.width, props.minImageTransferGranularity.height,
+                         props.minImageTransferGranularity.depth);
             }
         }
         std::vector<VkDeviceQueueCreateInfo> queue_infos{};
+        const float queue_priority = 1.0f;
+        queue_infos.push_back(VkDeviceQueueCreateInfo{
+            .sType = VK_STRUCTURE_TYPE_DEVICE_QUEUE_CREATE_INFO, .queueFamilyIndex = 0, .queueCount = 1, .pQueuePriorities = &queue_priority});
 
         const std::vector<const char*> extensions_to_enable = getRequiredExtensionNames();
 
         // enable features here:
-        m_features_enabled.dynamic_rendering.dynamicRendering = VK_FALSE;
+        m_features_enabled.vulkan13.dynamicRendering = VK_TRUE;
 
         VkDeviceCreateInfo device_info{};
         device_info.sType = VK_STRUCTURE_TYPE_DEVICE_CREATE_INFO;
@@ -211,6 +256,11 @@ VulkanDevice::VulkanDevice()
     }
 
     volkLoadDevice(m_device);
+
+    { // Get Queues
+        vkGetDeviceQueue(m_device, 0, 0, &m_main_queue.queue);
+        m_main_queue.queue_family_index = 0;
+    }
 
     GC_TRACE("Initialised VulkanDevice");
 }

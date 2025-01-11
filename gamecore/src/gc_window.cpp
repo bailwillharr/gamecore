@@ -60,6 +60,8 @@ Window::~Window()
     SDL_QuitSubSystem(SDL_INIT_VIDEO);
 }
 
+SDL_Window* Window::getHandle() { return m_window_handle; }
+
 void Window::setWindowVisibility(bool visible)
 {
     if (visible) {
@@ -106,7 +108,7 @@ void Window::processEvents()
 
 void Window::setQuitFlag() { m_should_quit = true; }
 
-bool Window::shouldQuit() { return m_should_quit; }
+bool Window::shouldQuit() const { return m_should_quit; }
 
 void Window::setTitle(const std::string& title)
 {
@@ -153,7 +155,7 @@ bool Window::setSize(int width, int height, bool fullscreen)
     return success;
 }
 
-std::optional<SDL_DisplayMode> Window::findDisplayMode(int width, int height)
+std::optional<SDL_DisplayMode> Window::findDisplayMode(int width, int height) const
 {
     // Modes are more-or-less sorted best to worst, so return the first found matching mode
     for (const SDL_DisplayMode& mode : m_display_modes) {

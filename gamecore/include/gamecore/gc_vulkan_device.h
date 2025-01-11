@@ -5,7 +5,7 @@
 #include <optional>
 #include <string_view>
 
-#include <volk.h>
+#include "gc_vulkan_common.h"
 
 namespace gc {
 
@@ -19,16 +19,27 @@ struct VulkanDeviceProperties {
 };
 
 struct VulkanDeviceFeatures {
-    VkPhysicalDeviceDynamicRenderingFeatures dynamic_rendering{};
+    VkPhysicalDeviceVulkan13Features vulkan13{};
+    VkPhysicalDeviceVulkan12Features vulkan12{};
+    VkPhysicalDeviceVulkan11Features vulkan11{};
     VkPhysicalDeviceFeatures2 features{};
 
     inline VulkanDeviceFeatures()
     {
-        dynamic_rendering.sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_DYNAMIC_RENDERING_FEATURES;
-        dynamic_rendering.pNext = nullptr;
+        vulkan13.sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_VULKAN_1_3_FEATURES;
+        vulkan13.pNext = nullptr;
+        vulkan12.sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_VULKAN_1_2_FEATURES;
+        vulkan12.pNext = &vulkan13;
+        vulkan11.sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_VULKAN_1_1_FEATURES;
+        vulkan11.pNext = &vulkan12;
         features.sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_FEATURES_2;
-        features.pNext = &dynamic_rendering;
+        features.pNext = &vulkan11;
     }
+};
+
+struct VulkanQueue {
+    VkQueue queue;
+    uint32_t queue_family_index;
 };
 
 class VulkanDevice {
@@ -36,7 +47,7 @@ class VulkanDevice {
     VkDebugUtilsMessengerEXT m_debug_messenger = VK_NULL_HANDLE;
     VkPhysicalDevice m_physical_device = VK_NULL_HANDLE;
     VkDevice m_device = VK_NULL_HANDLE;
-    VkQueue m_queue = VK_NULL_HANDLE;
+    VulkanQueue m_main_queue{};
     VulkanDeviceProperties m_properties{};
     VulkanDeviceFeatures m_features_enabled{};
     std::vector<std::string> m_extensions_enabled{};

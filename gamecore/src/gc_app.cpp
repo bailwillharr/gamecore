@@ -46,7 +46,7 @@ App::App() : m_main_thread_id(std::this_thread::get_id())
     window_init_info.resizable = false;
     m_window = std::make_unique<Window>(window_init_info);
 
-    m_vulkan_renderer = std::make_unique<VulkanRenderer>();
+    m_vulkan_renderer = std::make_unique<VulkanRenderer>(m_window->getHandle());
 
     GC_TRACE("Initialised application");
 }

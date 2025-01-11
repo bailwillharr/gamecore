@@ -5,6 +5,8 @@
 #include <format>
 #include <string_view>
 
+#include <SDL3/SDL_messagebox.h>
+
 #include "gamecore/gc_logger.h"
 
 namespace gc {
@@ -15,6 +17,8 @@ template <typename... Args>
 [[noreturn]] inline void abortGame(std::format_string<Args...> fmt, Args&&... args)
 {
     GC_CRITICAL(fmt, std::forward<Args>(args)...);
+    const std::string formatted = std::format(fmt, std::forward<Args>(args)...);
+    SDL_ShowSimpleMessageBox(SDL_MESSAGEBOX_ERROR, "Gamecore critical error", formatted.c_str(), nullptr);
     std::abort();
 }
 
