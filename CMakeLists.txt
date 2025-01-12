@@ -46,6 +46,9 @@ add_subdirectory(vendor/SDL EXCLUDE_FROM_ALL)
 
 # Volk
 set(VOLK_PULL_IN_VULKAN ON CACHE INTERNAL "" FORCE) # Get Vulkan header files from SDK
+if (WIN32)
+	set(VOLK_STATIC_DEFINES "VK_USE_PLATFORM_WIN32_KHR" CACHE INTERNAL "" FORCE)
+endif()
 add_subdirectory(vendor/volk)
 
 # VulkanMemoryAllocator

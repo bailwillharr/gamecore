@@ -16,8 +16,8 @@ namespace gc {
 template <typename... Args>
 [[noreturn]] inline void abortGame(std::format_string<Args...> fmt, Args&&... args)
 {
-    GC_CRITICAL(fmt, std::forward<Args>(args)...);
     const std::string formatted = std::format(fmt, std::forward<Args>(args)...);
+    GC_CRITICAL("{}", formatted);
     SDL_ShowSimpleMessageBox(SDL_MESSAGEBOX_ERROR, "Gamecore critical error", formatted.c_str(), nullptr);
     std::abort();
 }

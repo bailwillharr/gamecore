@@ -45,7 +45,7 @@ static VkBool32 vulkanMessageCallback(VkDebugUtilsMessageSeverityFlagBitsEXT mes
         message_type.clear();
     }
 
-    GC_DEBUG("Vulkan debug callback said: {} {}", message_type, callback_data->pMessage);
+    GC_WARN("Vulkan debug callback said: {} {}", message_type, callback_data->pMessage);
     return VK_FALSE;
 }
 
@@ -222,6 +222,11 @@ VulkanDevice::VulkanDevice()
                 GC_DEBUG("\t\tMin image transfer granularity: {}, {}, {}", props.minImageTransferGranularity.width, props.minImageTransferGranularity.height,
                          props.minImageTransferGranularity.depth);
             }
+        }
+        if (!SDL_Vulkan_GetPresentationSupport(m_instance, m_physical_device, 0)) {
+            /* Ensure queue family #0 supports presentation. */
+            /* All real Vulkan capable GPUs are going to support presentation. This is here just in case. */
+            abortGame("Vulkan queue family #0 doesn't support presentation.");
         }
         std::vector<VkDeviceQueueCreateInfo> queue_infos{};
         const float queue_priority = 1.0f;
