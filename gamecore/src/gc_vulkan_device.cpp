@@ -86,6 +86,7 @@ static std::vector<const char*> getRequiredExtensionNames()
     std::vector<const char*> exts{};
 
     // none yet
+    exts.push_back(VK_KHR_SWAPCHAIN_EXTENSION_NAME);
 
     return exts;
 }

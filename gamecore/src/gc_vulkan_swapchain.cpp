@@ -31,7 +31,11 @@ VulkanSwapchain::VulkanSwapchain(const VulkanDevice& device, SDL_Window* window_
     recreateSwapchain();
 }
 
-VulkanSwapchain::~VulkanSwapchain() { SDL_Vulkan_DestroySurface(m_device.getInstance(), m_surface, nullptr); }
+VulkanSwapchain::~VulkanSwapchain()
+{
+    vkDestroySwapchainKHR(m_device.getDevice(), m_swapchain, nullptr);
+    SDL_Vulkan_DestroySurface(m_device.getInstance(), m_surface, nullptr);
+}
 
 void VulkanSwapchain::recreateSwapchain()
 {
@@ -108,7 +112,8 @@ void VulkanSwapchain::recreateSwapchain()
     // find depth stencil format to use
     {
         VkFormatProperties depth_format_props{};
-        vkGetPhysicalDeviceFormatProperties(m_device.getPhysicalDevice(), VK_FORMAT_D32_SFLOAT_S8_UINT, &depth_format_props); // 100% coverage on Windows. Just use this.
+        vkGetPhysicalDeviceFormatProperties(m_device.getPhysicalDevice(), VK_FORMAT_D32_SFLOAT_S8_UINT,
+                                            &depth_format_props); // 100% coverage on Windows. Just use this.
         if (depth_format_props.optimalTilingFeatures & VK_FORMAT_FEATURE_DEPTH_STENCIL_ATTACHMENT_BIT) {
             m_depth_stencil_format = VK_FORMAT_D32_SFLOAT_S8_UINT;
         }
@@ -118,13 +123,46 @@ void VulkanSwapchain::recreateSwapchain()
     }
 
     // Finally create swapchain
+    const VkSwapchainKHR old_swapchain = m_swapchain;
     VkSwapchainCreateInfoKHR sc_info{};
-    // ...
-    // vkCreateSwapchainKHR
+    sc_info.sType = VK_STRUCTURE_TYPE_SWAPCHAIN_CREATE_INFO_KHR;
+    sc_info.pNext = nullptr;
+    sc_info.flags = 0;
+    sc_info.surface = m_surface;
+    sc_info.minImageCount = min_image_count;
+    sc_info.imageFormat = m_surface_format.format;
+    sc_info.imageColorSpace = m_surface_format.colorSpace;
+    sc_info.imageExtent = m_extent;
+    sc_info.imageArrayLayers = 1;
+    sc_info.imageUsage = VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT; // it's VkImageView is used with a VkFramebuffer
+    sc_info.imageSharingMode = VK_SHARING_MODE_EXCLUSIVE;
+    sc_info.queueFamilyIndexCount = 0;                        // ignored with VK_SHARING_MODE_EXCLUSIVE
+    sc_info.pQueueFamilyIndices = nullptr;                    // ignored with VK_SHARING_MODE_EXCLUSIVE
+    sc_info.preTransform = surface_caps.currentTransform;
+    sc_info.compositeAlpha = VK_COMPOSITE_ALPHA_OPAQUE_BIT_KHR;
+    sc_info.presentMode = m_present_mode;
+    sc_info.clipped = VK_TRUE;
+    sc_info.oldSwapchain = old_swapchain; // which is VK_NULL_HANDLE on first swapchain creation
+
+    if (VkResult res = vkCreateSwapchainKHR(m_device.getDevice(), &sc_info, nullptr, &m_swapchain); res != VK_SUCCESS) {
+        abortGame("vkCreateSwapchainKHR() error: {}", vulkanResToString(res));
+    }
 
     // (destroy old swapchain)
+    if (old_swapchain != VK_NULL_HANDLE) {
+        vkDestroySwapchainKHR(m_device.getDevice(), old_swapchain, nullptr);
+    }
 
     // get all image handles
+    uint32_t image_count{};
+    if (VkResult res = vkGetSwapchainImagesKHR(m_device.getDevice(), m_swapchain, &image_count, nullptr); res != VK_SUCCESS) {
+        abortGame("vkGetSwapchainImagesKHR() error: {}", vulkanResToString(res));
+    }
+    m_images.resize(image_count);
+    if (VkResult res = vkGetSwapchainImagesKHR(m_device.getDevice(), m_swapchain, &image_count, m_images.data());
+        res != VK_SUCCESS) {
+        abortGame("vkGetPhysicalDeviceSurfacePresentModesKHR() error: {}", vulkanResToString(res));
+    }
 
     // (destroy old image views)
     // create image views

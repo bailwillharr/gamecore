@@ -1,5 +1,7 @@
 #pragma once
 
+#include <vector>
+
 #include <SDL3/SDL_video.h>
 
 #include "gamecore/gc_vulkan_common.h"
@@ -19,6 +21,7 @@ class VulkanSwapchain {
     VkExtent2D m_extent{};
 
     VkSwapchainKHR m_swapchain = VK_NULL_HANDLE;
+    std::vector<VkImage> m_images{};
 
 public:
     VulkanSwapchain(const VulkanDevice& device, SDL_Window* window);
