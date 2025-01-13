@@ -6,6 +6,7 @@
 #include <SDL3/SDL_video.h>
 
 #include "gamecore/gc_vulkan_common.h"
+#include "gamecore/gc_logger.h"
 #include "gamecore/gc_assert.h"
 #include "gamecore/gc_abort.h"
 
@@ -33,6 +34,9 @@ VulkanSwapchain::VulkanSwapchain(const VulkanDevice& device, SDL_Window* window_
 
 VulkanSwapchain::~VulkanSwapchain()
 {
+    for (VkImageView view : m_image_views) {
+        vkDestroyImageView(m_device.getDevice(), view, nullptr);
+    }
     vkDestroySwapchainKHR(m_device.getDevice(), m_swapchain, nullptr);
     SDL_Vulkan_DestroySurface(m_device.getInstance(), m_surface, nullptr);
 }
@@ -40,9 +44,36 @@ VulkanSwapchain::~VulkanSwapchain()
 void VulkanSwapchain::recreateSwapchain()
 {
 
+    // Get surface present modes
+    uint32_t present_mode_count{};
+    if (VkResult res = vkGetPhysicalDeviceSurfacePresentModesKHR(m_device.getPhysicalDevice(), m_surface, &present_mode_count, nullptr); res != VK_SUCCESS) {
+        abortGame("vkGetPhysicalDeviceSurfacePresentModesKHR() error: {}", vulkanResToString(res));
+    }
+    std::vector<VkPresentModeKHR> present_modes(present_mode_count);
+    if (VkResult res = vkGetPhysicalDeviceSurfacePresentModesKHR(m_device.getPhysicalDevice(), m_surface, &present_mode_count, present_modes.data());
+        res != VK_SUCCESS) {
+        abortGame("vkGetPhysicalDeviceSurfacePresentModesKHR() error: {}", vulkanResToString(res));
+    }
+    // for now, use Mailbox if available otherwise FIFO
+    if (std::find(present_modes.cbegin(), present_modes.cend(), VK_PRESENT_MODE_MAILBOX_KHR) != present_modes.cend()) {
+        m_present_mode = VK_PRESENT_MODE_MAILBOX_KHR;
+    }
+    else {
+        m_present_mode = VK_PRESENT_MODE_FIFO_KHR; // FIFO is always available
+    }
+
     // get capabilities. These can change, for example, if the window is made fullscreen or moved to another monitor.
-    VkSurfaceCapabilitiesKHR surface_caps{};
-    if (VkResult res = vkGetPhysicalDeviceSurfaceCapabilitiesKHR(m_device.getPhysicalDevice(), m_surface, &surface_caps); res != VK_SUCCESS) {
+    // minImageCount and maxImageCount can also change depending on desired present mode.
+    VkSurfacePresentModeEXT surface_present_mode{};
+    surface_present_mode.sType = VK_STRUCTURE_TYPE_SURFACE_PRESENT_MODE_EXT;
+    surface_present_mode.presentMode = m_present_mode;
+    VkPhysicalDeviceSurfaceInfo2KHR surface_info{};
+    surface_info.sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_SURFACE_INFO_2_KHR;
+    surface_info.pNext = &surface_present_mode;
+    surface_info.surface = m_surface;
+    VkSurfaceCapabilities2KHR surface_caps{};
+    surface_caps.sType = VK_STRUCTURE_TYPE_SURFACE_CAPABILITIES_2_KHR;
+    if (VkResult res = vkGetPhysicalDeviceSurfaceCapabilities2KHR(m_device.getPhysicalDevice(), &surface_info, &surface_caps); res != VK_SUCCESS) {
         abortGame("vkGetPhysicalDeviceSurfaceCapabilities2KHR() error: {}", vulkanResToString(res));
     }
 
@@ -60,44 +91,22 @@ void VulkanSwapchain::recreateSwapchain()
     m_surface_format = surface_formats[0];
     for (const VkSurfaceFormatKHR& surface_format : surface_formats) {
         if (surface_format.colorSpace == VK_COLOR_SPACE_SRGB_NONLINEAR_KHR) {
-            m_surface_format = surface_format;
-            if (surface_format.format == VK_FORMAT_B8G8R8A8_SRGB) {
+            if (surface_format.format == VK_FORMAT_B8G8R8A8_SRGB || surface_format.format == VK_FORMAT_R8G8B8A8_SRGB) {
+                m_surface_format = surface_format;
                 break;
             }
         }
     }
-    if (m_surface_format.colorSpace != VK_COLORSPACE_SRGB_NONLINEAR_KHR) {
-        GC_WARN("Swapchain surface is not using VK_COLORSPACE_SRGB_NONLINEAR_KHR");
-    }
-
-    // Get surface present modes
-    uint32_t present_mode_count{};
-    if (VkResult res = vkGetPhysicalDeviceSurfacePresentModesKHR(m_device.getPhysicalDevice(), m_surface, &present_mode_count, nullptr); res != VK_SUCCESS) {
-        abortGame("vkGetPhysicalDeviceSurfacePresentModesKHR() error: {}", vulkanResToString(res));
-    }
-    std::vector<VkPresentModeKHR> present_modes(present_mode_count);
-    if (VkResult res = vkGetPhysicalDeviceSurfacePresentModesKHR(m_device.getPhysicalDevice(), m_surface, &present_mode_count, present_modes.data());
-        res != VK_SUCCESS) {
-        abortGame("vkGetPhysicalDeviceSurfacePresentModesKHR() error: {}", vulkanResToString(res));
-    }
-
-    // for now, use Mailbox if available otherwise FIFO
-    if (std::find(present_modes.cbegin(), present_modes.cend(), VK_PRESENT_MODE_MAILBOX_KHR) != present_modes.cend()) {
-        m_present_mode = VK_PRESENT_MODE_MAILBOX_KHR;
-    }
-    else {
-        m_present_mode = VK_PRESENT_MODE_FIFO_KHR; // FIFO is always available
-    }
 
     // Get min image count
-    uint32_t min_image_count = surface_caps.minImageCount + 1;
-    if (surface_caps.maxImageCount > 0 && min_image_count > surface_caps.maxImageCount) {
-        min_image_count = surface_caps.maxImageCount;
+    uint32_t min_image_count = surface_caps.surfaceCapabilities.minImageCount + 1;
+    if (surface_caps.surfaceCapabilities.maxImageCount > 0 && min_image_count > surface_caps.surfaceCapabilities.maxImageCount) {
+        min_image_count = surface_caps.surfaceCapabilities.maxImageCount;
     }
 
     // Extent
-    if (surface_caps.currentExtent.width != UINT32_MAX) {
-        m_extent = surface_caps.currentExtent;
+    if (surface_caps.surfaceCapabilities.currentExtent.width != UINT32_MAX) {
+        m_extent = surface_caps.surfaceCapabilities.currentExtent;
     }
     else {
         // otherwise get extent from SDL
@@ -138,7 +147,7 @@ void VulkanSwapchain::recreateSwapchain()
     sc_info.imageSharingMode = VK_SHARING_MODE_EXCLUSIVE;
     sc_info.queueFamilyIndexCount = 0;                        // ignored with VK_SHARING_MODE_EXCLUSIVE
     sc_info.pQueueFamilyIndices = nullptr;                    // ignored with VK_SHARING_MODE_EXCLUSIVE
-    sc_info.preTransform = surface_caps.currentTransform;
+    sc_info.preTransform = surface_caps.surfaceCapabilities.currentTransform;
     sc_info.compositeAlpha = VK_COMPOSITE_ALPHA_OPAQUE_BIT_KHR;
     sc_info.presentMode = m_present_mode;
     sc_info.clipped = VK_TRUE;
@@ -165,12 +174,38 @@ void VulkanSwapchain::recreateSwapchain()
     }
 
     // (destroy old image views)
+    for (VkImageView image_view : m_image_views) {
+        vkDestroyImageView(m_device.getDevice(), image_view, nullptr);   
+    }
     // create image views
+    m_image_views.resize(image_count);
+    for (int i = 0; i < image_count; ++i) {
+        VkImageViewCreateInfo view_info{};
+        view_info.sType = VK_STRUCTURE_TYPE_IMAGE_VIEW_CREATE_INFO;
+        view_info.pNext = nullptr;
+        view_info.flags = 0;
+        view_info.image = m_images[i];
+        view_info.viewType = VK_IMAGE_VIEW_TYPE_2D;
+        view_info.format = sc_info.imageFormat;
+        view_info.components.r = VK_COMPONENT_SWIZZLE_IDENTITY;
+        view_info.components.g = VK_COMPONENT_SWIZZLE_IDENTITY;
+        view_info.components.b = VK_COMPONENT_SWIZZLE_IDENTITY;
+        view_info.components.a = VK_COMPONENT_SWIZZLE_IDENTITY;
+        view_info.subresourceRange.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT;
+        view_info.subresourceRange.baseMipLevel = 0;
+        view_info.subresourceRange.levelCount = 1;
+        view_info.subresourceRange.baseArrayLayer = 0;
+        view_info.subresourceRange.layerCount = 1;
+        if (VkResult res = vkCreateImageView(m_device.getDevice(), &view_info, nullptr, &m_image_views[i]); res != VK_SUCCESS) {
+            abortGame("vkCreateImageView() error: {}", vulkanResToString(res));
+        }
+    }
 
     // (destroy old depth/stencil image and image view)
     // create depth/stencil image and image view
 
     // done
+    GC_DEBUG("Recreated swapchain. new extent: ({}, {}), new image count: {}", sc_info.imageExtent.width, sc_info.imageExtent.height, image_count);
 }
 
 } // namespace gc

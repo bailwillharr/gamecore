@@ -21,6 +21,8 @@ public:
     ~VulkanRenderer();
 
     VulkanRenderer operator=(const VulkanRenderer&) = delete;
+
+    void recreateSwapchain() { m_swapchain.recreateSwapchain(); }
 };
 
 } // namespace gc

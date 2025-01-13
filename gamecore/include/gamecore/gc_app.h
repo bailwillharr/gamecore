@@ -46,6 +46,7 @@ public:
     Jobs& jobs();
     Content& content();
     Window& window();
+    VulkanRenderer& vulkanRenderer();
 
     // Call before using any engine functionality (apart from logging)
     // This function should be very fast and only bring gc::App to a usable state

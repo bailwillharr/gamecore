@@ -104,4 +104,10 @@ Window& App::window()
     return *m_window;
 }
 
+VulkanRenderer& App::vulkanRenderer()
+{
+    GC_ASSERT(m_vulkan_renderer);
+    return *m_vulkan_renderer;
+}
+
 } // namespace gc

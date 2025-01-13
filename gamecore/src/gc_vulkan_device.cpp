@@ -118,6 +118,7 @@ VulkanDevice::VulkanDevice()
 #ifdef GC_VULKAN_DEBUG
         instance_extensions.push_back(VK_EXT_DEBUG_UTILS_EXTENSION_NAME);
 #endif
+        instance_extensions.push_back(VK_KHR_GET_SURFACE_CAPABILITIES_2_EXTENSION_NAME);
 
         /* get SDL window required extensions for swapchain */
         uint32_t window_extension_count{};

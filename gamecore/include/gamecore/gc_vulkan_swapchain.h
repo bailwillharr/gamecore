@@ -22,6 +22,7 @@ class VulkanSwapchain {
 
     VkSwapchainKHR m_swapchain = VK_NULL_HANDLE;
     std::vector<VkImage> m_images{};
+    std::vector<VkImageView> m_image_views{};
 
 public:
     VulkanSwapchain(const VulkanDevice& device, SDL_Window* window);
@@ -31,7 +32,6 @@ public:
 
     VulkanSwapchain operator=(const VulkanSwapchain&) = delete;
 
-private:
     void recreateSwapchain();
 };
 
