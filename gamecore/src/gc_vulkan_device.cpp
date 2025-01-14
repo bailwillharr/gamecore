@@ -1,6 +1,4 @@
 /* Create the Vulkan graphics device and load its Vulkan function pointers. */
-/* No optional extension/feature checking will be done, as that heavily complicates code. */
-/* Any extension/feature used in the engine is required. */
 /* Debug message callback and validation layers are enabled if GC_VULKAN_DEBUG is defined. */
 
 #include "gamecore/gc_vulkan_device.h"
@@ -81,14 +79,30 @@ static VkPhysicalDevice choosePhysicalDevice(VkInstance instance)
     return physical_devices[0];
 }
 
-static std::vector<const char*> getRequiredExtensionNames()
+static void removeUnsupportedExtensions(VkPhysicalDevice physical_device, std::vector<const char*>& exts)
 {
-    std::vector<const char*> exts{};
-
-    // none yet
-    exts.push_back(VK_KHR_SWAPCHAIN_EXTENSION_NAME);
-
-    return exts;
+    uint32_t count{};
+    if (VkResult res = vkEnumerateDeviceExtensionProperties(physical_device, nullptr, &count, nullptr); res != VK_SUCCESS) {
+        abortGame("vkEnumerateDeviceExtensionProperties() error: {}", vulkanResToString(res));
+    }
+    std::vector<VkExtensionProperties> extension_properties(count);
+    if (VkResult res = vkEnumerateDeviceExtensionProperties(physical_device, nullptr, &count, extension_properties.data()); res != VK_SUCCESS) {
+        abortGame("vkEnumerateDeviceExtensionProperties() error: {}", vulkanResToString(res));
+    }
+    // not sure if string pointers are always the same so using strcmp just in case
+    for (int i = 0; i < exts.size(); ++i) {
+        bool supported = false;
+        for (const VkExtensionProperties& found_extension : extension_properties) {
+            if (strncmp(exts[i], found_extension.extensionName, sizeof(VkExtensionProperties::extensionName) - 1) == 0) {
+                supported = true;
+                break;
+            }
+        }
+        if (!supported) {
+            exts.erase(exts.cbegin() + i);
+            i = i - 1; // avoid skipping
+        }
+    }
 }
 
 VulkanDevice::VulkanDevice()
@@ -235,10 +249,26 @@ VulkanDevice::VulkanDevice()
         queue_infos.push_back(VkDeviceQueueCreateInfo{
             .sType = VK_STRUCTURE_TYPE_DEVICE_QUEUE_CREATE_INFO, .queueFamilyIndex = 0, .queueCount = 1, .pQueuePriorities = &queue_priority});
 
-        const std::vector<const char*> extensions_to_enable = getRequiredExtensionNames();
+        constexpr std::array<const char*, 1> REQUIRED_EXTENSION_NAMES{VK_KHR_SWAPCHAIN_EXTENSION_NAME};
+        constexpr std::array<const char*, 2> OPTIONAL_EXTENSION_NAMES{VK_EXT_MEMORY_PRIORITY_EXTENSION_NAME, VK_EXT_MEMORY_BUDGET_EXTENSION_NAME};
+
+        // First only add optional extension names and then remove any which are unsupported.
+        // Then add required extensions without checking for compatibility and create the device.
+        // If a required extension is unsupported, vkCreateDevice() will fail.
+        std::vector<const char*> extensions_to_enable(OPTIONAL_EXTENSION_NAMES.cbegin(), OPTIONAL_EXTENSION_NAMES.cend());
+        removeUnsupportedExtensions(m_physical_device, extensions_to_enable);
+        extensions_to_enable.insert(extensions_to_enable.cend(), REQUIRED_EXTENSION_NAMES.cbegin(), REQUIRED_EXTENSION_NAMES.cend());
+
+        // copy extension strings for isExtensionEnabled()
+        for (const char* const ext_c : extensions_to_enable) {
+            m_extensions_enabled.push_back(ext_c); // copy to std::string
+        }
 
         // enable features here:
         m_features_enabled.vulkan13.dynamicRendering = VK_TRUE;
+        if (isExtensionEnabled(VK_EXT_MEMORY_PRIORITY_EXTENSION_NAME)) {
+            m_features_enabled.memory_priority.memoryPriority = VK_TRUE;
+        }
 
         VkDeviceCreateInfo device_info{};
         device_info.sType = VK_STRUCTURE_TYPE_DEVICE_CREATE_INFO;
@@ -254,11 +284,6 @@ VulkanDevice::VulkanDevice()
             }
             vkDestroyInstance(m_instance, nullptr);
             abortGame("vkCreateDevice() error: {}", vulkanResToString(res));
-        }
-
-        // copy extension strings
-        for (const char* const ext_c : extensions_to_enable) {
-            m_extensions_enabled.push_back(ext_c); // copy to std::string
         }
     }
 

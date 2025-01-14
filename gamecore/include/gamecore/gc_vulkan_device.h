@@ -19,6 +19,7 @@ struct VulkanDeviceProperties {
 };
 
 struct VulkanDeviceFeatures {
+    VkPhysicalDeviceMemoryPriorityFeaturesEXT memory_priority{};
     VkPhysicalDeviceVulkan13Features vulkan13{};
     VkPhysicalDeviceVulkan12Features vulkan12{};
     VkPhysicalDeviceVulkan11Features vulkan11{};
@@ -26,8 +27,10 @@ struct VulkanDeviceFeatures {
 
     inline VulkanDeviceFeatures()
     {
+        memory_priority.sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_MEMORY_PRIORITY_FEATURES_EXT;
+        memory_priority.pNext = nullptr;
         vulkan13.sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_VULKAN_1_3_FEATURES;
-        vulkan13.pNext = nullptr;
+        vulkan13.pNext = &memory_priority;
         vulkan12.sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_VULKAN_1_2_FEATURES;
         vulkan12.pNext = &vulkan13;
         vulkan11.sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_VULKAN_1_1_FEATURES;

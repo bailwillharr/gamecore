@@ -17,8 +17,6 @@ int main([[maybe_unused]] int argc, [[maybe_unused]] char* argv[])
     }
     gc::app().window().setWindowVisibility(true);
 
-    gc::app().vulkanRenderer().recreateSwapchain();
-
     while (!gc::app().window().shouldQuit()) {
         gc::app().window().processEvents();
     }

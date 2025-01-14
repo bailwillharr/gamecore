@@ -55,9 +55,6 @@ VulkanAllocator::VulkanAllocator(const VulkanDevice& device)
                                       .vulkanApiVersion = VK_API_VERSION_1_3,
                                       .pTypeExternalMemoryHandleTypes = nullptr};
 
-    if (device.isExtensionEnabled(VK_KHR_MAINTENANCE_4_EXTENSION_NAME)) {
-        createInfo.flags |= VMA_ALLOCATOR_CREATE_EXT_MEMORY_BUDGET_BIT;
-    }
     if (device.isExtensionEnabled(VK_EXT_MEMORY_PRIORITY_EXTENSION_NAME)) {
         createInfo.flags |= VMA_ALLOCATOR_CREATE_EXT_MEMORY_PRIORITY_BIT;
     }
