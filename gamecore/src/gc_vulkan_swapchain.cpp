@@ -29,11 +29,27 @@ VulkanSwapchain::VulkanSwapchain(const VulkanDevice& device, SDL_Window* window_
         abortGame("Physical device does not support presentation to surface.");
     }
 
+    // find depth stencil format to use
+    {
+        VkFormatProperties depth_format_props{};
+        vkGetPhysicalDeviceFormatProperties(m_device.getPhysicalDevice(), VK_FORMAT_D32_SFLOAT_S8_UINT,
+                                            &depth_format_props); // 100% coverage on Windows. Just use this.
+        if (depth_format_props.optimalTilingFeatures & VK_FORMAT_FEATURE_DEPTH_STENCIL_ATTACHMENT_BIT) {
+            m_depth_stencil_format = VK_FORMAT_D32_SFLOAT_S8_UINT;
+        }
+        else {
+            abortGame("Failed to find suitable depth-buffer image format!");
+        }
+    }
+
     recreateSwapchain();
+
+    GC_TRACE("Initialised VulkanSwapchain");
 }
 
 VulkanSwapchain::~VulkanSwapchain()
 {
+    GC_TRACE("Destroying VulkanSwapchain...");
     for (VkImageView view : m_image_views) {
         vkDestroyImageView(m_device.getDevice(), view, nullptr);
     }
@@ -61,6 +77,7 @@ void VulkanSwapchain::recreateSwapchain()
     else {
         m_present_mode = VK_PRESENT_MODE_FIFO_KHR; // FIFO is always available
     }
+    m_present_mode = VK_PRESENT_MODE_FIFO_KHR; // TODO: change this
 
     // get capabilities. These can change, for example, if the window is made fullscreen or moved to another monitor.
     // minImageCount and maxImageCount can also change depending on desired present mode.
@@ -116,19 +133,6 @@ void VulkanSwapchain::recreateSwapchain()
         }
         m_extent.width = static_cast<uint32_t>(w);
         m_extent.height = static_cast<uint32_t>(h);
-    }
-
-    // find depth stencil format to use
-    {
-        VkFormatProperties depth_format_props{};
-        vkGetPhysicalDeviceFormatProperties(m_device.getPhysicalDevice(), VK_FORMAT_D32_SFLOAT_S8_UINT,
-                                            &depth_format_props); // 100% coverage on Windows. Just use this.
-        if (depth_format_props.optimalTilingFeatures & VK_FORMAT_FEATURE_DEPTH_STENCIL_ATTACHMENT_BIT) {
-            m_depth_stencil_format = VK_FORMAT_D32_SFLOAT_S8_UINT;
-        }
-        else {
-            abortGame("Failed to find suitable depth-buffer image format!");
-        }
     }
 
     // Finally create swapchain

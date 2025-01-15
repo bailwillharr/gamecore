@@ -14,6 +14,9 @@ class VulkanRenderer {
     VulkanAllocator m_allocator;
     VulkanSwapchain m_swapchain;
 
+    VkCommandPool m_cmd_pool = VK_NULL_HANDLE;
+    VkFence m_image_available_fence = VK_NULL_HANDLE;
+
 public:
     VulkanRenderer(SDL_Window* window_handle);
     VulkanRenderer(const VulkanRenderer&) = delete;
@@ -21,6 +24,9 @@ public:
     ~VulkanRenderer();
 
     VulkanRenderer operator=(const VulkanRenderer&) = delete;
+
+    // Call to render the frame.
+    void acquireAndPresent();
 
 };
 

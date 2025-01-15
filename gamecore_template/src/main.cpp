@@ -12,13 +12,11 @@ int main([[maybe_unused]] int argc, [[maybe_unused]] char* argv[])
     gc::App::initialise();
 
     gc::app().window().setTitle("Hello world!");
-    if (!gc::app().window().setSize(1920, 1080, true)) {
-        GC_ERROR("Failed to set window size");
-    }
     gc::app().window().setWindowVisibility(true);
 
     while (!gc::app().window().shouldQuit()) {
         gc::app().window().processEvents();
+        gc::app().vulkanRenderer().acquireAndPresent();
     }
 
     gc::App::shutdown();

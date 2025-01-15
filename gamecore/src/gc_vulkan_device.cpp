@@ -239,15 +239,33 @@ VulkanDevice::VulkanDevice()
                          props.minImageTransferGranularity.depth);
             }
         }
-        if (!SDL_Vulkan_GetPresentationSupport(m_instance, m_physical_device, 0)) {
+
+        /* get primary queue family (first queue that supports graphics) */
+        m_main_queue.queue = VK_NULL_HANDLE; // this is set just after device is created
+        m_main_queue.queue_family_index = 0;
+        for (const VkQueueFamilyProperties& props : queue_family_properties) {
+            if (props.queueFlags & VK_QUEUE_GRAPHICS_BIT) {
+                break;
+            }
+            ++m_main_queue.queue_family_index;
+        }
+        if (m_main_queue.queue_family_index == queue_family_properties.size())
+        {
+            abortGame("No Vulkan device queue with graphics support found.");
+        }
+
+        if (!SDL_Vulkan_GetPresentationSupport(m_instance, m_physical_device, m_main_queue.queue_family_index)) {
             /* Ensure queue family #0 supports presentation. */
             /* All real Vulkan capable GPUs are going to support presentation. This is here just in case. */
             abortGame("Vulkan queue family #0 doesn't support presentation.");
         }
         std::vector<VkDeviceQueueCreateInfo> queue_infos{};
         const float queue_priority = 1.0f;
-        queue_infos.push_back(VkDeviceQueueCreateInfo{
-            .sType = VK_STRUCTURE_TYPE_DEVICE_QUEUE_CREATE_INFO, .queueFamilyIndex = 0, .queueCount = 1, .pQueuePriorities = &queue_priority});
+        // For now only create a main queue for graphics operations
+        queue_infos.push_back(VkDeviceQueueCreateInfo{.sType = VK_STRUCTURE_TYPE_DEVICE_QUEUE_CREATE_INFO,
+                                                      .queueFamilyIndex = m_main_queue.queue_family_index,
+                                                      .queueCount = 1,
+                                                      .pQueuePriorities = &queue_priority});
 
         constexpr std::array<const char*, 1> REQUIRED_EXTENSION_NAMES{VK_KHR_SWAPCHAIN_EXTENSION_NAME};
         constexpr std::array<const char*, 2> OPTIONAL_EXTENSION_NAMES{VK_EXT_MEMORY_PRIORITY_EXTENSION_NAME, VK_EXT_MEMORY_BUDGET_EXTENSION_NAME};
@@ -266,6 +284,7 @@ VulkanDevice::VulkanDevice()
 
         // enable features here:
         m_features_enabled.vulkan13.dynamicRendering = VK_TRUE;
+        m_features_enabled.vulkan13.synchronization2 = VK_TRUE;
         if (isExtensionEnabled(VK_EXT_MEMORY_PRIORITY_EXTENSION_NAME)) {
             m_features_enabled.memory_priority.memoryPriority = VK_TRUE;
         }
@@ -290,8 +309,7 @@ VulkanDevice::VulkanDevice()
     volkLoadDevice(m_device);
 
     { // Get Queues
-        vkGetDeviceQueue(m_device, 0, 0, &m_main_queue.queue);
-        m_main_queue.queue_family_index = 0;
+        vkGetDeviceQueue(m_device, m_main_queue.queue_family_index, 0, &m_main_queue.queue);
     }
 
     GC_TRACE("Initialised VulkanDevice");

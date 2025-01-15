@@ -63,9 +63,10 @@ public:
 
     VulkanDevice operator=(const VulkanDevice&) = delete;
 
-    inline VkInstance getInstance() const { return m_instance; }
-    inline VkDevice getDevice() const { return m_device; }
-    inline VkPhysicalDevice getPhysicalDevice() const { return m_physical_device; }
+    inline const VkInstance& getInstance() const { return m_instance; }
+    inline const VkDevice& getDevice() const { return m_device; }
+    inline const VkPhysicalDevice& getPhysicalDevice() const { return m_physical_device; }
+    inline const VulkanQueue& getMainQueue() const { return m_main_queue; }
 
     bool isExtensionEnabled(std::string_view name) const;
 };

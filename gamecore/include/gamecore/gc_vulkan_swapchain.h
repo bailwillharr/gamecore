@@ -32,6 +32,8 @@ public:
 
     VulkanSwapchain operator=(const VulkanSwapchain&) = delete;
 
+    const VkSwapchainKHR& getSwapchain() { return m_swapchain; }
+
     void recreateSwapchain();
 };
 
