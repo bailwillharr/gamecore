@@ -1,5 +1,7 @@
 #include "gamecore/gc_vulkan_renderer.h"
 
+#include <cmath>
+
 #include <SDL3/SDL_vulkan.h>
 
 #include "gamecore/gc_vulkan_common.h"

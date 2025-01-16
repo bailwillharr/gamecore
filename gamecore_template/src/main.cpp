@@ -14,6 +14,7 @@ int main([[maybe_unused]] int argc, [[maybe_unused]] char* argv[])
     gc::app().window().setTitle("Hello world!");
     gc::app().window().setWindowVisibility(true);
     gc::app().window().setIsResizable(true);
+    gc::app().window().setSize(1920, 1080, true);
 
     while (!gc::app().window().shouldQuit()) {
         gc::app().window().processEvents();

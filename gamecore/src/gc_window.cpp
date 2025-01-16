@@ -147,9 +147,8 @@ bool Window::setSize(int width, int height, bool fullscreen)
         }
     }
 
-    SDL_ClearError(); // not sure if SDL_SyncWindow() always calls SDL_SetError()
     if (!SDL_SyncWindow(m_window_handle)) {
-        GC_ERROR("SDL_SyncWindow() error: {}", SDL_GetError());
+        GC_ERROR("SDL_SyncWindow() timed out");
         success = false;
     }
     return success;
