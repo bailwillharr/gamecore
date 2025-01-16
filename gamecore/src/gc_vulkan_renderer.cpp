@@ -16,6 +16,8 @@ namespace gc {
 static VkCommandBuffer recordCommandBuffer(const VulkanDevice& device, VkCommandPool pool, VkImage swapchain_image, VkImageView image_view,
                                            VkExtent2D image_extent)
 {
+    constexpr bool FUN_CLEAR_COLOR = false;
+
     VkCommandBuffer cmd = VK_NULL_HANDLE;
     VkCommandBufferAllocateInfo cmdAllocInfo{};
     cmdAllocInfo.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_ALLOCATE_INFO;
@@ -63,10 +65,18 @@ static VkCommandBuffer recordCommandBuffer(const VulkanDevice& device, VkCommand
         color_attachment.resolveMode = VK_RESOLVE_MODE_NONE;
         color_attachment.loadOp = VK_ATTACHMENT_LOAD_OP_CLEAR;
         color_attachment.storeOp = VK_ATTACHMENT_STORE_OP_STORE;
-        color_attachment.clearValue.color.float32[0] = (sinf(static_cast<float>(image_extent.width)) + 1.0f) * 0.5f;
-        color_attachment.clearValue.color.float32[1] = (cosf(static_cast<float>(image_extent.height)) + 1.0f) * 0.5f;
-        color_attachment.clearValue.color.float32[2] = (sinf(static_cast<float>(image_extent.height + image_extent.width)) + 1.0f) * 0.5f;
-        color_attachment.clearValue.color.float32[3] = 1.0f;
+        if (FUN_CLEAR_COLOR) {
+            color_attachment.clearValue.color.float32[0] = (sinf(static_cast<float>(image_extent.width)) + 1.0f) * 0.5f;
+            color_attachment.clearValue.color.float32[1] = (cosf(static_cast<float>(image_extent.height)) + 1.0f) * 0.5f;
+            color_attachment.clearValue.color.float32[2] = (sinf(static_cast<float>(image_extent.height + image_extent.width)) + 1.0f) * 0.5f;
+            color_attachment.clearValue.color.float32[3] = 1.0f;
+        }
+        else {
+            color_attachment.clearValue.color.float32[0] = 1.0f;
+            color_attachment.clearValue.color.float32[1] = 1.0f;
+            color_attachment.clearValue.color.float32[2] = 1.0f;
+            color_attachment.clearValue.color.float32[3] = 1.0f;
+        }
         VkRenderingInfo rendering_info{};
         rendering_info.sType = VK_STRUCTURE_TYPE_RENDERING_INFO;
         rendering_info.renderArea.offset = VkOffset2D{0, 0};
@@ -126,12 +136,16 @@ VulkanRenderer::VulkanRenderer(SDL_Window* window_handle) : m_device(), m_alloca
         m_cmd_buffers.push_back(buf);
     }
 
-    VkSemaphoreCreateInfo sem_info{};
-    sem_info.sType = VK_STRUCTURE_TYPE_SEMAPHORE_CREATE_INFO;
-    GC_CHECKVK(vkCreateSemaphore(m_device.getDevice(), &sem_info, nullptr, &m_image_acquired_semaphore));
-    VkFenceCreateInfo fence_info{};
-    fence_info.sType = VK_STRUCTURE_TYPE_FENCE_CREATE_INFO;
-    GC_CHECKVK(vkCreateFence(m_device.getDevice(), &fence_info, nullptr, &m_ready_to_present_fence));
+    for (auto& per_frame_data : m_per_frame_in_flight) {
+        VkFenceCreateInfo fence_info{};
+        fence_info.sType = VK_STRUCTURE_TYPE_FENCE_CREATE_INFO;
+        fence_info.flags = VK_FENCE_CREATE_SIGNALED_BIT;
+        GC_CHECKVK(vkCreateFence(m_device.getDevice(), &fence_info, nullptr, &per_frame_data.rendering_finished_fence));
+        VkSemaphoreCreateInfo sem_info{};
+        sem_info.sType = VK_STRUCTURE_TYPE_SEMAPHORE_CREATE_INFO;
+        GC_CHECKVK(vkCreateSemaphore(m_device.getDevice(), &sem_info, nullptr, &per_frame_data.image_acquired_semaphore));
+        GC_CHECKVK(vkCreateSemaphore(m_device.getDevice(), &sem_info, nullptr, &per_frame_data.ready_to_present_semaphore));
+    }
 
     GC_TRACE("Initialised VulkanRenderer");
 }
@@ -140,25 +154,37 @@ VulkanRenderer::~VulkanRenderer()
 {
     GC_TRACE("Destroying VulkanRenderer...");
 
-    vkDestroyFence(m_device.getDevice(), m_ready_to_present_fence, nullptr);
-    vkDestroySemaphore(m_device.getDevice(), m_image_acquired_semaphore, nullptr);
+    for (auto& per_frame_data : m_per_frame_in_flight) {
+        vkDestroySemaphore(m_device.getDevice(), per_frame_data.ready_to_present_semaphore, nullptr);
+        vkDestroySemaphore(m_device.getDevice(), per_frame_data.image_acquired_semaphore, nullptr);
+        vkDestroyFence(m_device.getDevice(), per_frame_data.rendering_finished_fence, nullptr);
+    }
     vkFreeCommandBuffers(m_device.getDevice(), m_cmd_pool, static_cast<uint32_t>(m_cmd_buffers.size()), m_cmd_buffers.data());
     vkDestroyCommandPool(m_device.getDevice(), m_cmd_pool, nullptr);
 }
 
 void VulkanRenderer::acquireAndPresent()
 {
+    uint32_t frame_in_flight_index = m_framecount % VULKAN_FRAMES_IN_FLIGHT;
+
+    GC_CHECKVK(vkWaitForFences(m_device.getDevice(), 1, &m_per_frame_in_flight[frame_in_flight_index].rendering_finished_fence, VK_TRUE, UINT64_MAX));
+    GC_CHECKVK(vkResetFences(m_device.getDevice(), 1, &m_per_frame_in_flight[frame_in_flight_index].rendering_finished_fence));
+
     uint32_t image_index{};
-    if (VkResult res =
-            vkAcquireNextImageKHR(m_device.getDevice(), m_swapchain.getSwapchain(), UINT64_MAX, m_image_acquired_semaphore, VK_NULL_HANDLE, &image_index);
+    if (VkResult res = vkAcquireNextImageKHR(m_device.getDevice(), m_swapchain.getSwapchain(), UINT64_MAX,
+                                             m_per_frame_in_flight[frame_in_flight_index].image_acquired_semaphore, VK_NULL_HANDLE, &image_index);
         res != VK_SUCCESS && res != VK_SUBOPTIMAL_KHR) {
         abortGame("vkAcquireNextImageKHR() error: {}", vulkanResToString(res));
     }
 
     VkSemaphoreSubmitInfo wait_semaphore_info{};
     wait_semaphore_info.sType = VK_STRUCTURE_TYPE_SEMAPHORE_SUBMIT_INFO;
-    wait_semaphore_info.semaphore = m_image_acquired_semaphore;
+    wait_semaphore_info.semaphore = m_per_frame_in_flight[frame_in_flight_index].image_acquired_semaphore;
     wait_semaphore_info.stageMask = VK_PIPELINE_STAGE_2_COLOR_ATTACHMENT_OUTPUT_BIT_KHR;
+    VkSemaphoreSubmitInfo signal_semaphore_info{};
+    signal_semaphore_info.sType = VK_STRUCTURE_TYPE_SEMAPHORE_SUBMIT_INFO;
+    signal_semaphore_info.semaphore = m_per_frame_in_flight[frame_in_flight_index].ready_to_present_semaphore;
+    signal_semaphore_info.stageMask = VK_PIPELINE_STAGE_2_COLOR_ATTACHMENT_OUTPUT_BIT_KHR;
     VkCommandBufferSubmitInfo cmd_buf_info{};
     cmd_buf_info.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_SUBMIT_INFO;
     cmd_buf_info.commandBuffer = m_cmd_buffers[image_index];
@@ -168,17 +194,14 @@ void VulkanRenderer::acquireAndPresent()
     submit_info.pWaitSemaphoreInfos = &wait_semaphore_info;
     submit_info.commandBufferInfoCount = 1;
     submit_info.pCommandBufferInfos = &cmd_buf_info;
-    submit_info.signalSemaphoreInfoCount = 0;
-    submit_info.pSignalSemaphoreInfos = nullptr;
-    GC_CHECKVK(vkQueueSubmit2(m_device.getMainQueue().queue, 1, &submit_info, m_ready_to_present_fence));
-
-    GC_CHECKVK(vkWaitForFences(m_device.getDevice(), 1, &m_ready_to_present_fence, VK_TRUE, UINT64_MAX));
-    GC_CHECKVK(vkResetFences(m_device.getDevice(), 1, &m_ready_to_present_fence));
+    submit_info.signalSemaphoreInfoCount = 1;
+    submit_info.pSignalSemaphoreInfos = &signal_semaphore_info;
+    GC_CHECKVK(vkQueueSubmit2(m_device.getMainQueue().queue, 1, &submit_info, m_per_frame_in_flight[frame_in_flight_index].rendering_finished_fence));
 
     VkPresentInfoKHR present_info{};
     present_info.sType = VK_STRUCTURE_TYPE_PRESENT_INFO_KHR;
-    present_info.waitSemaphoreCount = 0;
-    present_info.pWaitSemaphores = nullptr;
+    present_info.waitSemaphoreCount = 1;
+    present_info.pWaitSemaphores = &m_per_frame_in_flight[frame_in_flight_index].ready_to_present_semaphore;
     present_info.swapchainCount = 1;
     present_info.pSwapchains = &m_swapchain.getSwapchain();
     present_info.pImageIndices = &image_index;
@@ -198,6 +221,8 @@ void VulkanRenderer::acquireAndPresent()
             abortGame("vkQueuePresentKHR() error: {}", vulkanResToString(res));
         }
     }
+
+    ++m_framecount;
 }
 
 } // namespace gc

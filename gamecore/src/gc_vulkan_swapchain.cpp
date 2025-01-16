@@ -12,6 +12,8 @@
 
 namespace gc {
 
+static constexpr bool USE_MAILBOX_IF_AVAILABLE = true;
+
 VulkanSwapchain::VulkanSwapchain(const VulkanDevice& device, SDL_Window* window_handle) : m_device(device), m_window_handle(window_handle)
 {
     if (!SDL_Vulkan_GetPresentationSupport(m_device.getInstance(), m_device.getPhysicalDevice(), 0)) {
@@ -71,13 +73,14 @@ void VulkanSwapchain::recreateSwapchain()
         abortGame("vkGetPhysicalDeviceSurfacePresentModesKHR() error: {}", vulkanResToString(res));
     }
     // for now, use Mailbox if available otherwise FIFO
-    if (std::find(present_modes.cbegin(), present_modes.cend(), VK_PRESENT_MODE_MAILBOX_KHR) != present_modes.cend()) {
+    if (USE_MAILBOX_IF_AVAILABLE && (std::find(present_modes.cbegin(), present_modes.cend(), VK_PRESENT_MODE_MAILBOX_KHR) != present_modes.cend())) {
+        GC_DEBUG("Using MAILBOX present mode");
         m_present_mode = VK_PRESENT_MODE_MAILBOX_KHR;
     }
     else {
+        GC_DEBUG("Using FIFO present mode");
         m_present_mode = VK_PRESENT_MODE_FIFO_KHR; // FIFO is always available
     }
-    m_present_mode = VK_PRESENT_MODE_FIFO_KHR; // TODO: change this
 
     // get capabilities. These can change, for example, if the window is made fullscreen or moved to another monitor.
     // minImageCount and maxImageCount can also change depending on desired present mode.
