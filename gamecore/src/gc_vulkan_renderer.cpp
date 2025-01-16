@@ -154,6 +154,9 @@ VulkanRenderer::~VulkanRenderer()
 {
     GC_TRACE("Destroying VulkanRenderer...");
 
+    /* ensure GPU is not using any command buffers etc. */
+    GC_CHECKVK(vkDeviceWaitIdle(m_device.getDevice()));
+
     for (auto& per_frame_data : m_per_frame_in_flight) {
         vkDestroySemaphore(m_device.getDevice(), per_frame_data.ready_to_present_semaphore, nullptr);
         vkDestroySemaphore(m_device.getDevice(), per_frame_data.image_acquired_semaphore, nullptr);
