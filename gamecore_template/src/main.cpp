@@ -16,7 +16,7 @@ int main([[maybe_unused]] int argc, [[maybe_unused]] char* argv[])
 
     while (!gc::app().window().shouldQuit()) {
         gc::app().window().processEvents();
-        gc::app().vulkanRenderer().acquireAndPresent();
+//        gc::app().vulkanRenderer().acquireAndPresent();
     }
 
     gc::App::shutdown();

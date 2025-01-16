@@ -11,7 +11,10 @@
 
 #include <vk_mem_alloc.h>
 
+#include "gamecore/gc_abort.h"
 #include "gamecore/gc_logger.h"
+
+#define GC_CHECKVK(fun) vulkanCheckError(fun, #fun)
 
 namespace gc {
 
@@ -128,4 +131,11 @@ inline std::string vulkanResToString(VkResult res)
     }
 }
 
-} // namespace gc
+inline void vulkanCheckError(VkResult res, const char* function_name)
+{
+	if (res != VK_SUCCESS) {
+		abortGame("Vulkan function {} returned {}", function_name, vulkanResToString(res));
+	}
+}
+
+}

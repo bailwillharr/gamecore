@@ -32,8 +32,6 @@ static VkCommandBuffer recordCommandBuffer(const VulkanDevice& device, VkCommand
         abortGame("vkBeginCommandBuffer() error: {}", vulkanResToString(res));
     }
 
-
-
     if (VkResult res = vkEndCommandBuffer(cmd); res != VK_SUCCESS) {
         abortGame("vkEndCommandBuffer() error: {}", vulkanResToString(res));
     }
@@ -43,17 +41,6 @@ static VkCommandBuffer recordCommandBuffer(const VulkanDevice& device, VkCommand
 
 VulkanRenderer::VulkanRenderer(SDL_Window* window_handle) : m_device(), m_allocator(m_device), m_swapchain(m_device, window_handle)
 {
-    VkFenceCreateInfo fence_info{};
-    fence_info.flags = 0;
-    fence_info.sType = VK_STRUCTURE_TYPE_FENCE_CREATE_INFO;
-    if (VkResult res = vkCreateFence(m_device.getDevice(), &fence_info, nullptr, &m_image_available_fence); res != VK_SUCCESS) {
-        abortGame("vkCreateFence() error: {}", vulkanResToString(res));
-    }
-    
-    VkSemaphoreCreateInfo semaphore_info{};
-    semaphore_info.sType = VK_STRUCTURE_TYPE_SEMAPHORE_CREATE_INFO;
-
-
     VkCommandPoolCreateInfo pool_info{};
     pool_info.sType = VK_STRUCTURE_TYPE_COMMAND_POOL_CREATE_INFO;
     pool_info.flags = 0;
@@ -62,7 +49,7 @@ VulkanRenderer::VulkanRenderer(SDL_Window* window_handle) : m_device(), m_alloca
         abortGame("vkCreateCommandPool() error: {}", vulkanResToString(res));
     }
 
-    recordCommandBuffer(m_device, m_cmd_pool);
+    GC_CHECKVK(vkCreateBuffer(VK_NULL_HANDLE, nullptr, nullptr, nullptr));
 
     GC_TRACE("Initialised VulkanRenderer");
 }
@@ -72,28 +59,26 @@ VulkanRenderer::~VulkanRenderer()
     GC_TRACE("Destroying VulkanRenderer...");
 
     vkDestroyCommandPool(m_device.getDevice(), m_cmd_pool, nullptr);
-    vkDestroyFence(m_device.getDevice(), m_image_available_fence, nullptr);
 }
 
 void VulkanRenderer::acquireAndPresent()
 {
     uint32_t image_index{};
     // signals image_available_fence once an image is acquired
-    if (VkResult res =
-            vkAcquireNextImageKHR(m_device.getDevice(), m_swapchain.getSwapchain(), UINT64_MAX, VK_NULL_HANDLE, m_image_available_fence, &image_index);
+    if (VkResult res = vkAcquireNextImageKHR(m_device.getDevice(), m_swapchain.getSwapchain(), UINT64_MAX, VK_NULL_HANDLE, VK_NULL_HANDLE, &image_index);
         res != VK_SUCCESS && res != VK_SUBOPTIMAL_KHR) {
         abortGame("vkAcquireNextImageKHR() error: {}", vulkanResToString(res));
     }
 
-    if (VkResult res = vkWaitForFences(m_device.getDevice(), 1, &m_image_available_fence, VK_TRUE, UINT64_MAX); res != VK_SUCCESS) {
+    if (VkResult res = vkWaitForFences(m_device.getDevice(), 1, nullptr, VK_TRUE, UINT64_MAX); res != VK_SUCCESS) {
         abortGame("vkWaitForFences() error: {}", vulkanResToString(res));
     }
-    if (VkResult res = vkResetFences(m_device.getDevice(), 1, &m_image_available_fence); res != VK_SUCCESS) {
+    if (VkResult res = vkResetFences(m_device.getDevice(), 1, nullptr); res != VK_SUCCESS) {
         abortGame("vkResetFences() error: {}", vulkanResToString(res));
     }
 
-    // 
-    
+    //
+
     VkPresentInfoKHR present_info{};
     present_info.sType = VK_STRUCTURE_TYPE_PRESENT_INFO_KHR;
     present_info.waitSemaphoreCount = 0;

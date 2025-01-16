@@ -48,7 +48,7 @@ static constexpr std::uint32_t crc32(std::string_view id)
 
 /* Get the compile-time hash of the Asset ID. */
 /* Use AssetIDRuntime() for runtime equivalent. */
-static consteval std::uint32_t assetID(std::string_view id) { return crc32(id); }
+[[maybe_unused]] static consteval std::uint32_t assetID(std::string_view id) { return crc32(id); }
 
 /* get the runtime hash of the Asset ID */
 static std::uint32_t assetIDRuntime(std::string_view id) { return crc32(id); }
@@ -75,17 +75,18 @@ static std::uint32_t assetIDRuntime(std::string_view id) { return crc32(id); }
  * Max size of the gcpak file is very large (64-bit offsets)
  */
 
-
 struct GcpakHeader {
     std::array<std::uint8_t, 6> format_identifier; // null-terminated "GCPAK"
     std::uint16_t format_version;                  // currently 1
     std::uint32_t num_entries;
 };
 
-enum class GcpakAssetType : std::uint32_t { RAW = 0, };
+enum class GcpakAssetType : std::uint32_t {
+    RAW = 0,
+};
 
 struct GcpakAssetEntry {
-    std::size_t offset;              // absolute positition of start of asset data in the file
+    std::size_t offset; // absolute positition of start of asset data in the file
     std::uint32_t crc32_id;
     GcpakAssetType asset_type;
     std::uint32_t size_uncompressed; // set to zero for no compression
@@ -229,7 +230,7 @@ static void writeHeader(std::ostream& file, const GcpakHeader& header)
     }
 }
 
-static std::filesystem::path openFileDialog(const std::vector<std::string>& extensions = {})
+static std::filesystem::path openFileDialog([[maybe_unused]] const std::vector<std::string>& extensions = {})
 {
 #ifdef _WIN32
 
@@ -330,7 +331,7 @@ int main(int argc, char* argv[])
     else {
         gcpak_path = openFileDialog({"gcpak"});
     }
-    
+
     auto file = openGcpak(gcpak_path);
 
     std::cout << "Opened " << gcpak_path.filename().string() << "\n";
@@ -431,6 +432,7 @@ int main(int argc, char* argv[])
                 }
 
                 // ask for compression
+                /*
                 std::cout << "Use compression? (y/n): ";
                 std::string compression_response;
                 std::cin >> compression_response;
@@ -438,6 +440,7 @@ int main(int argc, char* argv[])
                 if (std::toupper(compression_response[0]) == 'Y') {
                     use_compression = true;
                 }
+                */
 
                 // read file into buffer
                 asset_file.seekg(0, std::ios::end);

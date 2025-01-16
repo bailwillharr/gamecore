@@ -20,8 +20,8 @@
 
 namespace gc {
 
-static VkBool32 vulkanMessageCallback(VkDebugUtilsMessageSeverityFlagBitsEXT message_severity, VkDebugUtilsMessageTypeFlagsEXT message_types,
-                                      const VkDebugUtilsMessengerCallbackDataEXT* callback_data, void* user_data)
+static VkBool32 vulkanMessageCallback(VkDebugUtilsMessageSeverityFlagBitsEXT message_severity, [[maybe_unused]] VkDebugUtilsMessageTypeFlagsEXT message_types,
+                                      const VkDebugUtilsMessengerCallbackDataEXT* callback_data, [[maybe_unused]] void* user_data)
 {
     std::string message_type{"("};
     if (message_severity & VK_DEBUG_UTILS_MESSAGE_SEVERITY_VERBOSE_BIT_EXT) {
@@ -90,7 +90,7 @@ static void removeUnsupportedExtensions(VkPhysicalDevice physical_device, std::v
         abortGame("vkEnumerateDeviceExtensionProperties() error: {}", vulkanResToString(res));
     }
     // not sure if string pointers are always the same so using strcmp just in case
-    for (int i = 0; i < exts.size(); ++i) {
+    for (size_t i = 0; i < exts.size(); ++i) {
         bool supported = false;
         for (const VkExtensionProperties& found_extension : extension_properties) {
             if (strncmp(exts[i], found_extension.extensionName, sizeof(VkExtensionProperties::extensionName) - 1) == 0) {
@@ -249,8 +249,7 @@ VulkanDevice::VulkanDevice()
             }
             ++m_main_queue.queue_family_index;
         }
-        if (m_main_queue.queue_family_index == queue_family_properties.size())
-        {
+        if (m_main_queue.queue_family_index == queue_family_properties.size()) {
             abortGame("No Vulkan device queue with graphics support found.");
         }
 
@@ -263,6 +262,7 @@ VulkanDevice::VulkanDevice()
         const float queue_priority = 1.0f;
         // For now only create a main queue for graphics operations
         queue_infos.push_back(VkDeviceQueueCreateInfo{.sType = VK_STRUCTURE_TYPE_DEVICE_QUEUE_CREATE_INFO,
+                                                      .pNext = nullptr,
                                                       .queueFamilyIndex = m_main_queue.queue_family_index,
                                                       .queueCount = 1,
                                                       .pQueuePriorities = &queue_priority});
@@ -287,6 +287,10 @@ VulkanDevice::VulkanDevice()
         m_features_enabled.vulkan13.synchronization2 = VK_TRUE;
         if (isExtensionEnabled(VK_EXT_MEMORY_PRIORITY_EXTENSION_NAME)) {
             m_features_enabled.memory_priority.memoryPriority = VK_TRUE;
+        }
+        else {
+            // unlink memory priority struct from m_features_enabled chain
+            m_features_enabled.vulkan13.pNext = m_features_enabled.memory_priority.pNext;
         }
 
         VkDeviceCreateInfo device_info{};

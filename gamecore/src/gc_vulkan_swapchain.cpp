@@ -149,8 +149,8 @@ void VulkanSwapchain::recreateSwapchain()
     sc_info.imageArrayLayers = 1;
     sc_info.imageUsage = VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT; // it's VkImageView is used with a VkFramebuffer
     sc_info.imageSharingMode = VK_SHARING_MODE_EXCLUSIVE;
-    sc_info.queueFamilyIndexCount = 0;                        // ignored with VK_SHARING_MODE_EXCLUSIVE
-    sc_info.pQueueFamilyIndices = nullptr;                    // ignored with VK_SHARING_MODE_EXCLUSIVE
+    sc_info.queueFamilyIndexCount = 0;     // ignored with VK_SHARING_MODE_EXCLUSIVE
+    sc_info.pQueueFamilyIndices = nullptr; // ignored with VK_SHARING_MODE_EXCLUSIVE
     sc_info.preTransform = surface_caps.surfaceCapabilities.currentTransform;
     sc_info.compositeAlpha = VK_COMPOSITE_ALPHA_OPAQUE_BIT_KHR;
     sc_info.presentMode = m_present_mode;
@@ -172,18 +172,17 @@ void VulkanSwapchain::recreateSwapchain()
         abortGame("vkGetSwapchainImagesKHR() error: {}", vulkanResToString(res));
     }
     m_images.resize(image_count);
-    if (VkResult res = vkGetSwapchainImagesKHR(m_device.getDevice(), m_swapchain, &image_count, m_images.data());
-        res != VK_SUCCESS) {
+    if (VkResult res = vkGetSwapchainImagesKHR(m_device.getDevice(), m_swapchain, &image_count, m_images.data()); res != VK_SUCCESS) {
         abortGame("vkGetPhysicalDeviceSurfacePresentModesKHR() error: {}", vulkanResToString(res));
     }
 
     // (destroy old image views)
     for (VkImageView image_view : m_image_views) {
-        vkDestroyImageView(m_device.getDevice(), image_view, nullptr);   
+        vkDestroyImageView(m_device.getDevice(), image_view, nullptr);
     }
     // create image views
     m_image_views.resize(image_count);
-    for (int i = 0; i < image_count; ++i) {
+    for (size_t i = 0; i < image_count; ++i) {
         VkImageViewCreateInfo view_info{};
         view_info.sType = VK_STRUCTURE_TYPE_IMAGE_VIEW_CREATE_INFO;
         view_info.pNext = nullptr;

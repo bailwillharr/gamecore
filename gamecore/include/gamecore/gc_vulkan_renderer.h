@@ -15,7 +15,7 @@ class VulkanRenderer {
     VulkanSwapchain m_swapchain;
 
     VkCommandPool m_cmd_pool = VK_NULL_HANDLE;
-    VkFence m_image_available_fence = VK_NULL_HANDLE;
+    VkSemaphore image_acquired_semaphore = VK_NULL_HANDLE;
 
 public:
     VulkanRenderer(SDL_Window* window_handle);
@@ -27,7 +27,6 @@ public:
 
     // Call to render the frame.
     void acquireAndPresent();
-
 };
 
 } // namespace gc
