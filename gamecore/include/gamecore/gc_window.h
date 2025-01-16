@@ -42,6 +42,7 @@ public:
     void setTitle(const std::string& title);
     // Returns false on failure
     bool setSize(int width, int height, bool fullscreen);
+    void setIsResizable(bool resizable);
 
 private:
     std::optional<SDL_DisplayMode> findDisplayMode(int width, int height) const;

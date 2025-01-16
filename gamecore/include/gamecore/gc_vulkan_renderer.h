@@ -1,5 +1,7 @@
 #pragma once
 
+#include <vector>
+
 #include <SDL3/SDL_vulkan.h>
 
 #include "gamecore/gc_vulkan_common.h"
@@ -15,7 +17,9 @@ class VulkanRenderer {
     VulkanSwapchain m_swapchain;
 
     VkCommandPool m_cmd_pool = VK_NULL_HANDLE;
-    VkSemaphore image_acquired_semaphore = VK_NULL_HANDLE;
+    std::vector<VkCommandBuffer> m_cmd_buffers{};
+    VkSemaphore m_image_acquired_semaphore = VK_NULL_HANDLE;
+    VkFence m_ready_to_present_fence = VK_NULL_HANDLE;
 
 public:
     VulkanRenderer(SDL_Window* window_handle);

@@ -155,6 +155,8 @@ bool Window::setSize(int width, int height, bool fullscreen)
     return success;
 }
 
+void Window::setIsResizable(bool resizable) { SDL_SetWindowResizable(m_window_handle, resizable); }
+
 std::optional<SDL_DisplayMode> Window::findDisplayMode(int width, int height) const
 {
     // Modes are more-or-less sorted best to worst, so return the first found matching mode

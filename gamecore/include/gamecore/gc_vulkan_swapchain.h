@@ -32,9 +32,14 @@ public:
 
     VulkanSwapchain operator=(const VulkanSwapchain&) = delete;
 
-    const VkSwapchainKHR& getSwapchain() { return m_swapchain; }
+    inline const VkSwapchainKHR& getSwapchain() { return m_swapchain; }
 
     void recreateSwapchain();
+
+    inline uint32_t getImageCount() { return static_cast<uint32_t>(m_images.size()); }
+    inline VkImage getImage(uint32_t index) { return m_images[index]; }
+    inline VkImageView getImageView(uint32_t index) { return m_image_views[index]; }
+    inline VkExtent2D getExtent() { return m_extent; }
 };
 
 } // namespace gc

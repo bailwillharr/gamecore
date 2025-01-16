@@ -11,7 +11,8 @@
 
 namespace gc {
 
-static VkCommandBuffer recordCommandBuffer(const VulkanDevice& device, VkCommandPool pool)
+static VkCommandBuffer recordCommandBuffer(const VulkanDevice& device, VkCommandPool pool, VkImage swapchain_image, VkImageView image_view,
+                                           VkExtent2D image_extent)
 {
     VkCommandBuffer cmd = VK_NULL_HANDLE;
     VkCommandBufferAllocateInfo cmdAllocInfo{};
@@ -20,21 +21,92 @@ static VkCommandBuffer recordCommandBuffer(const VulkanDevice& device, VkCommand
     cmdAllocInfo.commandPool = pool;
     cmdAllocInfo.level = VK_COMMAND_BUFFER_LEVEL_PRIMARY;
     cmdAllocInfo.commandBufferCount = 1;
-    if (VkResult res = vkAllocateCommandBuffers(device.getDevice(), &cmdAllocInfo, &cmd); res != VK_SUCCESS) {
-        abortGame("vkAllocateCommandBuffers() error: {}", vulkanResToString(res));
-    }
+    GC_CHECKVK(vkAllocateCommandBuffers(device.getDevice(), &cmdAllocInfo, &cmd));
 
     VkCommandBufferBeginInfo begin_info{};
     begin_info.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO;
     begin_info.flags = 0;
     begin_info.pInheritanceInfo = nullptr;
-    if (VkResult res = vkBeginCommandBuffer(cmd, &begin_info); res != VK_SUCCESS) {
-        abortGame("vkBeginCommandBuffer() error: {}", vulkanResToString(res));
+    GC_CHECKVK(vkBeginCommandBuffer(cmd, &begin_info));
+
+    {
+        VkImageMemoryBarrier2 barrier{};
+        barrier.sType = VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER_2;
+        barrier.srcStageMask = VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT;
+        barrier.srcAccessMask = VK_ACCESS_NONE_KHR;
+        barrier.dstStageMask = VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT; // image is needed for the stage when the final image is coloured
+        barrier.dstAccessMask = VK_ACCESS_COLOR_ATTACHMENT_WRITE_BIT;
+        barrier.oldLayout = VK_IMAGE_LAYOUT_UNDEFINED;
+        barrier.newLayout = VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL;
+        barrier.srcQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
+        barrier.dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
+        barrier.image = swapchain_image;
+        barrier.subresourceRange.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT;
+        barrier.subresourceRange.baseMipLevel = 0;
+        barrier.subresourceRange.levelCount = 1;
+        barrier.subresourceRange.baseArrayLayer = 0;
+        barrier.subresourceRange.layerCount = 1;
+        VkDependencyInfo dep{};
+        dep.sType = VK_STRUCTURE_TYPE_DEPENDENCY_INFO;
+        dep.imageMemoryBarrierCount = 1;
+        dep.pImageMemoryBarriers = &barrier;
+        vkCmdPipelineBarrier2(cmd, &dep);
     }
 
-    if (VkResult res = vkEndCommandBuffer(cmd); res != VK_SUCCESS) {
-        abortGame("vkEndCommandBuffer() error: {}", vulkanResToString(res));
+    {
+        VkRenderingAttachmentInfo color_attachment{};
+        color_attachment.sType = VK_STRUCTURE_TYPE_RENDERING_ATTACHMENT_INFO;
+        color_attachment.imageView = image_view;
+        color_attachment.imageLayout = VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL;
+        color_attachment.resolveMode = VK_RESOLVE_MODE_NONE;
+        color_attachment.loadOp = VK_ATTACHMENT_LOAD_OP_CLEAR;
+        color_attachment.storeOp = VK_ATTACHMENT_STORE_OP_STORE;
+        color_attachment.clearValue.color.float32[0] = (sinf(static_cast<float>(image_extent.width)) + 1.0f) * 0.5f;
+        color_attachment.clearValue.color.float32[1] = (cosf(static_cast<float>(image_extent.height)) + 1.0f) * 0.5f;
+        color_attachment.clearValue.color.float32[2] = (sinf(static_cast<float>(image_extent.height + image_extent.width)) + 1.0f) * 0.5f;
+        color_attachment.clearValue.color.float32[3] = 1.0f;
+        VkRenderingInfo rendering_info{};
+        rendering_info.sType = VK_STRUCTURE_TYPE_RENDERING_INFO;
+        rendering_info.renderArea.offset = VkOffset2D{0, 0};
+        rendering_info.renderArea.extent = image_extent;
+        rendering_info.layerCount = 1;
+        rendering_info.viewMask = 0;
+        rendering_info.colorAttachmentCount = 1;
+        rendering_info.pColorAttachments = &color_attachment;
+        rendering_info.pDepthAttachment = nullptr;
+        rendering_info.pStencilAttachment = nullptr;
+        vkCmdBeginRendering(cmd, &rendering_info);
     }
+
+    {
+        vkCmdEndRendering(cmd);
+    }
+
+    {
+        VkImageMemoryBarrier2 barrier{};
+        barrier.sType = VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER_2;
+        barrier.srcStageMask = VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT;
+        barrier.srcAccessMask = VK_ACCESS_COLOR_ATTACHMENT_WRITE_BIT;
+        barrier.dstStageMask = VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT; // image is needed for the stage when the final image is coloured
+        barrier.dstAccessMask = VK_ACCESS_NONE;
+        barrier.oldLayout = VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL;
+        barrier.newLayout = VK_IMAGE_LAYOUT_PRESENT_SRC_KHR;
+        barrier.srcQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
+        barrier.dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
+        barrier.image = swapchain_image;
+        barrier.subresourceRange.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT;
+        barrier.subresourceRange.baseMipLevel = 0;
+        barrier.subresourceRange.levelCount = 1;
+        barrier.subresourceRange.baseArrayLayer = 0;
+        barrier.subresourceRange.layerCount = 1;
+        VkDependencyInfo dep{};
+        dep.sType = VK_STRUCTURE_TYPE_DEPENDENCY_INFO;
+        dep.imageMemoryBarrierCount = 1;
+        dep.pImageMemoryBarriers = &barrier;
+        vkCmdPipelineBarrier2(cmd, &dep);
+    }
+
+    GC_CHECKVK(vkEndCommandBuffer(cmd));
 
     return cmd;
 }
@@ -45,11 +117,19 @@ VulkanRenderer::VulkanRenderer(SDL_Window* window_handle) : m_device(), m_alloca
     pool_info.sType = VK_STRUCTURE_TYPE_COMMAND_POOL_CREATE_INFO;
     pool_info.flags = 0;
     pool_info.queueFamilyIndex = m_device.getMainQueue().queue_family_index;
-    if (VkResult res = vkCreateCommandPool(m_device.getDevice(), &pool_info, nullptr, &m_cmd_pool); res != VK_SUCCESS) {
-        abortGame("vkCreateCommandPool() error: {}", vulkanResToString(res));
+    GC_CHECKVK(vkCreateCommandPool(m_device.getDevice(), &pool_info, nullptr, &m_cmd_pool));
+
+    for (uint32_t i = 0; i < m_swapchain.getImageCount(); ++i) {
+        VkCommandBuffer buf = recordCommandBuffer(m_device, m_cmd_pool, m_swapchain.getImage(i), m_swapchain.getImageView(i), m_swapchain.getExtent());
+        m_cmd_buffers.push_back(buf);
     }
 
-    GC_CHECKVK(vkCreateBuffer(VK_NULL_HANDLE, nullptr, nullptr, nullptr));
+    VkSemaphoreCreateInfo sem_info{};
+    sem_info.sType = VK_STRUCTURE_TYPE_SEMAPHORE_CREATE_INFO;
+    GC_CHECKVK(vkCreateSemaphore(m_device.getDevice(), &sem_info, nullptr, &m_image_acquired_semaphore));
+    VkFenceCreateInfo fence_info{};
+    fence_info.sType = VK_STRUCTURE_TYPE_FENCE_CREATE_INFO;
+    GC_CHECKVK(vkCreateFence(m_device.getDevice(), &fence_info, nullptr, &m_ready_to_present_fence));
 
     GC_TRACE("Initialised VulkanRenderer");
 }
@@ -58,26 +138,40 @@ VulkanRenderer::~VulkanRenderer()
 {
     GC_TRACE("Destroying VulkanRenderer...");
 
+    vkDestroyFence(m_device.getDevice(), m_ready_to_present_fence, nullptr);
+    vkDestroySemaphore(m_device.getDevice(), m_image_acquired_semaphore, nullptr);
+    vkFreeCommandBuffers(m_device.getDevice(), m_cmd_pool, static_cast<uint32_t>(m_cmd_buffers.size()), m_cmd_buffers.data());
     vkDestroyCommandPool(m_device.getDevice(), m_cmd_pool, nullptr);
 }
 
 void VulkanRenderer::acquireAndPresent()
 {
     uint32_t image_index{};
-    // signals image_available_fence once an image is acquired
-    if (VkResult res = vkAcquireNextImageKHR(m_device.getDevice(), m_swapchain.getSwapchain(), UINT64_MAX, VK_NULL_HANDLE, VK_NULL_HANDLE, &image_index);
+    if (VkResult res =
+            vkAcquireNextImageKHR(m_device.getDevice(), m_swapchain.getSwapchain(), UINT64_MAX, m_image_acquired_semaphore, VK_NULL_HANDLE, &image_index);
         res != VK_SUCCESS && res != VK_SUBOPTIMAL_KHR) {
         abortGame("vkAcquireNextImageKHR() error: {}", vulkanResToString(res));
     }
 
-    if (VkResult res = vkWaitForFences(m_device.getDevice(), 1, nullptr, VK_TRUE, UINT64_MAX); res != VK_SUCCESS) {
-        abortGame("vkWaitForFences() error: {}", vulkanResToString(res));
-    }
-    if (VkResult res = vkResetFences(m_device.getDevice(), 1, nullptr); res != VK_SUCCESS) {
-        abortGame("vkResetFences() error: {}", vulkanResToString(res));
-    }
+    VkSemaphoreSubmitInfo wait_semaphore_info{};
+    wait_semaphore_info.sType = VK_STRUCTURE_TYPE_SEMAPHORE_SUBMIT_INFO;
+    wait_semaphore_info.semaphore = m_image_acquired_semaphore;
+    wait_semaphore_info.stageMask = VK_PIPELINE_STAGE_2_COLOR_ATTACHMENT_OUTPUT_BIT_KHR;
+    VkCommandBufferSubmitInfo cmd_buf_info{};
+    cmd_buf_info.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_SUBMIT_INFO;
+    cmd_buf_info.commandBuffer = m_cmd_buffers[image_index];
+    VkSubmitInfo2 submit_info{};
+    submit_info.sType = VK_STRUCTURE_TYPE_SUBMIT_INFO_2;
+    submit_info.waitSemaphoreInfoCount = 1;
+    submit_info.pWaitSemaphoreInfos = &wait_semaphore_info;
+    submit_info.commandBufferInfoCount = 1;
+    submit_info.pCommandBufferInfos = &cmd_buf_info;
+    submit_info.signalSemaphoreInfoCount = 0;
+    submit_info.pSignalSemaphoreInfos = nullptr;
+    GC_CHECKVK(vkQueueSubmit2(m_device.getMainQueue().queue, 1, &submit_info, m_ready_to_present_fence));
 
-    //
+    GC_CHECKVK(vkWaitForFences(m_device.getDevice(), 1, &m_ready_to_present_fence, VK_TRUE, UINT64_MAX));
+    GC_CHECKVK(vkResetFences(m_device.getDevice(), 1, &m_ready_to_present_fence));
 
     VkPresentInfoKHR present_info{};
     present_info.sType = VK_STRUCTURE_TYPE_PRESENT_INFO_KHR;
@@ -88,7 +182,19 @@ void VulkanRenderer::acquireAndPresent()
     present_info.pImageIndices = &image_index;
     present_info.pResults = nullptr;
     if (VkResult res = vkQueuePresentKHR(m_device.getMainQueue().queue, &present_info); res != VK_SUCCESS && res != VK_SUBOPTIMAL_KHR) {
-        abortGame("vkQueuePresentKHR() error: {}", vulkanResToString(res));
+        if (res == VK_ERROR_OUT_OF_DATE_KHR) {
+            GC_CHECKVK(vkDeviceWaitIdle(m_device.getDevice()));
+            m_swapchain.recreateSwapchain();
+            vkFreeCommandBuffers(m_device.getDevice(), m_cmd_pool, static_cast<uint32_t>(m_cmd_buffers.size()), m_cmd_buffers.data());
+            m_cmd_buffers.clear();
+            for (uint32_t i = 0; i < m_swapchain.getImageCount(); ++i) {
+                VkCommandBuffer buf = recordCommandBuffer(m_device, m_cmd_pool, m_swapchain.getImage(i), m_swapchain.getImageView(i), m_swapchain.getExtent());
+                m_cmd_buffers.push_back(buf);
+            }
+        }
+        else {
+            abortGame("vkQueuePresentKHR() error: {}", vulkanResToString(res));
+        }
     }
 }
 
