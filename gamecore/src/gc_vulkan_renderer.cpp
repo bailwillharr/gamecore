@@ -13,19 +13,10 @@
 
 namespace gc {
 
-static VkCommandBuffer recordCommandBuffer(const VulkanDevice& device, VkCommandPool pool, VkImage swapchain_image, VkImageView image_view,
-                                           VkExtent2D image_extent)
+static void recordCommandBuffer(const VulkanDevice& device, VkImage swapchain_image, VkImageView image_view, VkExtent2D image_extent, VkCommandBuffer cmd,
+                                uint64_t framecount)
 {
     constexpr bool FUN_CLEAR_COLOR = false;
-
-    VkCommandBuffer cmd = VK_NULL_HANDLE;
-    VkCommandBufferAllocateInfo cmdAllocInfo{};
-    cmdAllocInfo.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_ALLOCATE_INFO;
-    cmdAllocInfo.pNext = nullptr;
-    cmdAllocInfo.commandPool = pool;
-    cmdAllocInfo.level = VK_COMMAND_BUFFER_LEVEL_PRIMARY;
-    cmdAllocInfo.commandBufferCount = 1;
-    GC_CHECKVK(vkAllocateCommandBuffers(device.getDevice(), &cmdAllocInfo, &cmd));
 
     VkCommandBufferBeginInfo begin_info{};
     begin_info.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO;
@@ -66,9 +57,9 @@ static VkCommandBuffer recordCommandBuffer(const VulkanDevice& device, VkCommand
         color_attachment.loadOp = VK_ATTACHMENT_LOAD_OP_CLEAR;
         color_attachment.storeOp = VK_ATTACHMENT_STORE_OP_STORE;
         if (FUN_CLEAR_COLOR) {
-            color_attachment.clearValue.color.float32[0] = (sinf(static_cast<float>(image_extent.width)) + 1.0f) * 0.5f;
-            color_attachment.clearValue.color.float32[1] = (cosf(static_cast<float>(image_extent.height)) + 1.0f) * 0.5f;
-            color_attachment.clearValue.color.float32[2] = (sinf(static_cast<float>(image_extent.height + image_extent.width)) + 1.0f) * 0.5f;
+            color_attachment.clearValue.color.float32[0] = (sinf(static_cast<float>(framecount) * 0.010f) + 1.0f) * 0.5f;
+            color_attachment.clearValue.color.float32[1] = (cosf(static_cast<float>(framecount) * 0.026f) + 1.0f) * 0.5f;
+            color_attachment.clearValue.color.float32[2] = (sinf(static_cast<float>(framecount) * 0.040f) + 1.0f) * 0.5f;
             color_attachment.clearValue.color.float32[3] = 1.0f;
         }
         else {
@@ -119,32 +110,34 @@ static VkCommandBuffer recordCommandBuffer(const VulkanDevice& device, VkCommand
     }
 
     GC_CHECKVK(vkEndCommandBuffer(cmd));
-
-    return cmd;
 }
 
 VulkanRenderer::VulkanRenderer(SDL_Window* window_handle) : m_device(), m_allocator(m_device), m_swapchain(m_device, window_handle)
 {
-    VkCommandPoolCreateInfo pool_info{};
-    pool_info.sType = VK_STRUCTURE_TYPE_COMMAND_POOL_CREATE_INFO;
-    pool_info.flags = 0;
-    pool_info.queueFamilyIndex = m_device.getMainQueue().queue_family_index;
-    GC_CHECKVK(vkCreateCommandPool(m_device.getDevice(), &pool_info, nullptr, &m_cmd_pool));
-
-    for (uint32_t i = 0; i < m_swapchain.getImageCount(); ++i) {
-        VkCommandBuffer buf = recordCommandBuffer(m_device, m_cmd_pool, m_swapchain.getImage(i), m_swapchain.getImageView(i), m_swapchain.getExtent());
-        m_cmd_buffers.push_back(buf);
-    }
-
     for (auto& per_frame_data : m_per_frame_in_flight) {
         VkFenceCreateInfo fence_info{};
         fence_info.sType = VK_STRUCTURE_TYPE_FENCE_CREATE_INFO;
         fence_info.flags = VK_FENCE_CREATE_SIGNALED_BIT;
         GC_CHECKVK(vkCreateFence(m_device.getDevice(), &fence_info, nullptr, &per_frame_data.rendering_finished_fence));
+
         VkSemaphoreCreateInfo sem_info{};
         sem_info.sType = VK_STRUCTURE_TYPE_SEMAPHORE_CREATE_INFO;
         GC_CHECKVK(vkCreateSemaphore(m_device.getDevice(), &sem_info, nullptr, &per_frame_data.image_acquired_semaphore));
         GC_CHECKVK(vkCreateSemaphore(m_device.getDevice(), &sem_info, nullptr, &per_frame_data.ready_to_present_semaphore));
+
+        VkCommandPoolCreateInfo pool_info{};
+        pool_info.sType = VK_STRUCTURE_TYPE_COMMAND_POOL_CREATE_INFO;
+        pool_info.flags = 0;
+        pool_info.queueFamilyIndex = m_device.getMainQueue().queue_family_index;
+        GC_CHECKVK(vkCreateCommandPool(m_device.getDevice(), &pool_info, nullptr, &per_frame_data.pool));
+
+        VkCommandBufferAllocateInfo cmdAllocInfo{};
+        cmdAllocInfo.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_ALLOCATE_INFO;
+        cmdAllocInfo.pNext = nullptr;
+        cmdAllocInfo.commandPool = per_frame_data.pool;
+        cmdAllocInfo.level = VK_COMMAND_BUFFER_LEVEL_PRIMARY;
+        cmdAllocInfo.commandBufferCount = 1;
+        GC_CHECKVK(vkAllocateCommandBuffers(m_device.getDevice(), &cmdAllocInfo, &per_frame_data.cmd));
     }
 
     GC_TRACE("Initialised VulkanRenderer");
@@ -158,12 +151,12 @@ VulkanRenderer::~VulkanRenderer()
     GC_CHECKVK(vkDeviceWaitIdle(m_device.getDevice()));
 
     for (auto& per_frame_data : m_per_frame_in_flight) {
+        vkFreeCommandBuffers(m_device.getDevice(), per_frame_data.pool, 1, &per_frame_data.cmd);
+        vkDestroyCommandPool(m_device.getDevice(), per_frame_data.pool, nullptr);
         vkDestroySemaphore(m_device.getDevice(), per_frame_data.ready_to_present_semaphore, nullptr);
         vkDestroySemaphore(m_device.getDevice(), per_frame_data.image_acquired_semaphore, nullptr);
         vkDestroyFence(m_device.getDevice(), per_frame_data.rendering_finished_fence, nullptr);
     }
-    vkFreeCommandBuffers(m_device.getDevice(), m_cmd_pool, static_cast<uint32_t>(m_cmd_buffers.size()), m_cmd_buffers.data());
-    vkDestroyCommandPool(m_device.getDevice(), m_cmd_pool, nullptr);
 }
 
 void VulkanRenderer::acquireAndPresent()
@@ -180,6 +173,11 @@ void VulkanRenderer::acquireAndPresent()
         abortGame("vkAcquireNextImageKHR() error: {}", vulkanResToString(res));
     }
 
+    /* record command buffer */
+    GC_CHECKVK(vkResetCommandPool(m_device.getDevice(), m_per_frame_in_flight[frame_in_flight_index].pool, 0));
+    recordCommandBuffer(m_device, m_swapchain.getImage(image_index), m_swapchain.getImageView(image_index), m_swapchain.getExtent(),
+                        m_per_frame_in_flight[frame_in_flight_index].cmd, m_framecount);
+
     VkSemaphoreSubmitInfo wait_semaphore_info{};
     wait_semaphore_info.sType = VK_STRUCTURE_TYPE_SEMAPHORE_SUBMIT_INFO;
     wait_semaphore_info.semaphore = m_per_frame_in_flight[frame_in_flight_index].image_acquired_semaphore;
@@ -190,7 +188,7 @@ void VulkanRenderer::acquireAndPresent()
     signal_semaphore_info.stageMask = VK_PIPELINE_STAGE_2_COLOR_ATTACHMENT_OUTPUT_BIT_KHR;
     VkCommandBufferSubmitInfo cmd_buf_info{};
     cmd_buf_info.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_SUBMIT_INFO;
-    cmd_buf_info.commandBuffer = m_cmd_buffers[image_index];
+    cmd_buf_info.commandBuffer = m_per_frame_in_flight[frame_in_flight_index].cmd;
     VkSubmitInfo2 submit_info{};
     submit_info.sType = VK_STRUCTURE_TYPE_SUBMIT_INFO_2;
     submit_info.waitSemaphoreInfoCount = 1;
@@ -213,12 +211,6 @@ void VulkanRenderer::acquireAndPresent()
         if (res == VK_ERROR_OUT_OF_DATE_KHR) {
             GC_CHECKVK(vkDeviceWaitIdle(m_device.getDevice()));
             m_swapchain.recreateSwapchain();
-            vkFreeCommandBuffers(m_device.getDevice(), m_cmd_pool, static_cast<uint32_t>(m_cmd_buffers.size()), m_cmd_buffers.data());
-            m_cmd_buffers.clear();
-            for (uint32_t i = 0; i < m_swapchain.getImageCount(); ++i) {
-                VkCommandBuffer buf = recordCommandBuffer(m_device, m_cmd_pool, m_swapchain.getImage(i), m_swapchain.getImageView(i), m_swapchain.getExtent());
-                m_cmd_buffers.push_back(buf);
-            }
         }
         else {
             abortGame("vkQueuePresentKHR() error: {}", vulkanResToString(res));
@@ -227,5 +219,7 @@ void VulkanRenderer::acquireAndPresent()
 
     ++m_framecount;
 }
+
+uint64_t VulkanRenderer::getFramecount() const { return m_framecount; }
 
 } // namespace gc

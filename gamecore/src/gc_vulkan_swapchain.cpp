@@ -138,6 +138,20 @@ void VulkanSwapchain::recreateSwapchain()
         m_extent.height = static_cast<uint32_t>(h);
     }
 
+    // clamp extent to min and max
+    if (m_extent.width > surface_caps.surfaceCapabilities.maxImageExtent.width) {
+        m_extent.width = surface_caps.surfaceCapabilities.maxImageExtent.width;
+    }
+    else if (m_extent.width < surface_caps.surfaceCapabilities.minImageExtent.width) {
+        m_extent.width = surface_caps.surfaceCapabilities.minImageExtent.width;
+    }
+    if (m_extent.height > surface_caps.surfaceCapabilities.maxImageExtent.height) {
+        m_extent.height = surface_caps.surfaceCapabilities.maxImageExtent.height;
+    }
+    else if (m_extent.width < surface_caps.surfaceCapabilities.minImageExtent.width) {
+        m_extent.height = surface_caps.surfaceCapabilities.minImageExtent.height;
+    }
+
     // Finally create swapchain
     const VkSwapchainKHR old_swapchain = m_swapchain;
     VkSwapchainCreateInfoKHR sc_info{};

@@ -15,24 +15,30 @@ int main([[maybe_unused]] int argc, [[maybe_unused]] char* argv[])
     gc::app().window().setTitle("Hello world!");
     gc::app().window().setWindowVisibility(true);
     gc::app().window().setIsResizable(true);
-    //gc::app().window().setSize(1920, 1080, true);
+    // gc::app().window().setSize(1920, 1080, true);
 
-    const uint64_t counts_per_second = SDL_GetPerformanceFrequency();
-    uint64_t framecount = 0;
-    const uint64_t counter_start = SDL_GetPerformanceCounter();
+    // use another render thread
+    std::atomic<bool> game_running(true);
+    gc::VulkanRenderer& renderer = gc::app().vulkanRenderer();
+    std::thread render_thread([&renderer, &game_running]() {
+        uint64_t counter = SDL_GetPerformanceCounter();
+        while (game_running.load()) {
+            renderer.acquireAndPresent();
+        }
+        counter = SDL_GetPerformanceCounter() - counter;
+        const uint64_t framecount = renderer.getFramecount();
+        const double seconds = static_cast<double>(counter) / static_cast<double>(SDL_GetPerformanceFrequency());
+        const double fps = static_cast<double>(framecount) / seconds;
+        GC_INFO("Frames: {}, Seconds: {}, FPS: {}", framecount, seconds, fps);
+    });
 
     while (!gc::app().window().shouldQuit()) {
         gc::app().window().processEvents();
-        gc::app().vulkanRenderer().acquireAndPresent();
-        ++framecount;
     }
 
-    const uint64_t counter_end = SDL_GetPerformanceCounter();
-    const double time_elapsed = static_cast<double>(counter_end - counter_start) / static_cast<double>(counts_per_second);
-    const double fps = static_cast<double>(framecount) / time_elapsed;
-    const std::string msg_string = std::format("Frames: {}, Seconds: {}, FPS: {}", framecount, time_elapsed, fps);
-    SDL_ShowSimpleMessageBox(SDL_MESSAGEBOX_INFORMATION, "Stats", msg_string.c_str(), NULL);
-    
+    game_running.store(false);
+    render_thread.join();
+
     gc::App::shutdown();
 
     // Critical errors in the engine call gc::abortGame() therefore main() can always return 0

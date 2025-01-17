@@ -84,7 +84,22 @@ void Window::processEvents()
             case SDL_EVENT_QUIT:
                 setQuitFlag();
                 break;
+            case SDL_EVENT_WINDOW_ENTER_FULLSCREEN:
+                m_is_fullscreen = true;
+                break;
+            case SDL_EVENT_WINDOW_LEAVE_FULLSCREEN:
+                m_is_fullscreen = false;
+                break;
             case SDL_EVENT_KEY_DOWN:
+                if (ev.key.key == SDLK_F11) {
+                    if (m_is_fullscreen) {
+                        setSize(INITIAL_WIDTH, INITIAL_HEIGHT, false);
+                    }
+                    else {
+                        setSize(INITIAL_WIDTH, INITIAL_HEIGHT, true);
+                    }
+                }
+                break;
             case SDL_EVENT_KEY_UP:
                 // handle keyboard
                 break;
@@ -152,6 +167,16 @@ bool Window::setSize(int width, int height, bool fullscreen)
         success = false;
     }
     return success;
+}
+
+std::array<int, 2> Window::getSize() const
+{
+    int w{}, h{};
+    if (!SDL_GetWindowSize(m_window_handle, &w, &h)) {
+        GC_ERROR("SDL_GetWindowSize() error: ", SDL_GetError());
+        return {1024, 768}; // return something reasonable. Not like this function will ever error anyway.
+    }
+    return {w, h};
 }
 
 void Window::setIsResizable(bool resizable) { SDL_SetWindowResizable(m_window_handle, resizable); }

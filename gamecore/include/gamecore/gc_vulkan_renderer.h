@@ -18,15 +18,14 @@ struct VulkanPerFrameInFlight {
     VkFence rendering_finished_fence = VK_NULL_HANDLE;       // starts signalled
     VkSemaphore image_acquired_semaphore = VK_NULL_HANDLE;   // starts unsignalled
     VkSemaphore ready_to_present_semaphore = VK_NULL_HANDLE; // starts unsignalled
+    VkCommandPool pool = VK_NULL_HANDLE;
+    VkCommandBuffer cmd = VK_NULL_HANDLE;
 };
 
 class VulkanRenderer {
     VulkanDevice m_device;
     VulkanAllocator m_allocator;
     VulkanSwapchain m_swapchain;
-
-    VkCommandPool m_cmd_pool = VK_NULL_HANDLE;
-    std::vector<VkCommandBuffer> m_cmd_buffers{};
 
     uint64_t m_framecount = 0;
     std::array<VulkanPerFrameInFlight, VULKAN_FRAMES_IN_FLIGHT> m_per_frame_in_flight{};
@@ -41,6 +40,7 @@ public:
 
     // Call to render the frame.
     void acquireAndPresent();
+    uint64_t getFramecount() const;
 };
 
 } // namespace gc

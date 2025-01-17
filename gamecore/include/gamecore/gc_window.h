@@ -1,5 +1,6 @@
 #pragma once
 
+#include <array>
 #include <vector>
 #include <string>
 #include <optional>
@@ -19,6 +20,7 @@ class Window {
     SDL_Window* m_window_handle;
     std::vector<SDL_DisplayMode> m_display_modes;
     bool m_should_quit;
+    bool m_is_fullscreen = false;
 
 public:
     explicit Window(const WindowInitInfo& info);
@@ -42,6 +44,7 @@ public:
     void setTitle(const std::string& title);
     // Returns false on failure
     bool setSize(int width, int height, bool fullscreen);
+    std::array<int, 2> getSize() const;
     void setIsResizable(bool resizable);
 
 private:
