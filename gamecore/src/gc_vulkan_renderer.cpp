@@ -16,7 +16,7 @@ namespace gc {
 static void recordCommandBuffer(const VulkanDevice& device, VkImage swapchain_image, VkImageView image_view, VkExtent2D image_extent, VkCommandBuffer cmd,
                                 uint64_t framecount)
 {
-    constexpr bool FUN_CLEAR_COLOR = false;
+    constexpr bool FUN_CLEAR_COLOR = true;
 
     VkCommandBufferBeginInfo begin_info{};
     begin_info.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO;
@@ -161,6 +161,8 @@ VulkanRenderer::~VulkanRenderer()
 
 void VulkanRenderer::acquireAndPresent()
 {
+    bool recreate_swapchain = false;
+
     uint32_t frame_in_flight_index = m_framecount % VULKAN_FRAMES_IN_FLIGHT;
 
     GC_CHECKVK(vkWaitForFences(m_device.getDevice(), 1, &m_per_frame_in_flight[frame_in_flight_index].rendering_finished_fence, VK_TRUE, UINT64_MAX));
@@ -169,8 +171,13 @@ void VulkanRenderer::acquireAndPresent()
     uint32_t image_index{};
     if (VkResult res = vkAcquireNextImageKHR(m_device.getDevice(), m_swapchain.getSwapchain(), UINT64_MAX,
                                              m_per_frame_in_flight[frame_in_flight_index].image_acquired_semaphore, VK_NULL_HANDLE, &image_index);
-        res != VK_SUCCESS && res != VK_SUBOPTIMAL_KHR) {
-        abortGame("vkAcquireNextImageKHR() error: {}", vulkanResToString(res));
+        res != VK_SUCCESS) {
+        if (res == VK_SUBOPTIMAL_KHR) {
+            recreate_swapchain = true;
+        }
+        else {
+            abortGame("vkAcquireNextImageKHR() error: {}", vulkanResToString(res));
+        }
     }
 
     /* record command buffer */
@@ -207,14 +214,18 @@ void VulkanRenderer::acquireAndPresent()
     present_info.pSwapchains = &m_swapchain.getSwapchain();
     present_info.pImageIndices = &image_index;
     present_info.pResults = nullptr;
-    if (VkResult res = vkQueuePresentKHR(m_device.getMainQueue().queue, &present_info); res != VK_SUCCESS && res != VK_SUBOPTIMAL_KHR) {
-        if (res == VK_ERROR_OUT_OF_DATE_KHR) {
-            GC_CHECKVK(vkDeviceWaitIdle(m_device.getDevice()));
-            m_swapchain.recreateSwapchain();
+    if (VkResult res = vkQueuePresentKHR(m_device.getMainQueue().queue, &present_info); res != VK_SUCCESS) {
+        if (res == VK_ERROR_OUT_OF_DATE_KHR || res == VK_SUBOPTIMAL_KHR) {
+            recreate_swapchain = true;
         }
         else {
             abortGame("vkQueuePresentKHR() error: {}", vulkanResToString(res));
         }
+    }
+
+    if (recreate_swapchain) {
+        GC_CHECKVK(vkDeviceWaitIdle(m_device.getDevice()));
+        m_swapchain.recreateSwapchain();
     }
 
     ++m_framecount;

@@ -99,6 +99,7 @@ static void removeUnsupportedExtensions(VkPhysicalDevice physical_device, std::v
             }
         }
         if (!supported) {
+            GC_WARN("Vulkan extension unsupported: {}", exts[i]);
             exts.erase(exts.cbegin() + i);
             i = i - 1; // avoid skipping
         }

@@ -12,7 +12,7 @@
 
 namespace gc {
 
-static constexpr bool USE_MAILBOX_IF_AVAILABLE = true;
+static constexpr bool USE_MAILBOX_IF_AVAILABLE = false;
 
 VulkanSwapchain::VulkanSwapchain(const VulkanDevice& device, SDL_Window* window_handle) : m_device(device), m_window_handle(window_handle)
 {
