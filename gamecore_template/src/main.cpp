@@ -12,10 +12,11 @@ int main([[maybe_unused]] int argc, [[maybe_unused]] char* argv[])
 {
     gc::App::initialise();
 
-    gc::app().window().setTitle("Hello world!");
-    gc::app().window().setWindowVisibility(true);
-    gc::app().window().setIsResizable(true);
-    // gc::app().window().setSize(1920, 1080, true);
+    gc::Window& win = gc::app().window();
+
+    win.setTitle("Hello world!");
+    win.setIsResizable(true);
+    win.setWindowVisibility(true);
 
     // use another render thread
     std::atomic<bool> game_running(true);
@@ -32,8 +33,17 @@ int main([[maybe_unused]] int argc, [[maybe_unused]] char* argv[])
         GC_INFO("Frames: {}, Seconds: {}, FPS: {}", framecount, seconds, fps);
     });
 
-    while (!gc::app().window().shouldQuit()) {
-        gc::app().window().processEvents();
+    while (!win.shouldQuit()) {
+        win.processEvents();
+
+        if (win.getKeyPress(SDL_SCANCODE_F11)) {
+            if (win.getIsFullscreen()) {
+                win.setSize(0, 0, false);
+            }
+            else {
+                win.setSize(0, 0, true);
+            }
+        }
     }
 
     game_running.store(false);

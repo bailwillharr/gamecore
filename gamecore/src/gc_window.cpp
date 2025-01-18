@@ -1,5 +1,7 @@
 #include "gamecore/gc_window.h"
 
+#include <span>
+
 #include <SDL3/SDL_init.h>
 #include <SDL3/SDL_video.h>
 
@@ -13,7 +15,19 @@ static constexpr const char* INITIAL_TITLE = "Gamecore Game Window";
 static constexpr int INITIAL_WIDTH = 1024;
 static constexpr int INITIAL_HEIGHT = 768;
 
-Window::Window(const WindowInitInfo& info) : m_should_quit(false)
+static void resetKeyboardState(std::span<ButtonState, SDL_SCANCODE_COUNT> keyboard_state)
+{
+    for (ButtonState& state : keyboard_state) {
+        if (state == ButtonState::JUST_RELEASED) {
+            state = ButtonState::UP;
+        }
+        else if (state == ButtonState::JUST_PRESSED) {
+            state = ButtonState::DOWN;
+        }
+    }
+}
+
+Window::Window(const WindowInitInfo& info)
 {
     if (!SDL_InitSubSystem(SDL_INIT_VIDEO)) {
         GC_ERROR("SDL_InitSubSystem() error: {}", SDL_GetError());
@@ -34,6 +48,7 @@ Window::Window(const WindowInitInfo& info) : m_should_quit(false)
     m_display_modes.clear();
     const SDL_DisplayID display_id = SDL_GetPrimaryDisplay();
     if (display_id != 0) {
+
         int count{};
         SDL_DisplayMode** sdl_modes = SDL_GetFullscreenDisplayModes(display_id, &count);
         if (sdl_modes) {
@@ -46,6 +61,12 @@ Window::Window(const WindowInitInfo& info) : m_should_quit(false)
         }
         else {
             GC_ERROR("SDL_GetFullscreenDisplayModes() failed: {}", SDL_GetError());
+        }
+
+        m_desktop_display_mode = SDL_GetDesktopDisplayMode(display_id);
+        if (!m_desktop_display_mode) {
+            GC_ERROR("SDL_GetDesktopDisplayMode() error: {}", SDL_GetError());
+            // SDL_SetWindowFullscreenMode() supports NULL display mode so this isn't a fatal error
         }
     }
     else {
@@ -78,31 +99,35 @@ void Window::setWindowVisibility(bool visible)
 
 void Window::processEvents()
 {
+    resetKeyboardState(m_keyboard_state);
+    bool had_resize_event = false;
+
     SDL_Event ev{};
     while (SDL_PollEvent(&ev)) {
         switch (ev.type) {
             case SDL_EVENT_QUIT:
                 setQuitFlag();
                 break;
+            case SDL_EVENT_WINDOW_PIXEL_SIZE_CHANGED:
+                had_resize_event = true;
             case SDL_EVENT_WINDOW_ENTER_FULLSCREEN:
                 m_is_fullscreen = true;
                 break;
             case SDL_EVENT_WINDOW_LEAVE_FULLSCREEN:
                 m_is_fullscreen = false;
                 break;
-            case SDL_EVENT_KEY_DOWN:
-                if (ev.key.key == SDLK_F11) {
-                    if (m_is_fullscreen) {
-                        setSize(INITIAL_WIDTH, INITIAL_HEIGHT, false);
-                    }
-                    else {
-                        setSize(INITIAL_WIDTH, INITIAL_HEIGHT, true);
-                    }
+            case SDL_EVENT_KEY_DOWN: {
+                ButtonState& state = m_keyboard_state[ev.key.scancode];
+                if (state == ButtonState::UP) {
+                    state = ButtonState::JUST_PRESSED;
                 }
-                break;
-            case SDL_EVENT_KEY_UP:
-                // handle keyboard
-                break;
+            } break;
+            case SDL_EVENT_KEY_UP: {
+                ButtonState& state = m_keyboard_state[ev.key.scancode];
+                if (state == ButtonState::DOWN) {
+                    state = ButtonState::JUST_RELEASED;
+                }
+            } break;
             case SDL_EVENT_MOUSE_MOTION:
                 // handle mouse motion
                 break;
@@ -119,6 +144,9 @@ void Window::processEvents()
                 // handle audio device here
         }
     }
+
+    // Just to avoid writing to the atomic twice. Probably not worth it but whatever
+    m_just_resized.store(had_resize_event);
 }
 
 void Window::setQuitFlag() { m_should_quit = true; }
@@ -132,41 +160,44 @@ void Window::setTitle(const std::string& title)
     }
 }
 
-bool Window::setSize(int width, int height, bool fullscreen)
+void Window::setSize(uint32_t width, uint32_t height, bool fullscreen)
 {
-    GC_ASSERT(width > 0);
-    GC_ASSERT(height > 0);
-
-    bool success = true;
-
     if (!SDL_SetWindowFullscreen(m_window_handle, fullscreen)) {
         GC_ERROR("SDL_SetWindowFullscreen() failed: {}", SDL_GetError());
-        success = false;
     }
 
     if (fullscreen) {
-        auto mode = findDisplayMode(width, height);
         const SDL_DisplayMode* mode_ptr{}; // can be null for windowed fullscreen
-        if (mode) {
-            mode_ptr = &mode.value();
+        if (width != 0 && height != 0) {
+            if (auto mode = findDisplayMode(width, height); mode.has_value()) {
+                mode_ptr = &mode.value();
+            }
+        }
+        else {
+            mode_ptr = m_desktop_display_mode;
         }
         if (!SDL_SetWindowFullscreenMode(m_window_handle, mode_ptr)) {
             GC_ERROR("SDL_SetWindowFullscreenMode() error: {}", SDL_GetError());
-            success = false;
         }
     }
     else { // regular windowed mode
-        if (!SDL_SetWindowSize(m_window_handle, width, height)) {
-            GC_ERROR("SDL_SetWindowSize() failed: {}", SDL_GetError());
-            success = false;
+
+        if (width == 0 || height == 0) {
+            if (!SDL_MaximizeWindow(m_window_handle)) {
+                GC_ERROR("SDL_MaximizeWindow() error: {}", SDL_GetError());
+            }
+        }
+        else {
+            if (!SDL_SetWindowSize(m_window_handle, width, height)) {
+                GC_ERROR("SDL_SetWindowSize() failed: {}", SDL_GetError());
+            }
         }
     }
 
-    if (!SDL_SyncWindow(m_window_handle)) {
-        GC_ERROR("SDL_SyncWindow() timed out");
-        success = false;
-    }
-    return success;
+    /* Don't block until resize has finished. There is no need. */
+    // if (!SDL_SyncWindow(m_window_handle)) {
+    //     GC_ERROR("SDL_SyncWindow() timed out");
+    // }
 }
 
 std::array<int, 2> Window::getSize() const
@@ -179,7 +210,38 @@ std::array<int, 2> Window::getSize() const
     return {w, h};
 }
 
+bool Window::getIsFullscreen() const { return m_is_fullscreen; }
+
 void Window::setIsResizable(bool resizable) { SDL_SetWindowResizable(m_window_handle, resizable); }
+
+bool Window::getKeyDown(SDL_Scancode key) const
+{
+    const ButtonState state = m_keyboard_state[key];
+    return (state == ButtonState::DOWN || state == ButtonState::JUST_PRESSED);
+}
+
+bool Window::getKeyUp(SDL_Scancode key) const
+{
+    const ButtonState state = m_keyboard_state[key];
+    return (state == ButtonState::UP || state == ButtonState::JUST_RELEASED);
+}
+
+bool Window::getKeyPress(SDL_Scancode key) const
+{
+    const ButtonState state = m_keyboard_state[key];
+    return (state == ButtonState::JUST_PRESSED);
+}
+
+bool Window::getKeyRelease(SDL_Scancode key) const
+{
+    const ButtonState state = m_keyboard_state[key];
+    return (state == ButtonState::JUST_RELEASED);
+}
+
+bool Window::justResized() const
+{
+    return m_just_resized.load();
+}
 
 std::optional<SDL_DisplayMode> Window::findDisplayMode(int width, int height) const
 {

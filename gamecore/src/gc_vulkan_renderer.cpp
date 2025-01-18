@@ -10,6 +10,8 @@
 #include "gamecore/gc_vulkan_allocator.h"
 #include "gamecore/gc_vulkan_swapchain.h"
 #include "gamecore/gc_logger.h"
+#include "gamecore/gc_app.h"
+#include "gamecore/gc_window.h"
 
 namespace gc {
 
@@ -161,7 +163,7 @@ VulkanRenderer::~VulkanRenderer()
 
 void VulkanRenderer::acquireAndPresent()
 {
-    bool recreate_swapchain = false;
+    bool recreate_swapchain = app().window().justResized();
 
     uint32_t frame_in_flight_index = m_framecount % VULKAN_FRAMES_IN_FLIGHT;
 

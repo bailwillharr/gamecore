@@ -172,6 +172,8 @@ VulkanDevice::VulkanDevice()
         instance_info.pNext = &debug_messenger_info;
         instance_info.enabledLayerCount = 1;
         instance_info.ppEnabledLayerNames = &khronos_validation_layer_name;
+
+        GC_DEBUG("Using Vulkan validation layers.");
 #endif
 
         if (VkResult res = vkCreateInstance(&instance_info, nullptr, &m_instance); res != VK_SUCCESS) {
@@ -204,42 +206,6 @@ VulkanDevice::VulkanDevice()
 
     {
         auto queue_family_properties = getQueueFamilyProperties(m_physical_device);
-        {
-            // print debug info about available queues
-            for (const VkQueueFamilyProperties& props : queue_family_properties) {
-                GC_DEBUG("Queue Family:");
-                GC_DEBUG("\t\tQueue count: {}", props.queueCount);
-                std::string flags_str{};
-                if (props.queueFlags & VK_QUEUE_GRAPHICS_BIT) {
-                    flags_str += "GRAPHICS ";
-                }
-                if (props.queueFlags & VK_QUEUE_COMPUTE_BIT) {
-                    flags_str += "COMPUTE ";
-                }
-                if (props.queueFlags & VK_QUEUE_TRANSFER_BIT) {
-                    flags_str += "TRANSFER ";
-                }
-                if (props.queueFlags & VK_QUEUE_SPARSE_BINDING_BIT) {
-                    flags_str += "SPARSE_BINDING ";
-                }
-                if (props.queueFlags & VK_QUEUE_PROTECTED_BIT) {
-                    flags_str += "PROTECTED ";
-                }
-                if (props.queueFlags & VK_QUEUE_VIDEO_DECODE_BIT_KHR) {
-                    flags_str += "VIDEO_DECODE_KHR ";
-                }
-                if (props.queueFlags & VK_QUEUE_VIDEO_ENCODE_BIT_KHR) {
-                    flags_str += "VIDEO_ENCODE_KHR ";
-                }
-                if (props.queueFlags & VK_QUEUE_OPTICAL_FLOW_BIT_NV) {
-                    flags_str += "OPTICAL_FLOW_NV ";
-                }
-                GC_DEBUG("\t\tFlags: {}", flags_str);
-                GC_DEBUG("\t\tTimestamp valid bits: {}", props.timestampValidBits);
-                GC_DEBUG("\t\tMin image transfer granularity: {}, {}, {}", props.minImageTransferGranularity.width, props.minImageTransferGranularity.height,
-                         props.minImageTransferGranularity.depth);
-            }
-        }
 
         /* get primary queue family (first queue that supports graphics) */
         m_main_queue.queue = VK_NULL_HANDLE; // this is set just after device is created
