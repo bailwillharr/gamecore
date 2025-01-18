@@ -36,7 +36,7 @@ class Window {
 
     std::array<ButtonState, SDL_SCANCODE_COUNT> m_keyboard_state{}; // zero initialisation sets all keys to ButtonState::UP
 
-    std::atomic<bool> m_just_resized = false;
+    std::atomic<bool> m_resized_flag = false;
 
 public:
     explicit Window(const WindowInitInfo& info);
@@ -78,8 +78,9 @@ public:
 
     /* THREAD-SAFE FUNCTIONS */
 
-    // This function must be thread-safe as it is used by the render thread to know when to recreate swapchain
-    bool justResized() const;
+    // These functions must be thread-safe as they are used by the render thread to know when to recreate swapchain
+    bool getResizedFlag() const;
+	void clearResizedFlag();
 
 private:
     std::optional<SDL_DisplayMode> findDisplayMode(int width, int height) const;

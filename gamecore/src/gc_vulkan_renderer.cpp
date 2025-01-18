@@ -163,7 +163,7 @@ VulkanRenderer::~VulkanRenderer()
 
 void VulkanRenderer::acquireAndPresent()
 {
-    bool recreate_swapchain = app().window().justResized();
+    bool recreate_swapchain = app().window().getResizedFlag();
 
     uint32_t frame_in_flight_index = m_framecount % VULKAN_FRAMES_IN_FLIGHT;
 
@@ -228,6 +228,9 @@ void VulkanRenderer::acquireAndPresent()
     if (recreate_swapchain) {
         GC_CHECKVK(vkDeviceWaitIdle(m_device.getDevice()));
         m_swapchain.recreateSwapchain();
+
+		// window is now resized
+		app().window().clearResizedFlag();
     }
 
     ++m_framecount;

@@ -100,7 +100,6 @@ void Window::setWindowVisibility(bool visible)
 void Window::processEvents()
 {
     resetKeyboardState(m_keyboard_state);
-    bool had_resize_event = false;
 
     SDL_Event ev{};
     while (SDL_PollEvent(&ev)) {
@@ -109,7 +108,8 @@ void Window::processEvents()
                 setQuitFlag();
                 break;
             case SDL_EVENT_WINDOW_PIXEL_SIZE_CHANGED:
-                had_resize_event = true;
+                m_resized_flag.store(true);
+                break;
             case SDL_EVENT_WINDOW_ENTER_FULLSCREEN:
                 m_is_fullscreen = true;
                 break;
@@ -144,9 +144,6 @@ void Window::processEvents()
                 // handle audio device here
         }
     }
-
-    // Just to avoid writing to the atomic twice. Probably not worth it but whatever
-    m_just_resized.store(had_resize_event);
 }
 
 void Window::setQuitFlag() { m_should_quit = true; }
@@ -238,10 +235,9 @@ bool Window::getKeyRelease(SDL_Scancode key) const
     return (state == ButtonState::JUST_RELEASED);
 }
 
-bool Window::justResized() const
-{
-    return m_just_resized.load();
-}
+bool Window::getResizedFlag() const { return m_resized_flag.load(); }
+
+void Window::clearResizedFlag() { m_resized_flag.store(false); }
 
 std::optional<SDL_DisplayMode> Window::findDisplayMode(int width, int height) const
 {
