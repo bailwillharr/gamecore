@@ -31,6 +31,7 @@ int main([[maybe_unused]] int argc, [[maybe_unused]] char* argv[])
         const double seconds = static_cast<double>(counter) / static_cast<double>(SDL_GetPerformanceFrequency());
         const double fps = static_cast<double>(framecount) / seconds;
         GC_INFO("Frames: {}, Seconds: {}, FPS: {}", framecount, seconds, fps);
+        SDL_ShowSimpleMessageBox(SDL_MESSAGEBOX_INFORMATION, "FPS", std::to_string(fps).c_str(), nullptr);
     });
 
     while (!win.shouldQuit()) {
