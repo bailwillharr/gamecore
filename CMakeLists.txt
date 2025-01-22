@@ -49,11 +49,16 @@ set(VOLK_PULL_IN_VULKAN ON CACHE INTERNAL "" FORCE) # Get Vulkan header files fr
 if (WIN32)
 	set(VOLK_STATIC_DEFINES "VK_USE_PLATFORM_WIN32_KHR" CACHE INTERNAL "" FORCE)
 endif()
-add_subdirectory(vendor/volk)
+add_subdirectory(vendor/volk EXCLUDE_FROM_ALL)
 
 # VulkanMemoryAllocator
 set(VMA_ENABLE_INSTALL OFF CACHE INTERNAL "" FORCE)
-add_subdirectory(vendor/VulkanMemoryAllocator)
+add_subdirectory(vendor/VulkanMemoryAllocator EXCLUDE_FROM_ALL)
+
+# Tracy
+set(TRACY_ENABLE ON CACHE INTERNAL "" FORCE)
+set(TRACY_ON_DEMAND OFF CACHE INTERNAL "" FORCE)
+add_subdirectory(vendor/tracy EXCLUDE_FROM_ALL)
 
 add_subdirectory(gamecore)
 

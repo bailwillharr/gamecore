@@ -38,7 +38,9 @@ public:
 
     VulkanRenderer operator=(const VulkanRenderer&) = delete;
 
-    // Call to render the frame.
+    // Call to render the frame. This function should execute relatively quickly if V-sync is off.
+    // Ideally, command buffers will be recorded in other threads.
+    // This thread will submit command buffers and present the result of the last frame's queueSubmit()
     void acquireAndPresent();
     uint64_t getFramecount() const;
 };

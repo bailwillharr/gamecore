@@ -3,10 +3,12 @@
 #include <cmath>
 
 #include <functional>
+#include <format>
 #include <thread>
 
-#include "gamecore/gc_assert.h"
+#include <tracy/Tracy.hpp>
 
+#include "gamecore/gc_assert.h"
 #include "gamecore/gc_logger.h"
 
 namespace gc {
@@ -26,13 +28,15 @@ Jobs::Jobs(unsigned int num_threads)
     for (unsigned int thread_id = 0; thread_id < m_num_threads; ++thread_id) {
         m_workers.emplace_back([&ring_buffer = m_ring_buffer, &ring_buffer_mutex = m_ring_buffer_mutex, &finished_label = m_finished_label,
                                 &wake_condition = m_wake_condition, &wake_condition_mutex = m_wake_condition_mutex, &shutdown_threads = m_shutdown_threads,
-                                &num_threads_running = m_num_threads_running] {
+                                &num_threads_running = m_num_threads_running, thread_id] {
+            tracy::SetThreadNameWithHint(std::format("worker{}", thread_id).c_str(), 1);
             num_threads_running.fetch_add(1);
             for (;;) {
                 ring_buffer_mutex.lock();
                 auto job = ring_buffer.popFront();
                 ring_buffer_mutex.unlock();
                 if (job.has_value()) {
+                    ZoneScopedN("worker running job");
                     // execute new job
                     GC_TRACE("Running job from ring buffer...");
                     job.value().operator()();
@@ -41,13 +45,13 @@ Jobs::Jobs(unsigned int num_threads)
                 else {
                     // no job right now. make thread sleep
                     {
-                        //GC_TRACE("Thread going to sleep...");
+                        // GC_TRACE("Thread going to sleep...");
                         std::unique_lock<std::mutex> lock(wake_condition_mutex);
                         wake_condition.wait(lock);
-                        //GC_TRACE("Thread woke up");
+                        // GC_TRACE("Thread woke up");
                     }
                     if (shutdown_threads.load()) {
-                        //GC_TRACE("Shutting down thread...");
+                        // GC_TRACE("Shutting down thread...");
                         num_threads_running.fetch_sub(1);
                         return; // end thread
                     }

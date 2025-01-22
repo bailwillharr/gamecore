@@ -5,6 +5,8 @@
 #include <SDL3/SDL_init.h>
 #include <SDL3/SDL_video.h>
 
+#include <tracy/Tracy.hpp>
+
 #include "gamecore/gc_logger.h"
 #include "gamecore/gc_abort.h"
 #include "gamecore/gc_assert.h"
@@ -18,6 +20,18 @@ static constexpr int INITIAL_HEIGHT = 768;
 static void resetKeyboardState(std::span<ButtonState, SDL_SCANCODE_COUNT> keyboard_state)
 {
     for (ButtonState& state : keyboard_state) {
+        if (state == ButtonState::JUST_RELEASED) {
+            state = ButtonState::UP;
+        }
+        else if (state == ButtonState::JUST_PRESSED) {
+            state = ButtonState::DOWN;
+        }
+    }
+}
+
+static void resetMouseButtonState(std::span<ButtonState, static_cast<size_t>(MouseButton::COUNT)> mouse_button_state)
+{
+    for (ButtonState& state : mouse_button_state) {
         if (state == ButtonState::JUST_RELEASED) {
             state = ButtonState::UP;
         }
@@ -66,7 +80,7 @@ Window::Window(const WindowInitInfo& info)
         m_desktop_display_mode = SDL_GetDesktopDisplayMode(display_id);
         if (!m_desktop_display_mode) {
             GC_ERROR("SDL_GetDesktopDisplayMode() error: {}", SDL_GetError());
-            // SDL_SetWindowFullscreenMode() supports NULL display mode so this isn't a fatal error
+            // SDL_SetWindowFullscreenMode() supports NULL display mode so m_desktop_display_mode can still be used
         }
     }
     else {
@@ -99,7 +113,11 @@ void Window::setWindowVisibility(bool visible)
 
 void Window::processEvents()
 {
+    ZoneScoped;
+
     resetKeyboardState(m_keyboard_state);
+    resetMouseButtonState(m_mouse_button_state);
+    m_resized_flag = false;
 
     SDL_Event ev{};
     while (SDL_PollEvent(&ev)) {
@@ -108,7 +126,7 @@ void Window::processEvents()
                 setQuitFlag();
                 break;
             case SDL_EVENT_WINDOW_PIXEL_SIZE_CHANGED:
-                m_resized_flag.store(true);
+                m_resized_flag = true;
                 break;
             case SDL_EVENT_WINDOW_ENTER_FULLSCREEN:
                 m_is_fullscreen = true;
@@ -131,8 +149,18 @@ void Window::processEvents()
             case SDL_EVENT_MOUSE_MOTION:
                 // handle mouse motion
                 break;
-            case SDL_EVENT_MOUSE_BUTTON_DOWN:
-            case SDL_EVENT_MOUSE_BUTTON_UP:
+            case SDL_EVENT_MOUSE_BUTTON_DOWN: {
+                ButtonState& state = m_mouse_button_state[ev.button.button - 1];
+                if (state == ButtonState::UP) {
+                    state = ButtonState::JUST_PRESSED;
+                }
+            } break;
+            case SDL_EVENT_MOUSE_BUTTON_UP: {
+                ButtonState& state = m_mouse_button_state[ev.button.button - 1];
+                if (state == ButtonState::DOWN) {
+                    state = ButtonState::JUST_RELEASED;
+                }
+            } break;
                 // handle mouse buttons
                 break;
             case SDL_EVENT_MOUSE_WHEEL:
@@ -235,9 +263,31 @@ bool Window::getKeyRelease(SDL_Scancode key) const
     return (state == ButtonState::JUST_RELEASED);
 }
 
-bool Window::getResizedFlag() const { return m_resized_flag.load(); }
+bool Window::getButtonDown(MouseButton button) const
+{
+    const ButtonState state = m_mouse_button_state[static_cast<uint32_t>(button)];
+    return (state == ButtonState::DOWN || state == ButtonState::JUST_PRESSED);
+}
 
-void Window::clearResizedFlag() { m_resized_flag.store(false); }
+bool Window::getButtonUp(MouseButton button) const
+{
+    const ButtonState state = m_mouse_button_state[static_cast<uint32_t>(button)];
+    return (state == ButtonState::UP || state == ButtonState::JUST_RELEASED);
+}
+
+bool Window::getButtonPress(MouseButton button) const
+{
+    const ButtonState state = m_mouse_button_state[static_cast<uint32_t>(button)];
+    return (state == ButtonState::JUST_PRESSED);
+}
+
+bool Window::getButtonRelease(MouseButton button) const
+{
+    const ButtonState state = m_mouse_button_state[static_cast<uint32_t>(button)];
+    return (state == ButtonState::JUST_RELEASED);
+}
+
+bool Window::getResizedFlag() const { return m_resized_flag; }
 
 std::optional<SDL_DisplayMode> Window::findDisplayMode(int width, int height) const
 {

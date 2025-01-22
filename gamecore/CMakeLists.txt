@@ -89,3 +89,6 @@ target_link_libraries(${PROJECT_NAME} PUBLIC volk::volk)
 
 # VulkanMemoryAllocator
 target_link_libraries(${PROJECT_NAME} PUBLIC GPUOpen::VulkanMemoryAllocator)
+
+# Tracy
+target_link_libraries(${PROJECT_NAME} PUBLIC Tracy::TracyClient)

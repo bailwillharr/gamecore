@@ -12,7 +12,12 @@
 
 namespace gc {
 
-static constexpr bool USE_MAILBOX_IF_AVAILABLE = true;
+/* Present modes: */
+/* FIFO: Does not use exclusive fullscreen on Windows (composited). Highest latency as rendering is locked to monitor refresh rate. No tearing. Slowdowns will half the FPS. */
+/* FIFO_RELAXED: Does not use exclusive fullscreen on Windows (composited). Allows tearing if frames are submitted late to allow FPS to 'catch up' with monitor refresh rate. */
+/* MAILBOX: Does not use exclusive fullscreen on Windows (composited). Latency may be slightly higher than IMMEDIATE. No tearing. */
+/* IMMEDIATE: Will use exclusive fullscreen on Windows (not composited). Probably the lowest latency option. Has tearing. */
+static constexpr VkPresentModeKHR PREFERRED_PRESENT_MODE = VK_PRESENT_MODE_IMMEDIATE_KHR;
 
 VulkanSwapchain::VulkanSwapchain(const VulkanDevice& device, SDL_Window* window_handle) : m_device(device), m_window_handle(window_handle)
 {
@@ -73,9 +78,9 @@ void VulkanSwapchain::recreateSwapchain()
         abortGame("vkGetPhysicalDeviceSurfacePresentModesKHR() error: {}", vulkanResToString(res));
     }
     // for now, use Mailbox if available otherwise FIFO
-    if (USE_MAILBOX_IF_AVAILABLE && (std::find(present_modes.cbegin(), present_modes.cend(), VK_PRESENT_MODE_MAILBOX_KHR) != present_modes.cend())) {
-        GC_DEBUG("Using MAILBOX present mode");
-        m_present_mode = VK_PRESENT_MODE_MAILBOX_KHR;
+    if (std::find(present_modes.cbegin(), present_modes.cend(), PREFERRED_PRESENT_MODE) != present_modes.cend()) {
+        GC_DEBUG("Using preferred present mode");
+        m_present_mode = PREFERRED_PRESENT_MODE;
     }
     else {
         GC_DEBUG("Using FIFO present mode");
