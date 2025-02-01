@@ -1,5 +1,6 @@
 #include <cstdint>
 
+#include <atomic>
 #include <array>
 #include <filesystem>
 #include <iostream>
@@ -9,10 +10,8 @@
 #include <vector>
 #include <format>
 
-#ifdef _WIN32
-#include <windows.h>
-#define WIN_MAX_PATH 260
-#endif
+#include <SDL3/SDL.h>
+#include <SDL3/SDL_dialog.h>
 
 static constexpr std::array<uint32_t, 256> crc_table = {
     0x00000000L, 0x77073096L, 0xee0e612cL, 0x990951baL, 0x076dc419L, 0x706af48fL, 0xe963a535L, 0x9e6495a3L, 0x0edb8832L, 0x79dcb8a4L, 0xe0d5e91eL, 0x97d2d988L,
@@ -225,71 +224,72 @@ static void writeHeader(std::ostream& file, const GcpakHeader& header)
     file.seekp(0);
     file.write(reinterpret_cast<const char*>(&header), sizeof(GcpakHeader));
     if (file.fail()) {
-        std::cerr << "Failed to write header to file!";
+        std::cerr << "Failed to write header to file!\n";
         std::abort();
     }
 }
 
+static std::atomic<bool> g_open_file_callback_finished;
+static std::filesystem::path g_open_file_callback_result;
+static void SDLCALL openFileCallback(void* userdata, const char* const* filelist, int filter)
+{
+    if (!filelist) {
+        std::cerr << "SDL_ShowOpenFileDialog() error: " << SDL_GetError() << "\n";
+        std::abort();
+    }
+
+    if (!filelist[0]) {
+        g_open_file_callback_result.clear();
+    }
+    else {
+        g_open_file_callback_result = std::filesystem::path(filelist[0]);
+    }
+
+    std::cout << "TEST!\n";
+
+    g_open_file_callback_finished.store(true);
+}
+
 static std::filesystem::path openFileDialog([[maybe_unused]] const std::vector<std::string>& extensions = {})
 {
-#ifdef _WIN32
+    /* linux requires an event loop to use SDL_ShowOpenFileDialog() */
 
-    // build the filter string
-    std::string filter{};
-    if (extensions.empty()) {
-        filter = "All Files\0*.*\0\0";
+    if (!SDL_Init(SDL_INIT_EVENTS)) {
+        std::cerr << "SDL_Init() error: " << SDL_GetError() << "\n";
+        std::abort();
     }
-    else {
-        std::string wildcards{};
-        for (const std::string& ext : extensions) {
-            wildcards += "*." + ext + ";";
+
+    // open file dialog here
+    std::vector<SDL_DialogFileFilter> filters{};
+    for (const auto& ext : extensions) {
+        SDL_DialogFileFilter filter{};
+        filter.name = ext.c_str(); // extensions lifetime is longer than filter so this is OK
+        filter.pattern = ext.c_str();
+    } 
+
+    g_open_file_callback_finished.store(false);
+
+    SDL_ShowOpenFileDialog(openFileCallback, nullptr, nullptr, filters.data(), static_cast<int>(filters.size()), nullptr, false);
+
+    while (g_open_file_callback_finished.load() == false) {
+        /*
+        SDL_Event e{};
+        if (!SDL_WaitEvent(&e)) {
+            std::cerr << "SDL_WaitEvent() error: " << SDL_GetError() << "\n";
+            std::abort();
         }
-        wildcards.pop_back(); // remove the last semicolon
-        filter.push_back('(');
-        filter.append(wildcards);
-        filter.push_back(')');
-        filter.push_back('\0');
-        filter.append(wildcards);
-        filter.push_back('\0');
-        filter.append("All Files");
-        filter.push_back('\0');
-        filter.append("*.*");
-        filter.push_back('\0');
-        filter.push_back('\0');
+        */
+        SDL_PumpEvents();
     }
 
-    OPENFILENAMEA ofn{};             // common dialog box structure
-    CHAR szFile[WIN_MAX_PATH] = {0}; // if using TCHAR macros, use TCHAR array
+    SDL_QuitSubSystem(SDL_INIT_EVENTS);
 
-    // Initialize OPENFILENAME
-    ofn.lStructSize = sizeof(ofn);
-    ofn.hwndOwner = NULL;
-    ofn.lpstrFile = szFile;
-    ofn.lpstrFile[0] = '\0';
-    ofn.nMaxFile = sizeof(szFile);
-    ofn.lpstrFilter = filter.c_str();
-    ofn.nFilterIndex = 1;
-    ofn.lpstrFileTitle = NULL;
-    ofn.nMaxFileTitle = 0;
-    ofn.lpstrInitialDir = NULL;
-    ofn.Flags = OFN_PATHMUSTEXIST | OFN_FILEMUSTEXIST | OFN_NOCHANGEDIR;
-
-    // Display the Open dialog box
-    if (GetOpenFileNameA(&ofn) == TRUE) {
-        return std::filesystem::path(std::string(ofn.lpstrFile));
+    if (g_open_file_callback_result.empty()) {
+        std::cerr << "No file chosen\n";
+        std::abort();
     }
-    else {
-        return std::filesystem::path{}; // User cancelled the dialog
-    }
-#else
-    // only Windows dialogs supported at the moment
-    std::cerr << "Open file dialog not supported on this platform";
-    std::cout << "Enter file path: ";
-    std::string file_path_str;
-    std::getline(std::cin, file_path_str);
 
-    return std::filesystem::path(file_path_str);
-#endif
+    return g_open_file_callback_result;
 }
 
 static std::map<std::uint32_t, std::string> parseHashFile(std::istream& file)

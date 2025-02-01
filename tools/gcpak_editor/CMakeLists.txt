@@ -28,3 +28,14 @@ if (MSVC)
 else()
 	target_compile_options(${PROJECT_NAME} PRIVATE -Wall -Wextra -pedantic)
 endif()
+
+# SDL3 for open file dialog
+target_link_libraries(${PROJECT_NAME} PUBLIC SDL3::SDL3)
+
+if(WIN32)
+    add_custom_command(
+        TARGET ${PROJECT_NAME} POST_BUILD
+        COMMAND "${CMAKE_COMMAND}" -E copy $<TARGET_FILE:SDL3::SDL3-shared> $<TARGET_FILE_DIR:${PROJECT_NAME}>
+        VERBATIM
+    )
+endif()

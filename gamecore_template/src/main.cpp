@@ -22,7 +22,6 @@ int main([[maybe_unused]] int argc, [[maybe_unused]] char* argv[])
 
     /* compile a pipeline rq */
     auto [my_pipeline, my_pipeline_layout] = renderer.createPipeline();
-    vkDestroyPipeline(renderer.)
 
     win.setTitle("Hello world!");
     win.setIsResizable(true);
