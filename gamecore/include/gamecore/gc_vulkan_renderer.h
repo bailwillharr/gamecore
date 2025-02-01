@@ -2,6 +2,7 @@
 
 #include <array>
 #include <vector>
+#include <tuple>
 
 #include <SDL3/SDL_vulkan.h>
 
@@ -43,6 +44,8 @@ public:
     // This thread will submit command buffers and present the result of the last frame's queueSubmit()
     void acquireAndPresent();
     uint64_t getFramecount() const;
+
+    std::pair<VkPipeline, VkPipelineLayout> createPipeline();
 };
 
 } // namespace gc

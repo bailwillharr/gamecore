@@ -3,6 +3,7 @@
 #include <gamecore/gc_jobs.h>
 #include <gamecore/gc_window.h>
 #include <gamecore/gc_abort.h>
+#include <gamecore/gc_vulkan_common.h>
 #include <gamecore/gc_vulkan_renderer.h>
 #include <gamecore/gc_asset_id.h>
 #include <gamecore/gc_content.h>
@@ -19,6 +20,10 @@ int main([[maybe_unused]] int argc, [[maybe_unused]] char* argv[])
     gc::Window& win = gc::app().window();
     gc::VulkanRenderer& renderer = gc::app().vulkanRenderer();
 
+    /* compile a pipeline rq */
+    auto [my_pipeline, my_pipeline_layout] = renderer.createPipeline();
+    vkDestroyPipeline(renderer.)
+
     win.setTitle("Hello world!");
     win.setIsResizable(true);
     win.setWindowVisibility(true);
@@ -32,7 +37,7 @@ int main([[maybe_unused]] int argc, [[maybe_unused]] char* argv[])
         tracy::SetThreadName("Render Thread");
 
         while (game_running.load()) {
-            
+
 
             sync_frame_count.fetch_add(1);
             sync_frame_count.notify_all();
@@ -73,8 +78,8 @@ int main([[maybe_unused]] int argc, [[maybe_unused]] char* argv[])
         }*/
     }
 
-    //game_running.store(false);
-    //render_thread.join();
+    // game_running.store(false);
+    // render_thread.join();
 
     gc::App::shutdown();
 

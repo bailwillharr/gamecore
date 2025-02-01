@@ -56,7 +56,11 @@ set(VMA_ENABLE_INSTALL OFF CACHE INTERNAL "" FORCE)
 add_subdirectory(vendor/VulkanMemoryAllocator EXCLUDE_FROM_ALL)
 
 # Tracy
+if (GC_PROFILING)
 set(TRACY_ENABLE ON CACHE INTERNAL "" FORCE)
+else()
+set(TRACY_ENABLE OFF CACHE INTERNAL "" FORCE)
+endif()
 set(TRACY_ON_DEMAND OFF CACHE INTERNAL "" FORCE)
 add_subdirectory(vendor/tracy EXCLUDE_FROM_ALL)
 

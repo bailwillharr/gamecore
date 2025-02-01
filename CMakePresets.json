@@ -21,7 +21,7 @@
     {
       "name": "x64-debug-windows",
       "displayName": "x64 Debug",
-      "description": "No optimisation, hot reloading enabled, generate debug symbols",
+      "description": "Profiling off, No optimisation, hot reloading enabled, generate debug symbols",
       "inherits": "windows-base",
       "architecture": {
         "value": "x64",
@@ -29,7 +29,8 @@
       },
       "cacheVariables": {
         "CMAKE_BUILD_TYPE": "Debug",
-        "GC_DEV_BUILD": "ON"
+        "GC_DEV_BUILD": "ON",
+        "GC_PROFILING": "OFF"
       },
       "condition": {
         "type": "equals",
@@ -40,11 +41,12 @@
     {
       "name": "x64-release-windows",
       "displayName": "x64 Release",
-      "description": "Optimisation on, hot reloading enabled, generate debug symbols",
+      "description": "Profiling off, Optimisation on, hot reloading enabled, generate debug symbols",
       "inherits": "x64-debug-windows",
       "cacheVariables": {
         "CMAKE_BUILD_TYPE": "RelWithDebInfo",
-        "GC_DEV_BUILD": "ON"
+        "GC_DEV_BUILD": "ON",
+        "GC_PROFILING": "OFF"
       },
       "condition": {
         "type": "equals",
@@ -55,12 +57,30 @@
     {
       "name": "x64-dist-windows",
       "displayName": "x64 Distribution Build",
-      "description": "Optimisation on, hot reloading disabled, no symbols",
+      "description": "Profiling off, Optimisation on, hot reloading disabled, no symbols",
       "inherits": "x64-debug-windows",
       "cacheVariables": {
         "CMAKE_BUILD_TYPE": "Release",
         "GC_DEV_BUILD": "OFF",
-        "GAMECORE_TEMPLATE_WIN32_BUILD":  "ON"
+        "GC_PROFILING": "OFF",
+        "GAMECORE_TEMPLATE_WIN32_BUILD": "ON"
+      },
+      "condition": {
+        "type": "equals",
+        "lhs": "${hostSystemName}",
+        "rhs": "Windows"
+      }
+    },
+    {
+      "name": "x64-dist-profiling-windows",
+      "displayName": "x64 Distribution Build With Profiling",
+      "description": "Profiling on, Optimisation on, hot reloading disabled, no symbols",
+      "inherits": "x64-debug-windows",
+      "cacheVariables": {
+        "CMAKE_BUILD_TYPE": "Release",
+        "GC_DEV_BUILD": "OFF",
+        "GC_PROFILING": "ON",
+        "GAMECORE_TEMPLATE_WIN32_BUILD": "ON"
       },
       "condition": {
         "type": "equals",
@@ -79,7 +99,7 @@
       "cacheVariables": {
         "CMAKE_C_COMPILER": "clang",
         "CMAKE_CXX_COMPILER": "clang++",
-		"CMAKE_EXPORT_COMPILE_COMMANDS": "ON"
+        "CMAKE_EXPORT_COMPILE_COMMANDS": "ON"
       },
       "condition": {
         "type": "equals",

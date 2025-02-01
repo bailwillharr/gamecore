@@ -14,7 +14,7 @@
 #include "gamecore/gc_abort.h"
 #include "gamecore/gc_logger.h"
 
-#define GC_CHECKVK(fun) vulkanCheckError(fun, #fun)
+#define GC_CHECKVK(fun) ::gc::vulkanCheckError(fun, #fun)
 
 namespace gc {
 
