@@ -20,9 +20,6 @@ int main([[maybe_unused]] int argc, [[maybe_unused]] char* argv[])
     gc::Window& win = gc::app().window();
     gc::VulkanRenderer& renderer = gc::app().vulkanRenderer();
 
-    /* compile a pipeline rq */
-    auto [my_pipeline, my_pipeline_layout] = renderer.createPipeline();
-
     win.setTitle("Hello world!");
     win.setIsResizable(true);
     win.setWindowVisibility(true);
@@ -75,6 +72,8 @@ int main([[maybe_unused]] int argc, [[maybe_unused]] char* argv[])
             ZoneScopedNC("Wait for render thread", tracy::Color::Crimson);
             sync_frame_count.wait(sync_frame_count.load());
         }*/
+
+        FrameMark;
     }
 
     // game_running.store(false);

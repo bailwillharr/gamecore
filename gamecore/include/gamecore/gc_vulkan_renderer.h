@@ -31,6 +31,9 @@ class VulkanRenderer {
     uint64_t m_framecount = 0;
     std::array<VulkanPerFrameInFlight, VULKAN_FRAMES_IN_FLIGHT> m_per_frame_in_flight{};
 
+    VkPipeline m_pipeline = VK_NULL_HANDLE;
+    VkPipelineLayout m_pipeline_layout = VK_NULL_HANDLE;
+
 public:
     VulkanRenderer(SDL_Window* window_handle);
     VulkanRenderer(const VulkanRenderer&) = delete;
@@ -45,7 +48,11 @@ public:
     void acquireAndPresent();
     uint64_t getFramecount() const;
 
+    void waitIdle();
+
     std::pair<VkPipeline, VkPipelineLayout> createPipeline();
+    void destroyPipeline(VkPipeline pipeline, VkPipelineLayout layout);
+
 };
 
 } // namespace gc

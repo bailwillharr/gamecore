@@ -18,7 +18,7 @@
 namespace gc {
 
 static void recordCommandBuffer(const VulkanDevice& device, VkImage swapchain_image, VkImageView image_view, VkExtent2D image_extent, VkCommandBuffer cmd,
-                                uint64_t framecount)
+                                uint64_t framecount, VkPipeline pipeline)
 {
     ZoneScoped;
 
@@ -88,6 +88,25 @@ static void recordCommandBuffer(const VulkanDevice& device, VkImage swapchain_im
     }
 
     {
+        VkViewport viewport{};
+        viewport.x = 0.0f;
+        viewport.y = 0.0f;
+        viewport.width = static_cast<float>(image_extent.width);
+        viewport.height = static_cast<float>(image_extent.height);
+        viewport.minDepth = 0.0f;
+        viewport.maxDepth = 1.0f;
+        vkCmdSetViewport(cmd, 0, 1, &viewport);
+
+        VkRect2D scissor{};
+        scissor.offset.x = 0;
+        scissor.offset.y = 0;
+        scissor.extent = image_extent;
+        vkCmdSetScissor(cmd, 0, 1, &scissor);
+        vkCmdBindPipeline(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, pipeline);
+        vkCmdDraw(cmd, 3, 1, 0, 0);
+    }
+
+    {
         vkCmdEndRendering(cmd);
     }
 
@@ -146,6 +165,8 @@ VulkanRenderer::VulkanRenderer(SDL_Window* window_handle) : m_device(), m_alloca
         GC_CHECKVK(vkAllocateCommandBuffers(m_device.getDevice(), &cmdAllocInfo, &per_frame_data.cmd));
     }
 
+    std::tie(m_pipeline, m_pipeline_layout) = createPipeline();
+
     GC_TRACE("Initialised VulkanRenderer");
 }
 
@@ -153,8 +174,9 @@ VulkanRenderer::~VulkanRenderer()
 {
     GC_TRACE("Destroying VulkanRenderer...");
 
-    /* ensure GPU is not using any command buffers etc. */
-    GC_CHECKVK(vkDeviceWaitIdle(m_device.getDevice()));
+    waitIdle();
+
+    destroyPipeline(m_pipeline, m_pipeline_layout);
 
     for (auto& per_frame_data : m_per_frame_in_flight) {
         vkFreeCommandBuffers(m_device.getDevice(), per_frame_data.pool, 1, &per_frame_data.cmd);
@@ -171,7 +193,7 @@ void VulkanRenderer::acquireAndPresent()
 
     uint32_t frame_in_flight_index = m_framecount % VULKAN_FRAMES_IN_FLIGHT;
 
-    {
+    { // In VK_PRESENT_MODE_FIFO_KHR mode, wait for v-sync is done here.
         ZoneScopedNC("Wait for GPU", tracy::Color::Crimson);
         GC_CHECKVK(vkWaitForFences(m_device.getDevice(), 1, &m_per_frame_in_flight[frame_in_flight_index].rendering_finished_fence, VK_TRUE, UINT64_MAX));
         GC_CHECKVK(vkResetFences(m_device.getDevice(), 1, &m_per_frame_in_flight[frame_in_flight_index].rendering_finished_fence));
@@ -200,7 +222,7 @@ void VulkanRenderer::acquireAndPresent()
         GC_CHECKVK(vkResetCommandPool(m_device.getDevice(), m_per_frame_in_flight[frame_in_flight_index].pool, 0));
     }
     recordCommandBuffer(m_device, m_swapchain.getImage(image_index), m_swapchain.getImageView(image_index), m_swapchain.getExtent(),
-                        m_per_frame_in_flight[frame_in_flight_index].cmd, m_framecount);
+                        m_per_frame_in_flight[frame_in_flight_index].cmd, m_framecount, m_pipeline);
 
     {
         ZoneScopedN("Queue submit");
@@ -258,6 +280,12 @@ void VulkanRenderer::acquireAndPresent()
 }
 
 uint64_t VulkanRenderer::getFramecount() const { return m_framecount; }
+
+void VulkanRenderer::waitIdle()
+{
+    /* ensure GPU is not using any command buffers etc. */
+    GC_CHECKVK(vkDeviceWaitIdle(m_device.getDevice()));
+}
 
 std::pair<VkPipeline, VkPipelineLayout> VulkanRenderer::createPipeline()
 {
@@ -487,6 +515,12 @@ std::pair<VkPipeline, VkPipelineLayout> VulkanRenderer::createPipeline()
     vkDestroyShaderModule(m_device.getDevice(), vertex_module, nullptr);
 
     return std::make_pair(pipeline, layout);
+}
+
+void VulkanRenderer::destroyPipeline(VkPipeline pipeline, VkPipelineLayout layout)
+{
+    vkDestroyPipeline(m_device.getDevice(), pipeline, nullptr);
+    vkDestroyPipelineLayout(m_device.getDevice(), layout, nullptr);
 }
 
 } // namespace gc
