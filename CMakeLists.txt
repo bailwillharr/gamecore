@@ -64,6 +64,9 @@ endif()
 set(TRACY_ON_DEMAND OFF CACHE INTERNAL "" FORCE)
 add_subdirectory(vendor/tracy EXCLUDE_FROM_ALL)
 
+# shaderc_combined (from Vulkan SDK)
+find_package(Vulkan COMPONENTS shaderc_combined)
+
 add_subdirectory(gamecore)
 
 add_subdirectory(gamecore_template)

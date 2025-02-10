@@ -1,5 +1,5 @@
 /* Create the Vulkan graphics device and load its Vulkan function pointers. */
-/* Debug message callback and validation layers are enabled if GC_VULKAN_DEBUG is defined. */
+/* Debug message callback and validation layers are enabled if GC_VULKAN_VALIDATION is defined. */
 
 #include "gamecore/gc_vulkan_device.h"
 
@@ -130,11 +130,6 @@ VulkanDevice::VulkanDevice()
     { // create instance
         std::vector<const char*> instance_extensions{};
 
-#ifdef GC_VULKAN_DEBUG
-        instance_extensions.push_back(VK_EXT_DEBUG_UTILS_EXTENSION_NAME);
-#endif
-        instance_extensions.push_back(VK_KHR_GET_SURFACE_CAPABILITIES_2_EXTENSION_NAME);
-
         /* get SDL window required extensions for swapchain */
         uint32_t window_extension_count{};
         const char* const* const window_extensions = SDL_Vulkan_GetInstanceExtensions(&window_extension_count);
@@ -144,6 +139,15 @@ VulkanDevice::VulkanDevice()
         for (uint32_t i = 0; i < window_extension_count; ++i) {
             instance_extensions.push_back(window_extensions[i]);
         }
+        
+        // The above code pushes back VK_KHR_surface and VK_KHR_win32_surface on windows
+
+#ifdef GC_VULKAN_VALIDATION
+        instance_extensions.push_back(VK_EXT_DEBUG_UTILS_EXTENSION_NAME);
+#endif
+        instance_extensions.push_back(VK_KHR_GET_SURFACE_CAPABILITIES_2_EXTENSION_NAME);
+        instance_extensions.push_back(VK_EXT_SURFACE_MAINTENANCE_1_EXTENSION_NAME);
+
 
         VkDebugUtilsMessengerCreateInfoEXT debug_messenger_info{};
         debug_messenger_info.sType = VK_STRUCTURE_TYPE_DEBUG_UTILS_MESSENGER_CREATE_INFO_EXT;
@@ -168,7 +172,7 @@ VulkanDevice::VulkanDevice()
         instance_info.pApplicationInfo = &app_info;
         instance_info.enabledExtensionCount = static_cast<uint32_t>(instance_extensions.size());
         instance_info.ppEnabledExtensionNames = instance_extensions.data();
-#ifdef GC_VULKAN_DEBUG
+#ifdef GC_VULKAN_VALIDATION
         instance_info.pNext = &debug_messenger_info;
         instance_info.enabledLayerCount = 1;
         instance_info.ppEnabledLayerNames = &khronos_validation_layer_name;
@@ -182,7 +186,7 @@ VulkanDevice::VulkanDevice()
 
         volkLoadInstanceOnly(m_instance);
 
-#ifdef GC_VULKAN_DEBUG
+#ifdef GC_VULKAN_VALIDATION
         vkCreateDebugUtilsMessengerEXT(m_instance, &debug_messenger_info, nullptr, &m_debug_messenger);
 #endif
     }
@@ -234,7 +238,7 @@ VulkanDevice::VulkanDevice()
                                                       .queueCount = 1,
                                                       .pQueuePriorities = &queue_priority});
 
-        constexpr std::array<const char*, 1> REQUIRED_EXTENSION_NAMES{VK_KHR_SWAPCHAIN_EXTENSION_NAME};
+        constexpr std::array<const char*, 2> REQUIRED_EXTENSION_NAMES{VK_KHR_SWAPCHAIN_EXTENSION_NAME, VK_EXT_SWAPCHAIN_MAINTENANCE_1_EXTENSION_NAME};
         constexpr std::array<const char*, 2> OPTIONAL_EXTENSION_NAMES{VK_EXT_MEMORY_PRIORITY_EXTENSION_NAME, VK_EXT_MEMORY_BUDGET_EXTENSION_NAME};
 
         // First only add optional extension names and then remove any which are unsupported.
@@ -252,6 +256,7 @@ VulkanDevice::VulkanDevice()
         // enable features here:
         m_features_enabled.vulkan13.dynamicRendering = VK_TRUE;
         m_features_enabled.vulkan13.synchronization2 = VK_TRUE;
+        m_features_enabled.vulkan12.timelineSemaphore = VK_TRUE;
         if (isExtensionEnabled(VK_EXT_MEMORY_PRIORITY_EXTENSION_NAME)) {
             m_features_enabled.memory_priority.memoryPriority = VK_TRUE;
         }

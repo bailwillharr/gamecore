@@ -135,7 +135,7 @@ std::vector<uint8_t> Content::loadAsset(std::uint32_t id)
         std::lock_guard lock(m_package_file_mutexes[asset_info.file_index]);
         auto& file = m_package_files[asset_info.file_index];
         file.seekg(asset_info.entry.offset, std::ios::beg);
-        std::vector<std::uint8_t> data(asset_info.entry.size);
+        std::vector<uint8_t> data(asset_info.entry.size);
         file.read(reinterpret_cast<char*>(data.data()), asset_info.entry.size);
         if (file.gcount() != asset_info.entry.size) {
             GC_ERROR("file.read() failed to read asset {} from file! {}/{} bytes read", nameFromID(id), file.gcount(), asset_info.entry.size);
