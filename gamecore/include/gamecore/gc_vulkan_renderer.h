@@ -15,7 +15,7 @@
 
 namespace gc {
 
-inline constexpr int VULKAN_FRAMES_IN_FLIGHT = 1;
+inline constexpr int VULKAN_FRAMES_IN_FLIGHT = 2;
 
 struct VulkanPerFrameInFlight {
     //VkFence rendering_finished_fence = VK_NULL_HANDLE;       // starts signalled
@@ -43,6 +43,8 @@ public:
 
     VulkanRenderer operator=(const VulkanRenderer&) = delete;
 
+    /* wait for the VULKAN_FRAMES_IN_FLIGHTth last frame */
+    /* After return it is safe to record and submit this frame's command buffers */
     void waitForRenderFinished();
 
     // Call to render the frame. This function should execute relatively quickly if V-sync is off.

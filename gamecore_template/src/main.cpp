@@ -81,6 +81,7 @@ int main([[maybe_unused]] int argc, [[maybe_unused]] char* argv[])
 
         std::vector<VkCommandBuffer> bufs{};
         if (!gc::app().jobs().isBusy()) {
+            ZoneScopedN("Record triangle command buffer");
 
             // reset command buffer
             GC_CHECKVK(vkResetCommandPool(device.getDevice(), command_pools[renderer.getFrameInFlightIndex()], 0));

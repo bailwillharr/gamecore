@@ -180,17 +180,18 @@ void VulkanRenderer::waitForRenderFinished()
     if (m_framecount < VULKAN_FRAMES_IN_FLIGHT) {
         return;
     }
-
-    // wait for v-sync is done here, if the present mode actually waits for v-sync
-    VkSemaphoreWaitInfo wait_info{};
-    wait_info.sType = VK_STRUCTURE_TYPE_SEMAPHORE_WAIT_INFO;
-    wait_info.pNext = nullptr;
-    wait_info.flags = 0;
-    wait_info.semaphoreCount = 1;
-    wait_info.pSemaphores = &m_timeline_semaphore;
-    const uint64_t value = m_framecount;
-    wait_info.pValues = &value;
-    GC_CHECKVK(vkWaitSemaphores(m_device.getDevice(), &wait_info, UINT64_MAX));
+    else {
+        // wait for v-sync is done here, if the present mode actually waits for v-sync
+        VkSemaphoreWaitInfo wait_info{};
+        wait_info.sType = VK_STRUCTURE_TYPE_SEMAPHORE_WAIT_INFO;
+        wait_info.pNext = nullptr;
+        wait_info.flags = 0;
+        wait_info.semaphoreCount = 1;
+        wait_info.pSemaphores = &m_timeline_semaphore;
+        const uint64_t value = m_framecount - (VULKAN_FRAMES_IN_FLIGHT - 1); // no less than one, as once first frame has finished, this becomes one
+        wait_info.pValues = &value;
+        GC_CHECKVK(vkWaitSemaphores(m_device.getDevice(), &wait_info, UINT64_MAX));
+    }
 }
 
 void VulkanRenderer::acquireAndPresent(std::span<VkCommandBuffer> rendering_cmds)
