@@ -208,6 +208,7 @@ void VulkanRenderer::acquireAndPresent(std::span<VkCommandBuffer> rendering_cmds
                                                  m_per_frame_in_flight[frame_in_flight_index].image_acquired_semaphore, VK_NULL_HANDLE, &image_index);
             res != VK_SUCCESS) {
             if (res == VK_SUBOPTIMAL_KHR) {
+                GC_TRACE("vkAcquireNextImageKHR returned: {}", vulkanResToString(res));
                 recreate_swapchain = true;
             }
             else {
@@ -267,6 +268,7 @@ void VulkanRenderer::acquireAndPresent(std::span<VkCommandBuffer> rendering_cmds
         present_info.pResults = nullptr;
         if (VkResult res = vkQueuePresentKHR(m_device.getMainQueue().queue, &present_info); res != VK_SUCCESS) {
             if (res == VK_ERROR_OUT_OF_DATE_KHR || res == VK_SUBOPTIMAL_KHR) {
+                GC_TRACE("vkQueuePresentKHR returned: {}", vulkanResToString(res));
                 recreate_swapchain = true;
             }
             else {

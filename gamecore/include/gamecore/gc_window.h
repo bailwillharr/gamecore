@@ -38,9 +38,6 @@ enum class MouseButton : uint8_t {
 class Window {
     SDL_Window* m_window_handle{};
 
-    std::vector<SDL_DisplayMode> m_display_modes{};
-    const SDL_DisplayMode* m_desktop_display_mode{};
-
     std::array<ButtonState, SDL_SCANCODE_COUNT> m_keyboard_state{}; // zero initialisation sets all keys to ButtonState::UP
     std::array<ButtonState, static_cast<size_t>(MouseButton::COUNT)> m_mouse_button_state{};
 
@@ -92,8 +89,6 @@ public:
 
     bool getResizedFlag() const;
 
-private:
-    std::optional<SDL_DisplayMode> findDisplayMode(int width, int height) const;
 };
 
 } // namespace gc

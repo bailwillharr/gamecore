@@ -57,36 +57,6 @@ Window::Window(const WindowInitInfo& info)
         GC_ERROR("SDL_CreateWindow() error: {}", SDL_GetError());
         abortGame("Failed to create window.");
     }
-
-    // Get fullscreen display modes for use later
-    m_display_modes.clear();
-    const SDL_DisplayID display_id = SDL_GetPrimaryDisplay();
-    if (display_id != 0) {
-
-        int count{};
-        SDL_DisplayMode** sdl_modes = SDL_GetFullscreenDisplayModes(display_id, &count);
-        if (sdl_modes) {
-            GC_ASSERT(count >= 0);
-            m_display_modes.resize(count);
-            for (int i = 0; i < count; ++i) {
-                m_display_modes[i] = *(sdl_modes[i]);
-            }
-            SDL_free(sdl_modes);
-        }
-        else {
-            GC_ERROR("SDL_GetFullscreenDisplayModes() failed: {}", SDL_GetError());
-        }
-
-        m_desktop_display_mode = SDL_GetDesktopDisplayMode(display_id);
-        if (!m_desktop_display_mode) {
-            GC_ERROR("SDL_GetDesktopDisplayMode() error: {}", SDL_GetError());
-            // SDL_SetWindowFullscreenMode() supports NULL display mode so m_desktop_display_mode can still be used
-        }
-    }
-    else {
-        GC_ERROR("SDL_GetPrimaryDisplay() failed: {}", SDL_GetError());
-        // it is safe to continue, there will just be no available fullscreen display modes
-    }
 }
 
 Window::~Window()
@@ -126,6 +96,7 @@ void Window::processEvents()
                 setQuitFlag();
                 break;
             case SDL_EVENT_WINDOW_PIXEL_SIZE_CHANGED:
+                GC_TRACE("Window event: SDL_EVENT_WINDOW_PIXEL_SIZE_CHANGED");
                 m_resized_flag = true;
                 break;
             case SDL_EVENT_WINDOW_ENTER_FULLSCREEN:
@@ -187,26 +158,50 @@ void Window::setTitle(const std::string& title)
 
 void Window::setSize(uint32_t width, uint32_t height, bool fullscreen)
 {
-    if (!SDL_SetWindowFullscreen(m_window_handle, fullscreen)) {
-        GC_ERROR("SDL_SetWindowFullscreen() failed: {}", SDL_GetError());
-    }
 
     if (fullscreen) {
-        const SDL_DisplayMode* mode_ptr{}; // can be null for windowed fullscreen
-        if (width != 0 && height != 0) {
-            if (auto mode = findDisplayMode(width, height); mode.has_value()) {
-                mode_ptr = &mode.value();
+        const SDL_DisplayMode* mode = nullptr;
+        const SDL_DisplayID display = SDL_GetDisplayForWindow(m_window_handle);
+        if (display) {
+            if (width != 0 && height != 0) {
+                // have to get list of available display modes
+                SDL_DisplayMode** available_modes = SDL_GetFullscreenDisplayModes(display, nullptr);
+                if (available_modes) {
+                    for (int i = 0; available_modes[i] != nullptr; ++i) {
+                        if (available_modes[i]->w == width && available_modes[i]->h == height) {
+                            mode = available_modes[i];
+                            break;
+                        }
+                    }
+                    SDL_free(available_modes);
+                }
+                else {
+                    GC_ERROR("SDL_GetFullscreenDisplayModes() error: {}", SDL_GetError());
+                }
+            }
+            else {
+                // Use desktop display mode
+                mode = SDL_GetDesktopDisplayMode(display);
+                if (!mode) {
+                    GC_ERROR("SDL_GetDesktopDisplayMode() error: {}", SDL_GetError());
+                }
             }
         }
         else {
-            mode_ptr = m_desktop_display_mode;
+            GC_ERROR("SDL_GetDisplayForWindow() error: {}", SDL_GetError());
         }
-        if (!SDL_SetWindowFullscreenMode(m_window_handle, mode_ptr)) {
+        if (!SDL_SetWindowFullscreenMode(m_window_handle, mode)) {
             GC_ERROR("SDL_SetWindowFullscreenMode() error: {}", SDL_GetError());
+        }
+        if (!SDL_SetWindowFullscreen(m_window_handle, true)) {
+            GC_ERROR("SDL_SetWindowFullscreen() failed: {}", SDL_GetError());
         }
     }
     else { // regular windowed mode
 
+        if (!SDL_SetWindowFullscreen(m_window_handle, false)) {
+            GC_ERROR("SDL_SetWindowFullscreen() failed: {}", SDL_GetError());
+        }
         if (width == 0 || height == 0) {
             if (!SDL_MaximizeWindow(m_window_handle)) {
                 GC_ERROR("SDL_MaximizeWindow() error: {}", SDL_GetError());
@@ -219,10 +214,9 @@ void Window::setSize(uint32_t width, uint32_t height, bool fullscreen)
         }
     }
 
-    /* Don't block until resize has finished. There is no need. */
-    // if (!SDL_SyncWindow(m_window_handle)) {
-    //     GC_ERROR("SDL_SyncWindow() timed out");
-    // }
+    if (!SDL_SyncWindow(m_window_handle)) {
+        GC_ERROR("SDL_SyncWindow() timed out");
+    }
 }
 
 std::array<int, 2> Window::getSize() const
@@ -288,16 +282,5 @@ bool Window::getButtonRelease(MouseButton button) const
 }
 
 bool Window::getResizedFlag() const { return m_resized_flag; }
-
-std::optional<SDL_DisplayMode> Window::findDisplayMode(int width, int height) const
-{
-    // Modes are more-or-less sorted best to worst, so return the first found matching mode
-    for (const SDL_DisplayMode& mode : m_display_modes) {
-        if (mode.w == width && mode.h == height) {
-            return mode;
-        }
-    }
-    return {};
-}
 
 } // namespace gc
