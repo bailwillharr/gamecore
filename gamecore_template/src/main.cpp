@@ -35,14 +35,13 @@ int main([[maybe_unused]] int argc, [[maybe_unused]] char* argv[])
         SDL_Delay(1000);
     });
 
-
     std::array<VkCommandPool, gc::VULKAN_FRAMES_IN_FLIGHT> command_pools{};
     std::array<VkCommandBuffer, gc::VULKAN_FRAMES_IN_FLIGHT> command_buffers{};
 
     for (int i = 0; i < gc::VULKAN_FRAMES_IN_FLIGHT; ++i) {
         VkCommandPoolCreateInfo pool_info{};
         pool_info.sType = VK_STRUCTURE_TYPE_COMMAND_POOL_CREATE_INFO;
-        pool_info.flags = 0;
+        pool_info.flags = VK_COMMAND_POOL_CREATE_TRANSIENT_BIT;
         pool_info.queueFamilyIndex = device.getMainQueue().queue_family_index;
         GC_CHECKVK(vkCreateCommandPool(device.getDevice(), &pool_info, nullptr, &command_pools[i]));
 
@@ -55,7 +54,21 @@ int main([[maybe_unused]] int argc, [[maybe_unused]] char* argv[])
         GC_CHECKVK(vkAllocateCommandBuffers(device.getDevice(), &cmdAllocInfo, &command_buffers[i]));
     }
 
+    const uint64_t counter_freq = SDL_GetPerformanceFrequency();
+
+    uint64_t frame_start_time = SDL_GetPerformanceCounter();
+    uint64_t last_frame_start_time = frame_start_time - counter_freq * 16 / 1000; // first delta time as 16 ms
+    double elapsed_time = 0.0f;
+
     while (!win.shouldQuit()) {
+
+        const double delta_time = static_cast<double>(frame_start_time - last_frame_start_time) / static_cast<double>(counter_freq);
+        elapsed_time += delta_time;
+        last_frame_start_time = frame_start_time;
+        frame_start_time = SDL_GetPerformanceCounter();
+
+        renderer.waitForRenderFinished();
+
         win.processEvents();
 
         if (win.getKeyDown(SDL_SCANCODE_ESCAPE)) {
@@ -76,8 +89,6 @@ int main([[maybe_unused]] int argc, [[maybe_unused]] char* argv[])
                 GC_ERROR("SDL_SetWindowRelativeMouseMode() error: {}", SDL_GetError());
             }
         }
-
-        renderer.waitForRenderFinished();
 
         std::vector<VkCommandBuffer> bufs{};
         if (!gc::app().jobs().isBusy()) {
@@ -112,7 +123,7 @@ int main([[maybe_unused]] int argc, [[maybe_unused]] char* argv[])
 
             VkCommandBufferBeginInfo begin_info{};
             begin_info.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO;
-            begin_info.flags = VK_COMMAND_BUFFER_USAGE_RENDER_PASS_CONTINUE_BIT;
+            begin_info.flags = VK_COMMAND_BUFFER_USAGE_ONE_TIME_SUBMIT_BIT | VK_COMMAND_BUFFER_USAGE_RENDER_PASS_CONTINUE_BIT;
             begin_info.pInheritanceInfo = &inheritance_info;
             GC_CHECKVK(vkBeginCommandBuffer(cmd, &begin_info));
 
@@ -132,8 +143,9 @@ int main([[maybe_unused]] int argc, [[maybe_unused]] char* argv[])
             scissor.offset.y = 0;
             scissor.extent = swapchain.getExtent();
             vkCmdSetScissor(cmd, 0, 1, &scissor);
-            float push_val = 1.0f;
-            vkCmdPushConstants(cmd, pipeline_layout, VK_SHADER_STAGE_VERTEX_BIT, 0, sizeof(float), &push_val);
+            const auto mouse_pos = win.getMousePositionNorm();
+            const std::array<float, 2> push_val{static_cast<float>(mouse_pos[0]), static_cast<float>(mouse_pos[1])};
+            vkCmdPushConstants(cmd, pipeline_layout, VK_SHADER_STAGE_VERTEX_BIT, 0, sizeof(decltype(push_val)::value_type) * push_val.size(), push_val.data());
             vkCmdDraw(cmd, 3, 1, 0, 0);
 
             GC_CHECKVK(vkEndCommandBuffer(cmd));

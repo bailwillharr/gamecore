@@ -18,6 +18,7 @@ namespace gc {
 /* MAILBOX: Does not use exclusive fullscreen on Windows (composited). Latency may be slightly higher than IMMEDIATE. No tearing. */
 /* IMMEDIATE: Will use exclusive fullscreen on Windows (not composited). Probably the lowest latency option. Has tearing. */
 static constexpr VkPresentModeKHR PREFERRED_PRESENT_MODE = VK_PRESENT_MODE_FIFO_KHR;
+//static constexpr VkPresentModeKHR PREFERRED_PRESENT_MODE = VK_PRESENT_MODE_IMMEDIATE_KHR;
 
 VulkanSwapchain::VulkanSwapchain(const VulkanDevice& device, SDL_Window* window_handle) : m_device(device), m_window_handle(window_handle)
 {
@@ -124,9 +125,12 @@ void VulkanSwapchain::recreateSwapchain()
     }
 
     // Get min image count
-    uint32_t min_image_count = surface_caps.surfaceCapabilities.minImageCount + 1;
+    uint32_t min_image_count = surface_caps.surfaceCapabilities.minImageCount;
     if (surface_caps.surfaceCapabilities.maxImageCount > 0 && min_image_count > surface_caps.surfaceCapabilities.maxImageCount) {
         min_image_count = surface_caps.surfaceCapabilities.maxImageCount;
+    }
+    if (m_present_mode == VK_PRESENT_MODE_FIFO_KHR && min_image_count == 2) {
+        min_image_count = 3; // triple buffering
     }
 
     // Extent

@@ -16,16 +16,15 @@ std::pair<VkPipeline, VkPipelineLayout> createPipeline()
         #version 450\n\
         const vec2 vertices[] = {vec2(0.0, 0.5), vec2(-0.4330127018922193, -0.25), vec2(0.4330127018922193, -0.25)};\n\
         const vec3 colors[] = {vec3(1.0, 0.0, 0.0), vec3(0.0, 1.0, 0.0), vec3(0.0, 0.0, 1.0)};\n\
-        layout(push_constant) uniform Constants { float factor; } constants;\n\
+        layout(push_constant) uniform Constants { vec2 pos; } constants;\n\
         layout(location = 0) out vec3 color;\n\
         void main() {\n\
             gl_Position = vec4(vertices[gl_VertexIndex], 0.0, 1.0);\n\
-            gl_Position.x += 0.5 * cos(constants.factor);\n\
-            gl_Position.y += 0.5 * sin(constants.factor);\n\
+            gl_Position.xy += constants.pos;\n\
             color = colors[gl_VertexIndex];\n\
-            color.r *= (cos(constants.factor) + 1.0) * 0.5;\n\
-            color.g *= (sin(constants.factor) + 1.0) * 0.5;\n\
-            color.b *= (sin(constants.factor * 2.0) + 1.0) * 0.5;\n\
+            color.r *= (cos(constants.pos.x) + 1.0) * 0.5;\n\
+            color.g *= (sin(constants.pos.y) + 1.0) * 0.5;\n\
+            color.b *= (sin(constants.pos.x * 2.0) + 1.0) * 0.5;\n\
             gl_Position.y *= -1.0;\n\
         }\n\
         "};
@@ -149,7 +148,7 @@ std::pair<VkPipeline, VkPipelineLayout> createPipeline()
 
     VkPushConstantRange push_const_range{};
     push_const_range.offset = 0;
-    push_const_range.size = sizeof(float);
+    push_const_range.size = sizeof(float) * 2; // vec2
     push_const_range.stageFlags = VK_SHADER_STAGE_VERTEX_BIT;
 
     VkPipelineLayoutCreateInfo layout_info{};

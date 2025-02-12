@@ -24,6 +24,7 @@ set(SRC_FILES
 	"src/gc_vulkan_swapchain.cpp"
 	"src/gc_compile_shader.cpp"
 	"src/gc_vulkan_pipeline.cpp"
+	
 )
 
 # Public API includes
@@ -52,6 +53,7 @@ set(INCLUDE_FILES
 	"include/gamecore/gc_vulkan_swapchain.h"
 	"include/gamecore/gc_compile_shader.h"
 	"include/gamecore/gc_vulkan_pipeline.h"
+	
 )
 
 # gamecore is a static library

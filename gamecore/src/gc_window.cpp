@@ -57,6 +57,8 @@ Window::Window(const WindowInitInfo& info)
         GC_ERROR("SDL_CreateWindow() error: {}", SDL_GetError());
         abortGame("Failed to create window.");
     }
+    m_window_size[0] = INITIAL_WIDTH;
+    m_window_size[1] = INITIAL_HEIGHT;
 }
 
 Window::~Window()
@@ -95,6 +97,10 @@ void Window::processEvents()
             case SDL_EVENT_QUIT:
                 setQuitFlag();
                 break;
+            case SDL_EVENT_WINDOW_RESIZED:
+                m_window_size[0] = static_cast<uint32_t>(ev.window.data1);
+                m_window_size[1] = static_cast<uint32_t>(ev.window.data2);
+                break;
             case SDL_EVENT_WINDOW_PIXEL_SIZE_CHANGED:
                 GC_TRACE("Window event: SDL_EVENT_WINDOW_PIXEL_SIZE_CHANGED");
                 m_resized_flag = true;
@@ -118,7 +124,8 @@ void Window::processEvents()
                 }
             } break;
             case SDL_EVENT_MOUSE_MOTION:
-                // handle mouse motion
+                m_mouse_position[0] = ev.motion.x;
+                m_mouse_position[1] = ev.motion.y;
                 break;
             case SDL_EVENT_MOUSE_BUTTON_DOWN: {
                 ButtonState& state = m_mouse_button_state[ev.button.button - 1];
@@ -219,15 +226,7 @@ void Window::setSize(uint32_t width, uint32_t height, bool fullscreen)
     }
 }
 
-std::array<int, 2> Window::getSize() const
-{
-    int w{}, h{};
-    if (!SDL_GetWindowSize(m_window_handle, &w, &h)) {
-        GC_ERROR("SDL_GetWindowSize() error: ", SDL_GetError());
-        return {1024, 768}; // return something reasonable. Not like this function will ever error anyway.
-    }
-    return {w, h};
-}
+std::array<uint32_t, 2> Window::getSize() const { return m_window_size; }
 
 bool Window::getIsFullscreen() const { return m_is_fullscreen; }
 
@@ -279,6 +278,14 @@ bool Window::getButtonRelease(MouseButton button) const
 {
     const ButtonState state = m_mouse_button_state[static_cast<uint32_t>(button)];
     return (state == ButtonState::JUST_RELEASED);
+}
+
+std::array<float, 2> Window::getMousePosition() const { return m_mouse_position; }
+
+std::array<double, 2> Window::getMousePositionNorm() const
+{
+    return {(2.0 * static_cast<double>(m_mouse_position[0]) / static_cast<double>(m_window_size[0])) - 1.0,
+            (-2.0 * static_cast<double>(m_mouse_position[1]) / static_cast<double>(m_window_size[1])) + 1.0};
 }
 
 bool Window::getResizedFlag() const { return m_resized_flag; }

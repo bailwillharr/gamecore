@@ -32,7 +32,7 @@ static void recordCommandBuffer(const VulkanDevice& device, VkImage swapchain_im
 
     VkCommandBufferBeginInfo begin_info{};
     begin_info.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO;
-    begin_info.flags = 0;
+    begin_info.flags = VK_COMMAND_BUFFER_USAGE_ONE_TIME_SUBMIT_BIT;
     begin_info.pInheritanceInfo = nullptr;
     GC_CHECKVK(vkBeginCommandBuffer(cmd, &begin_info));
 
@@ -131,7 +131,7 @@ VulkanRenderer::VulkanRenderer(SDL_Window* window_handle) : m_device(), m_alloca
 
         VkCommandPoolCreateInfo pool_info{};
         pool_info.sType = VK_STRUCTURE_TYPE_COMMAND_POOL_CREATE_INFO;
-        pool_info.flags = 0;
+        pool_info.flags = VK_COMMAND_POOL_CREATE_TRANSIENT_BIT;
         pool_info.queueFamilyIndex = m_device.getMainQueue().queue_family_index;
         GC_CHECKVK(vkCreateCommandPool(m_device.getDevice(), &pool_info, nullptr, &per_frame_data.pool));
 
@@ -178,7 +178,7 @@ void VulkanRenderer::waitForRenderFinished()
 {
     ZoneScopedNC("Wait for render finished", tracy::Color::Crimson);
     if (m_framecount < VULKAN_FRAMES_IN_FLIGHT) {
-        return;
+        //return;
     }
     else {
         // wait for v-sync is done here, if the present mode actually waits for v-sync
@@ -188,7 +188,7 @@ void VulkanRenderer::waitForRenderFinished()
         wait_info.flags = 0;
         wait_info.semaphoreCount = 1;
         wait_info.pSemaphores = &m_timeline_semaphore;
-        const uint64_t value = m_framecount - (VULKAN_FRAMES_IN_FLIGHT - 1); // no less than one, as once first frame has finished, this becomes one
+        const uint64_t value = m_framecount - (VULKAN_FRAMES_IN_FLIGHT - 1);
         wait_info.pValues = &value;
         GC_CHECKVK(vkWaitSemaphores(m_device.getDevice(), &wait_info, UINT64_MAX));
     }

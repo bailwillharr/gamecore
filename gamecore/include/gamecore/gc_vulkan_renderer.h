@@ -31,6 +31,7 @@ class VulkanRenderer {
     VulkanSwapchain m_swapchain;
 
     uint64_t m_framecount = 0;
+    uint64_t m_timeline_semaphore_value = 0; // increment every time 
     VkSemaphore m_timeline_semaphore = VK_NULL_HANDLE;
 
     std::array<VulkanPerFrameInFlight, VULKAN_FRAMES_IN_FLIGHT> m_per_frame_in_flight{};

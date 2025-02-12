@@ -40,6 +40,9 @@ class Window {
 
     std::array<ButtonState, SDL_SCANCODE_COUNT> m_keyboard_state{}; // zero initialisation sets all keys to ButtonState::UP
     std::array<ButtonState, static_cast<size_t>(MouseButton::COUNT)> m_mouse_button_state{};
+    std::array<float, 2> m_mouse_position{};
+
+    std::array<uint32_t, 2> m_window_size{};
 
     bool m_should_quit = false;
     bool m_is_fullscreen = false;
@@ -74,7 +77,7 @@ public:
     // If width or height == 0, fullscreen == true will use desktop resolution and fullscreen == false will maximise the window
     void setSize(uint32_t width, uint32_t height, bool fullscreen);
 
-    std::array<int, 2> getSize() const;
+    std::array<uint32_t, 2> getSize() const;
     bool getIsFullscreen() const;
 
     // Keybard and mouse input
@@ -86,6 +89,11 @@ public:
     bool getButtonUp(MouseButton button) const;
     bool getButtonPress(MouseButton button) const;
     bool getButtonRelease(MouseButton button) const;
+
+    // In window coordinates with origin at top-left
+    std::array<float, 2> getMousePosition() const;
+    // returns values from -1.0 to 1.0, left-to-right, bottom-to-top (GL style)
+    std::array<double, 2> getMousePositionNorm() const;
 
     bool getResizedFlag() const;
 
