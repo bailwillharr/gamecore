@@ -7,14 +7,19 @@ set(CMAKE_CONFIGURATION_TYPES "Debug;Release;RelWithDebInfo")
 include(FetchContent)
 
 # spdlog
+FetchContent_Declare(
+	spdlog
+	GIT_REPOSITORY https://github.com/gabime/spdlog.git
+	GIT_TAG v1.15.1
+	# spdlog uses custom compile options so do not find_package()
+)
 set(SPDLOG_BUILD_SHARED OFF CACHE INTERNAL "" FORCE)
 set(SPDLOG_SYSTEM_INCLUDES ON CACHE INTERNAL "" FORCE)
 set(SPDLOG_USE_STD_FORMAT ON CACHE INTERNAL "" FORCE) # uses builtin fmt and C++20
 set(SPDLOG_NO_ATOMIC_LEVELS ON CACHE INTERNAL "" FORCE) # log levels aren't modified concurrently
-add_subdirectory(vendor/spdlog EXCLUDE_FROM_ALL)
+FetchContent_MakeAvailable(spdlog)
 
 # SDL3
-
 FetchContent_Declare(
 	SDL3
 	GIT_REPOSITORY https://github.com/libsdl-org/SDL.git
@@ -29,7 +34,7 @@ FetchContent_Declare(
 	volk
 	GIT_REPOSITORY https://github.com/zeux/volk.git
 	GIT_TAG vulkan-sdk-1.4.304.1
-	FIND_PACKAGE_ARGS
+	# VOLK_PULL_IN_VULKAN doesn't work with find_package()
 )
 set(VOLK_PULL_IN_VULKAN ON CACHE INTERNAL "" FORCE) # Get Vulkan header files from SDK
 if (WIN32)

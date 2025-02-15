@@ -80,13 +80,13 @@ void VulkanSwapchain::recreateSwapchain()
     }
     // for now, use Mailbox if available otherwise FIFO
     if (std::find(present_modes.cbegin(), present_modes.cend(), PREFERRED_PRESENT_MODE) != present_modes.cend()) {
-        GC_DEBUG("Using preferred present mode");
         m_present_mode = PREFERRED_PRESENT_MODE;
     }
     else {
-        GC_DEBUG("Using FIFO present mode");
         m_present_mode = VK_PRESENT_MODE_FIFO_KHR; // FIFO is always available
     }
+
+    GC_DEBUG("Using present mode: {}", vulkanPresentModeToString(m_present_mode));
 
     // get capabilities. These can change, for example, if the window is made fullscreen or moved to another monitor.
     // minImageCount and maxImageCount can also change depending on desired present mode.
@@ -129,9 +129,11 @@ void VulkanSwapchain::recreateSwapchain()
     if (surface_caps.surfaceCapabilities.maxImageCount > 0 && min_image_count > surface_caps.surfaceCapabilities.maxImageCount) {
         min_image_count = surface_caps.surfaceCapabilities.maxImageCount;
     }
-    if (m_present_mode == VK_PRESENT_MODE_FIFO_KHR && min_image_count == 2) {
-        min_image_count = 3; // triple buffering
-    }
+
+	// Use triple buffering
+//    if (m_present_mode == VK_PRESENT_MODE_FIFO_KHR && min_image_count == 2) {
+//        min_image_count = 3;
+//    }
 
     // Extent
     if (surface_caps.surfaceCapabilities.currentExtent.width != UINT32_MAX) {
@@ -239,7 +241,7 @@ void VulkanSwapchain::recreateSwapchain()
     // create depth/stencil image and image view
 
     // done
-    GC_DEBUG("Recreated swapchain. new extent: ({}, {}), new image count: {}", sc_info.imageExtent.width, sc_info.imageExtent.height, image_count);
+    GC_DEBUG("Recreated swapchain. new extent: ({}, {}), requested image count: {}, new image count: {}", sc_info.imageExtent.width, sc_info.imageExtent.height, min_image_count, image_count);
 }
 
 } // namespace gc

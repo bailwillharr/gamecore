@@ -131,6 +131,28 @@ inline std::string vulkanResToString(VkResult res)
     }
 }
 
+inline std::string vulkanPresentModeToString(VkPresentModeKHR present_mode)
+{
+	switch (present_mode) {
+		case VK_PRESENT_MODE_IMMEDIATE_KHR:
+			return "VK_PRESENT_MODE_IMMEDIATE_KHR";
+		case VK_PRESENT_MODE_MAILBOX_KHR:
+			return "VK_PRESENT_MODE_MAILBOX_KHR";
+		case VK_PRESENT_MODE_FIFO_KHR:
+			return "VK_PRESENT_MODE_FIFO_KHR";
+		case VK_PRESENT_MODE_FIFO_RELAXED_KHR:
+			return "VK_PRESENT_MODE_FIFO_RELAXED_KHR";
+		case VK_PRESENT_MODE_SHARED_DEMAND_REFRESH_KHR:
+			return "VK_PRESENT_MODE_SHARED_DEMAND_REFRESH_KHR";
+		case VK_PRESENT_MODE_SHARED_CONTINUOUS_REFRESH_KHR:
+			return "VK_PRESENT_MODE_SHARED_CONTINUOUS_REFRESH_KHR";
+		case VK_PRESENT_MODE_FIFO_LATEST_READY_EXT:
+			return "VK_PRESENT_MODE_FIFO_LATEST_READY_EXT";
+		default:
+			return "(unknown)";
+	}
+}
+
 inline void vulkanCheckError(VkResult res, const char* function_name)
 {
 	if (res != VK_SUCCESS) {
