@@ -4,6 +4,8 @@ project(gamecore_repo)
 
 set(CMAKE_CONFIGURATION_TYPES "Debug;Release;RelWithDebInfo")
 
+include(FetchContent)
+
 # spdlog
 set(SPDLOG_BUILD_SHARED OFF CACHE INTERNAL "" FORCE)
 set(SPDLOG_SYSTEM_INCLUDES ON CACHE INTERNAL "" FORCE)
@@ -12,57 +14,50 @@ set(SPDLOG_NO_ATOMIC_LEVELS ON CACHE INTERNAL "" FORCE) # log levels aren't modi
 add_subdirectory(vendor/spdlog EXCLUDE_FROM_ALL)
 
 # SDL3
-# Maybe when SDL3 is added to linux distro package repos, find_package() can be used and only compile as fallback
-set(SDL_SHARED ON CACHE INTERNAL "" FORCE)
-set(SDL_STATIC OFF CACHE INTERNAL "" FORCE)
 
-set(SDL_TESTS OFF CACHE INTERNAL "" FORCE)
-set(SDL_TEST_LIBRARY OFF CACHE INTERNAL "" FORCE)
-set(SDL_INSTALL_TESTS OFF CACHE INTERNAL "" FORCE)
-set(SDL_EXAMPLES OFF CACHE INTERNAL "" FORCE)
-set(SDL_DISABLE_INSTALL ON CACHE INTERNAL "" FORCE)
-set(SDL_DISABLE_UNINSTALL ON CACHE INTERNAL "" FORCE)
-set(SDL_DISABLE_INSTALL_DOCS ON CACHE INTERNAL "" FORCE)
-set(SDL_LIBC ON CACHE INTERNAL "" FORCE)
+FetchContent_Declare(
+	SDL3
+	GIT_REPOSITORY https://github.com/libsdl-org/SDL.git
+	GIT_TAG release-3.2.4
+	FIND_PACKAGE_ARGS
+)
 
-set(SDL_VULKAN ON CACHE INTERNAL "" FORCE)
-# don't need windowing support for these APIs
-set(SDL_OPENGL OFF CACHE INTERNAL "" FORCE)
-set(SDL_OPENGLES OFF CACHE INTERNAL "" FORCE)
-set(SDL_DIRECTX OFF CACHE INTERNAL "" FORCE)
-
-# turn off some subsystems
-set(SDL_AUDIO OFF CACHE INTERNAL "" FORCE)
-set(SDL_GPU OFF CACHE INTERNAL "" FORCE)
-set(SDL_RENDER OFF CACHE INTERNAL "" FORCE)
-set(SDL_CAMERA OFF CACHE INTERNAL "" FORCE)
-set(SDL_JOYSTICK OFF CACHE INTERNAL "" FORCE)
-set(SDL_HAPTIC OFF CACHE INTERNAL "" FORCE)
-set(SDL_HIDAPI OFF CACHE INTERNAL "" FORCE)
-set(SDL_POWER OFF CACHE INTERNAL "" FORCE)
-set(SDL_SENSOR OFF CACHE INTERNAL "" FORCE)
-
-add_subdirectory(vendor/SDL EXCLUDE_FROM_ALL)
+FetchContent_MakeAvailable(SDL3)
 
 # Volk
+FetchContent_Declare(
+	volk
+	GIT_REPOSITORY https://github.com/zeux/volk.git
+	GIT_TAG vulkan-sdk-1.4.304.1
+	FIND_PACKAGE_ARGS
+)
 set(VOLK_PULL_IN_VULKAN ON CACHE INTERNAL "" FORCE) # Get Vulkan header files from SDK
 if (WIN32)
 	set(VOLK_STATIC_DEFINES "VK_USE_PLATFORM_WIN32_KHR" CACHE INTERNAL "" FORCE)
 endif()
-add_subdirectory(vendor/volk EXCLUDE_FROM_ALL)
+FetchContent_MakeAvailable(volk)
 
 # VulkanMemoryAllocator
-set(VMA_ENABLE_INSTALL OFF CACHE INTERNAL "" FORCE)
-add_subdirectory(vendor/VulkanMemoryAllocator EXCLUDE_FROM_ALL)
+FetchContent_Declare(
+	VulkanMemoryAllocator
+	GIT_REPOSITORY https://github.com/GPUOpen-LibrariesAndSDKs/VulkanMemoryAllocator.git
+	GIT_TAG v3.2.1
+)
+FetchContent_MakeAvailable(VulkanMemoryAllocator)
 
 # Tracy
+FetchContent_Declare(
+	tracy
+	GIT_REPOSITORY https://github.com/wolfpld/tracy.git
+	GIT_TAG v0.11.1
+)
 if (GC_PROFILING)
 set(TRACY_ENABLE ON CACHE INTERNAL "" FORCE)
 else()
 set(TRACY_ENABLE OFF CACHE INTERNAL "" FORCE)
 endif()
 set(TRACY_ON_DEMAND OFF CACHE INTERNAL "" FORCE)
-add_subdirectory(vendor/tracy EXCLUDE_FROM_ALL)
+FetchContent_MakeAvailable(tracy)
 
 # shaderc_combined (from Vulkan SDK)
 find_package(Vulkan COMPONENTS shaderc_combined)
