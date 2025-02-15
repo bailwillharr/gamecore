@@ -1,20 +1,12 @@
 cmake_minimum_required(VERSION 3.25)
 
-project(gamecore_template LANGUAGES CXX)
+project(dedicated_server LANGUAGES CXX)
 
 set(SRC_FILES
 	"src/main.cpp"
 )
 
-if (WIN32)
-	option(GAMECORE_TEMPLATE_WIN32_BUILD "Build as a standalone win32 app (no console window)" OFF)
-endif()
-
-if (WIN32 AND GAMECORE_TEMPLATE_WIN32_BUILD)
-	add_executable(${PROJECT_NAME} WIN32 ${SRC_FILES} "gamecore_template.rc")
-else()
-	add_executable(${PROJECT_NAME} ${SRC_FILES})
-endif()
+add_executable(${PROJECT_NAME} ${SRC_FILES})
 
 # compiling options:
 
