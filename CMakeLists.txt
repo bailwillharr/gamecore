@@ -64,8 +64,22 @@ endif()
 set(TRACY_ON_DEMAND OFF CACHE INTERNAL "" FORCE)
 FetchContent_MakeAvailable(tracy)
 
+# asio (networking library)
+FetchContent_Declare(
+	asio
+	GIT_REPOSITORY https://github.com/chriskohlhoff/asio.git
+	GIT_TAG asio-1-32-0
+	CONFIGURE_COMMAND ""
+	BUILD_COMMAND ""
+)
+FetchContent_MakeAvailable(asio)
+add_library(asio INTERFACE)
+add_library(asio::asio ALIAS asio)
+target_include_directories(asio INTERFACE ${asio_SOURCE_DIR}/asio/include)
+target_compile_definitions(asio INTERFACE ASIO_NO_DEPRECATED ASIO_NO_TS_EXECUTORS)
+
 # shaderc_combined (from Vulkan SDK)
-find_package(Vulkan COMPONENTS shaderc_combined)
+find_package(Vulkan REQUIRED COMPONENTS shaderc_combined)
 
 add_subdirectory(gamecore)
 

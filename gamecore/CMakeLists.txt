@@ -107,6 +107,9 @@ target_link_libraries(${PROJECT_NAME} PUBLIC GPUOpen::VulkanMemoryAllocator)
 # Tracy
 target_link_libraries(${PROJECT_NAME} PUBLIC Tracy::TracyClient)
 
+# asio
+target_link_libraries(${PROJECT_NAME} PUBLIC asio::asio)
+
 # For some reason Vulkan::shaderc_combined doesn't link on linux even though FindVulkan.cmake finds the component??
 if (WIN32)
 	target_link_libraries(${PROJECT_NAME} PUBLIC Vulkan::shaderc_combined)
