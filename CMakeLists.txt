@@ -4,79 +4,103 @@ project(gamecore_repo)
 
 set(CMAKE_CONFIGURATION_TYPES "Debug;Release;RelWithDebInfo")
 
-include(FetchContent)
+# download CPM.cmake
+file(
+  DOWNLOAD
+  https://github.com/cpm-cmake/CPM.cmake/releases/download/v0.40.5/CPM.cmake
+  ${CMAKE_CURRENT_BINARY_DIR}/cmake/CPM.cmake
+  EXPECTED_HASH SHA256=c46b876ae3b9f994b4f05a4c15553e0485636862064f1fcc9d8b4f832086bc5d
+)
+include(${CMAKE_CURRENT_BINARY_DIR}/cmake/CPM.cmake)
 
 # spdlog
-FetchContent_Declare(
-	spdlog
-	GIT_REPOSITORY https://github.com/gabime/spdlog.git
-	GIT_TAG v1.15.1
-	# spdlog uses custom compile options so do not find_package()
+CPMAddPackage(
+	NAME spdlog
+	VERSION 1.15.1
+	URL https://github.com/gabime/spdlog/archive/refs/tags/v1.15.1.zip
+	OPTIONS
+		"SPDLOG_BUILD_SHARED OFF"
+		"SPDLOG_SYSTEM_INCLUDES ON"
+		"SPDLOG_USE_STD_FORMAT ON" # uses builtin fmt and C++20
+		"SPDLOG_NO_ATOMIC_LEVELS ON" # log levels aren't modified concurrently
+	EXCLUDE_FROM_ALL
+	SYSTEM
 )
-set(SPDLOG_BUILD_SHARED OFF CACHE INTERNAL "" FORCE)
-set(SPDLOG_SYSTEM_INCLUDES ON CACHE INTERNAL "" FORCE)
-set(SPDLOG_USE_STD_FORMAT ON CACHE INTERNAL "" FORCE) # uses builtin fmt and C++20
-set(SPDLOG_NO_ATOMIC_LEVELS ON CACHE INTERNAL "" FORCE) # log levels aren't modified concurrently
-FetchContent_MakeAvailable(spdlog)
 
 # SDL3
-FetchContent_Declare(
-	SDL3
-	GIT_REPOSITORY https://github.com/libsdl-org/SDL.git
-	GIT_TAG release-3.2.4
-	FIND_PACKAGE_ARGS
+CPMAddPackage(
+	NAME SDL3
+	VERSION 3.2.4
+	URL https://github.com/libsdl-org/SDL/archive/refs/tags/release-3.2.4.zip
+	EXCLUDE_FROM_ALL
+	SYSTEM
 )
-
-FetchContent_MakeAvailable(SDL3)
 
 # Volk
-FetchContent_Declare(
-	volk
-	GIT_REPOSITORY https://github.com/zeux/volk.git
-	GIT_TAG vulkan-sdk-1.4.304.1
-	# VOLK_PULL_IN_VULKAN doesn't work with find_package()
+CPMAddPackage(
+	NAME volk
+	VERSION 1.4.304
+	URL https://github.com/zeux/volk/archive/refs/tags/1.4.304.zip
+	OPTIONS
+		"VOLK_PULL_IN_VULKAN ON"
+	EXCLUDE_FROM_ALL
+	SYSTEM
 )
-set(VOLK_PULL_IN_VULKAN ON CACHE INTERNAL "" FORCE) # Get Vulkan header files from SDK
-if (WIN32)
-	set(VOLK_STATIC_DEFINES "VK_USE_PLATFORM_WIN32_KHR" CACHE INTERNAL "" FORCE)
-endif()
-FetchContent_MakeAvailable(volk)
 
 # VulkanMemoryAllocator
-FetchContent_Declare(
-	VulkanMemoryAllocator
-	GIT_REPOSITORY https://github.com/GPUOpen-LibrariesAndSDKs/VulkanMemoryAllocator.git
-	GIT_TAG v3.2.1
+CPMAddPackage(
+	NAME VulkanMemoryAllocator
+	VERSION 3.2.1
+	URL https://github.com/GPUOpen-LibrariesAndSDKs/VulkanMemoryAllocator/archive/refs/tags/v3.2.1.zip
+	EXCLUDE_FROM_ALL
+	SYSTEM
 )
-FetchContent_MakeAvailable(VulkanMemoryAllocator)
 
 # Tracy
-FetchContent_Declare(
-	tracy
-	GIT_REPOSITORY https://github.com/wolfpld/tracy.git
-	GIT_TAG v0.11.1
+CPMAddPackage(
+	NAME tracy
+	VERSION 0.11.1
+	URL https://github.com/wolfpld/tracy/archive/refs/tags/v0.11.1.zip
+	OPTIONS
+		"TRACY_ENABLE ON"
+		"TRACY_ON_DEMAND OFF"
+	EXCLUDE_FROM_ALL
+	SYSTEM
 )
-if (GC_PROFILING)
-set(TRACY_ENABLE ON CACHE INTERNAL "" FORCE)
-else()
-set(TRACY_ENABLE OFF CACHE INTERNAL "" FORCE)
-endif()
-set(TRACY_ON_DEMAND OFF CACHE INTERNAL "" FORCE)
-FetchContent_MakeAvailable(tracy)
 
-# asio (networking library)
-FetchContent_Declare(
-	asio
-	GIT_REPOSITORY https://github.com/chriskohlhoff/asio.git
-	GIT_TAG asio-1-32-0
-	CONFIGURE_COMMAND ""
-	BUILD_COMMAND ""
+# asio (What a mess...)
+CPMAddPackage(
+  NAME asio
+  VERSION 1.16.1
+  URL https://github.com/chriskohlhoff/asio/archive/asio-1-32-0.zip
 )
-FetchContent_MakeAvailable(asio)
 add_library(asio INTERFACE)
 add_library(asio::asio ALIAS asio)
 target_include_directories(asio INTERFACE ${asio_SOURCE_DIR}/asio/include)
-target_compile_definitions(asio INTERFACE ASIO_NO_DEPRECATED ASIO_NO_TS_EXECUTORS)
+target_compile_definitions(asio INTERFACE ASIO_STANDALONE ASIO_NO_DEPRECATED)
+if(WIN32)
+    # macro see @ https://stackoverflow.com/a/40217291/1746503
+    macro(get_win32_winnt version)
+    if (CMAKE_SYSTEM_VERSION)
+        set(ver ${CMAKE_SYSTEM_VERSION})
+        string(REGEX MATCH "^([0-9]+).([0-9])" ver ${ver})
+        string(REGEX MATCH "^([0-9]+)" verMajor ${ver})
+        if ("${verMajor}" MATCHES "10")
+            set(verMajor "A")
+            string(REGEX REPLACE "^([0-9]+)" ${verMajor} ver ${ver})
+        endif ("${verMajor}" MATCHES "10")
+        string(REPLACE "." "" ver ${ver})
+        string(REGEX REPLACE "([0-9A-Z])" "0\\1" ver ${ver})
+        set(${version} "0x${ver}")
+    endif()
+    endmacro()
+    if(NOT DEFINED _WIN32_WINNT)
+        get_win32_winnt(ver)
+        set(_WIN32_WINNT ${ver})
+    endif()
+    message(STATUS "Set _WIN32_WINNET=${_WIN32_WINNT}")
+    target_compile_definitions(asio INTERFACE _WIN32_WINNT=${_WIN32_WINNT} WIN32_LEAN_AND_MEAN)
+endif()
 
 # shaderc_combined (from Vulkan SDK)
 find_package(Vulkan REQUIRED COMPONENTS shaderc_combined)
