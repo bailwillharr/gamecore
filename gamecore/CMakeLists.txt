@@ -65,7 +65,7 @@ add_library(${PROJECT_NAME} STATIC
 # This project uses C++20
 set_property(TARGET ${PROJECT_NAME} PROPERTY CXX_STANDARD 20)
 set_property(TARGET ${PROJECT_NAME} PROPERTY CXX_STANDARD_REQUIRED ON)
-set_property(TARGET ${PROJECT_NAME} PROPERTY CXX_EXTENSIONS OFF)
+set_property(TARGET ${PROJECT_NAME} PROPERTY CXX_EXTENSIONS ON)
 
 if (WIN32)
 	target_compile_definitions(${PROJECT_NAME} PRIVATE NOMINMAX) # stop windows.h conflicting with 'std::max'
