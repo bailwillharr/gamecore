@@ -27,14 +27,6 @@ set_property(TARGET ${PROJECT_NAME} PROPERTY CXX_STANDARD 20)
 set_property(TARGET ${PROJECT_NAME} PROPERTY CXX_STANDARD_REQUIRED ON)
 set_property(TARGET ${PROJECT_NAME} PROPERTY CXX_EXTENSIONS OFF)
 
-# compiler warnings
-if (MSVC)
-	target_compile_options(${PROJECT_NAME} PRIVATE /W3)
-	target_compile_options(${PROJECT_NAME} PRIVATE /MP)
-else()
-	target_compile_options(${PROJECT_NAME} PRIVATE -Wall -Wextra -pedantic)
-endif()
-
 target_link_libraries(${PROJECT_NAME} PRIVATE gamecore)
 
 if(WIN32)

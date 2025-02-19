@@ -23,7 +23,7 @@
 
 namespace gc {
 
-static void recordCommandBuffer(const VulkanDevice& device, VkImage swapchain_image, VkImageView swapchain_image_view, VkExtent2D swapchain_extent,
+static void recordCommandBuffer(VkImage swapchain_image, VkImageView swapchain_image_view, VkExtent2D swapchain_extent,
                                 VkCommandBuffer cmd, std::span<VkCommandBuffer> rendering_cmds)
 {
     ZoneScoped;
@@ -188,7 +188,7 @@ void VulkanRenderer::waitForRenderFinished()
         wait_info.flags = 0;
         wait_info.semaphoreCount = 1;
         wait_info.pSemaphores = &m_timeline_semaphore;
-        const uint64_t value = m_framecount - (VULKAN_FRAMES_IN_FLIGHT - 1);
+        const uint64_t value = m_framecount - static_cast<uint64_t>(VULKAN_FRAMES_IN_FLIGHT - 1);
         wait_info.pValues = &value;
         GC_CHECKVK(vkWaitSemaphores(m_device.getDevice(), &wait_info, UINT64_MAX));
     }
@@ -222,7 +222,7 @@ void VulkanRenderer::acquireAndPresent(std::span<VkCommandBuffer> rendering_cmds
         ZoneScopedN("Reset main command buffer");
         GC_CHECKVK(vkResetCommandPool(m_device.getDevice(), m_per_frame_in_flight[frame_in_flight_index].pool, 0));
     }
-    recordCommandBuffer(m_device, m_swapchain.getImage(image_index), m_swapchain.getImageView(image_index), m_swapchain.getExtent(),
+    recordCommandBuffer(m_swapchain.getImage(image_index), m_swapchain.getImageView(image_index), m_swapchain.getExtent(),
                         m_per_frame_in_flight[frame_in_flight_index].cmd, rendering_cmds);
 
     {

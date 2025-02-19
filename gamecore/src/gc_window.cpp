@@ -175,7 +175,7 @@ void Window::setSize(uint32_t width, uint32_t height, bool fullscreen)
                 SDL_DisplayMode** available_modes = SDL_GetFullscreenDisplayModes(display, nullptr);
                 if (available_modes) {
                     for (int i = 0; available_modes[i] != nullptr; ++i) {
-                        if (available_modes[i]->w == width && available_modes[i]->h == height) {
+                        if (static_cast<uint32_t>(available_modes[i]->w) == width && static_cast<uint32_t>(available_modes[i]->h) == height) {
                             mode = available_modes[i];
                             break;
                         }

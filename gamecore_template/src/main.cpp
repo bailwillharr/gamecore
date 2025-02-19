@@ -12,7 +12,81 @@
 #include <SDL3/SDL_main.h>
 #include <SDL3/SDL.h>
 
+#include <asio.hpp>
+
 #include <tracy/Tracy.hpp>
+
+static float x_pos = 0.0f, y_pos = 0.0f;
+static bool remote_sent_quit = false;
+
+static asio::awaitable<void> echo()
+{
+    constexpr asio::ip::port_type SERVER_PORT = 1234;
+
+    /* shortcut to use error code with co_await */
+    static const auto ec_awaitable = asio::as_tuple(asio::use_awaitable);
+
+    /* get io_context for this coroutine (passed to co_spawn) */
+    const asio::any_io_executor ctx = co_await asio::this_coro::executor;
+
+    /* Get endpoint for the server (bound to 0.0.0.0 port 1234) */
+    const asio::ip::tcp::endpoint server_endpoint(asio::ip::tcp::v4(), SERVER_PORT);
+
+    for (;;) {
+        /* acceptor object can asynchronously wait for a client to connect */
+        asio::ip::tcp::acceptor acceptor(ctx, server_endpoint);
+
+        GC_INFO("Waiting for connection...");
+
+        /* returns a socket to communicate with a client */
+        auto [ec, sock] = co_await acceptor.async_accept(ctx, ec_awaitable);
+        if (ec) {
+            gc::abortGame("acceptor.async_accept() error: {}", ec.message());
+        }
+
+        GC_INFO("Remote connected.");
+
+        for (;;) {
+            std::array<char, 512> buf{};
+            auto [ec2, sz] = co_await sock.async_read_some(asio::buffer(buf.data(), buf.size()), ec_awaitable);
+            if (ec2 == asio::error::eof) {
+                GC_INFO("Remote disconnected.");
+                break;
+            }
+            else if (ec2) {
+                gc::abortGame("sock.async_read_some() error: {}", ec2.message());
+            }
+
+            for (char c : std::span(buf.begin(), buf.begin() + sz)) {
+                switch (tolower(c)) {
+                    case 'w':
+                        y_pos += 0.1f;
+                        break;
+                    case 'a':
+                        x_pos -= 0.1f;
+                        break;
+                    case 's':
+                        y_pos -= 0.1f;
+                        break;
+                    case 'd':
+                        x_pos += 0.1f;
+                        break;
+                    case 'q':
+                        remote_sent_quit = true;
+                        break;
+                    default:
+                        break;
+                }
+            }
+        }
+    }
+}
+
+class TestClass {
+public:
+    TestClass() { printf("Constructed TestClass\n"); }
+    ~TestClass() { printf("Destroying TestClass\n"); }
+};
 
 int main([[maybe_unused]] int argc, [[maybe_unused]] char* argv[])
 {
@@ -22,6 +96,9 @@ int main([[maybe_unused]] int argc, [[maybe_unused]] char* argv[])
     gc::VulkanRenderer& renderer = gc::app().vulkanRenderer();
     const gc::VulkanDevice& device = renderer.getDevice();
     const gc::VulkanSwapchain& swapchain = renderer.getSwapchain();
+
+    asio::io_context ctx;
+    co_spawn(ctx, echo(), asio::detached);
 
     win.setTitle("Hello world!");
     win.setIsResizable(true);
@@ -90,6 +167,12 @@ int main([[maybe_unused]] int argc, [[maybe_unused]] char* argv[])
             }
         }
 
+        ctx.poll();
+
+        if (remote_sent_quit) {
+            win.setQuitFlag();
+        }
+
         std::vector<VkCommandBuffer> bufs{};
         if (!gc::app().jobs().isBusy()) {
             ZoneScopedN("Record triangle command buffer");
@@ -144,8 +227,9 @@ int main([[maybe_unused]] int argc, [[maybe_unused]] char* argv[])
             scissor.extent = swapchain.getExtent();
             vkCmdSetScissor(cmd, 0, 1, &scissor);
             const auto mouse_pos = win.getMousePositionNorm();
-            const std::array<float, 2> push_val{static_cast<float>(mouse_pos[0]), static_cast<float>(mouse_pos[1])};
-            vkCmdPushConstants(cmd, pipeline_layout, VK_SHADER_STAGE_VERTEX_BIT, 0, sizeof(decltype(push_val)::value_type) * push_val.size(), push_val.data());
+            const std::array<float, 2> push_val{x_pos, y_pos};
+            vkCmdPushConstants(cmd, pipeline_layout, VK_SHADER_STAGE_VERTEX_BIT, 0,
+                               static_cast<uint32_t>(sizeof(decltype(push_val)::value_type) * push_val.size()), push_val.data());
             vkCmdDraw(cmd, 3, 1, 0, 0);
 
             GC_CHECKVK(vkEndCommandBuffer(cmd));

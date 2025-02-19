@@ -1,8 +1,24 @@
 cmake_minimum_required(VERSION 3.25)
 
-project(gamecore_repo)
+set(CMAKE_CONFIGURATION_TYPES "Debug;Release;RelWithDebInfo" CACHE STRING "" FORCE)
 
-set(CMAKE_CONFIGURATION_TYPES "Debug;Release;RelWithDebInfo")
+# Compile flags must be globally redefined to disable exceptions.
+# Additionally, for MSVC, warning C4530 (C++ exception handler used, but unwind semantics are not enabled.) is treated as an error
+if (MSVC)
+set(CMAKE_CXX_FLAGS "/DWIN32 /D_WINDOWS /D_HAS_EXCEPTIONS=0 /EHs-c- /we4530 /Wall /WX" CACHE STRING "" FORCE)
+set(CMAKE_CXX_FLAGS_DEBUG "/Ob0 /Od /RTC1" CACHE STRING "" FORCE)
+set(CMAKE_CXX_FLAGS_RELEASE "/O2 /Ob2 /DNDEBUG" CACHE STRING "" FORCE)
+set(CMAKE_CXX_FLAGS_REL_WITH_DEB_INFO "/O2 /Ob1 /DNDEBUG" CACHE STRING "" FORCE)
+
+set(CMAKE_C_FLAGS "/DWIN32 /D_WINDOWS" CACHE STRING "" FORCE)
+set(CMAKE_C_FLAGS_DEBUG "/Ob0 /Od /RTC1" CACHE STRING "" FORCE)
+set(CMAKE_C_FLAGS_RELEASE "/O2 /Ob2 /DNDEBUG" CACHE STRING "" FORCE)
+set(CMAKE_C_FLAGS_REL_WITH_DEB_INFO "/O2 /Ob1 /DNDEBUG" CACHE STRING "" FORCE)
+endif()
+
+set(CMAKE_EXPORT_COMPILE_COMMANDS ON CACHE BOOL "" FORCE)
+
+project(gamecore_repo)
 
 # download CPM.cmake
 file(
@@ -23,8 +39,8 @@ CPMAddPackage(
 		"SPDLOG_SYSTEM_INCLUDES ON"
 		"SPDLOG_USE_STD_FORMAT ON" # uses builtin fmt and C++20
 		"SPDLOG_NO_ATOMIC_LEVELS ON" # log levels aren't modified concurrently
-	EXCLUDE_FROM_ALL
-	SYSTEM
+	EXCLUDE_FROM_ALL YES
+	SYSTEM YES
 )
 
 # SDL3
@@ -32,8 +48,8 @@ CPMAddPackage(
 	NAME SDL3
 	VERSION 3.2.4
 	URL https://github.com/libsdl-org/SDL/archive/refs/tags/release-3.2.4.zip
-	EXCLUDE_FROM_ALL
-	SYSTEM
+	EXCLUDE_FROM_ALL YES
+	SYSTEM YES
 )
 
 # Volk
@@ -43,8 +59,8 @@ CPMAddPackage(
 	URL https://github.com/zeux/volk/archive/refs/tags/1.4.304.zip
 	OPTIONS
 		"VOLK_PULL_IN_VULKAN ON"
-	EXCLUDE_FROM_ALL
-	SYSTEM
+	EXCLUDE_FROM_ALL YES
+	SYSTEM YES
 )
 
 # VulkanMemoryAllocator
@@ -52,8 +68,8 @@ CPMAddPackage(
 	NAME VulkanMemoryAllocator
 	VERSION 3.2.1
 	URL https://github.com/GPUOpen-LibrariesAndSDKs/VulkanMemoryAllocator/archive/refs/tags/v3.2.1.zip
-	EXCLUDE_FROM_ALL
-	SYSTEM
+	EXCLUDE_FROM_ALL YES
+	SYSTEM YES
 )
 
 # Tracy
@@ -69,8 +85,8 @@ CPMAddPackage(
 	OPTIONS
 		"${GC_TRACY_ENABLE}"
 		"TRACY_ON_DEMAND OFF"
-	EXCLUDE_FROM_ALL
-	SYSTEM
+	EXCLUDE_FROM_ALL YES
+	SYSTEM YES
 )
 
 # asio (What a mess...)
@@ -82,7 +98,7 @@ CPMAddPackage(
 add_library(asio INTERFACE)
 add_library(asio::asio ALIAS asio)
 target_include_directories(asio SYSTEM INTERFACE ${asio_SOURCE_DIR}/asio/include)
-target_compile_definitions(asio INTERFACE ASIO_STANDALONE ASIO_NO_DEPRECATED)
+target_compile_definitions(asio INTERFACE ASIO_STANDALONE ASIO_NO_DEPRECATED ASIO_NO_EXCEPTIONS ASIO_SEPARATE_COMPILATION)
 if(WIN32)
     macro(get_WIN32_WINNT version)
         if(CMAKE_SYSTEM_VERSION)
@@ -105,6 +121,17 @@ if(WIN32)
     get_WIN32_WINNT(ver)
     target_compile_definitions(asio INTERFACE _WIN32_WINNT=${ver})
 endif()
+
+# json
+CPMAddPackage(
+	NAME json
+	VERSION 3.11.3
+	URL https://github.com/nlohmann/json/archive/refs/tags/v3.11.3.zip
+	OPTIONS
+		"JSON_SystemInclude ON"
+	EXCLUDE_FROM_ALL YES
+	SYSTEM YES
+)
 
 # shaderc_combined (from Vulkan SDK)
 find_package(Vulkan REQUIRED COMPONENTS shaderc_combined)

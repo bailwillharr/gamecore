@@ -22,9 +22,6 @@ App* App::s_app = nullptr;
 
 App::App() : m_main_thread_id(std::this_thread::get_id())
 {
-    m_jobs = std::make_unique<Jobs>(std::thread::hardware_concurrency());
-    m_content = std::make_unique<Content>();
-
     // Setup app metadata for SDL
     {
         bool set_prop_success = true;
@@ -44,8 +41,10 @@ App::App() : m_main_thread_id(std::this_thread::get_id())
     WindowInitInfo window_init_info{};
     window_init_info.load_vulkan = true;
     window_init_info.resizable = false;
-    m_window = std::make_unique<Window>(window_init_info);
 
+    m_jobs = std::make_unique<Jobs>(std::thread::hardware_concurrency());
+    m_content = std::make_unique<Content>();
+    m_window = std::make_unique<Window>(window_init_info);
     m_vulkan_renderer = std::make_unique<VulkanRenderer>(m_window->getHandle());
 
     GC_TRACE("Initialised application");

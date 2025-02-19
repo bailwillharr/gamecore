@@ -10,10 +10,13 @@
 
 // an echo server
 
-constexpr asio::ip::port_type SERVER_PORT = 1234;
-
 static asio::awaitable<void> echo()
 {
+    constexpr asio::ip::port_type SERVER_PORT = 1234;
+
+    /* shortcut to use error code with co_await */
+    static const auto ec_awaitable = asio::as_tuple(asio::use_awaitable);
+
     /* get io_context for this coroutine (passed to co_spawn) */
     const asio::any_io_executor ctx = co_await asio::this_coro::executor;
 
@@ -24,31 +27,36 @@ static asio::awaitable<void> echo()
         /* acceptor object can asynchronously wait for a client to connect */
         asio::ip::tcp::acceptor acceptor(ctx, server_endpoint);
 
-        std::cout << "Waiting for client to connect...\n";
+        GC_INFO("Waiting for connection...");
 
         /* returns a socket to communicate with a client */
-        asio::ip::tcp::socket sock = co_await acceptor.async_accept(ctx, asio::use_awaitable);
+        auto [ec, sock] = co_await acceptor.async_accept(ctx, ec_awaitable);
+        if (ec) {
+            gc::abortGame("acceptor.async_accept() error: {}", ec.message());
+        }
 
-        std::cout << "Connected!\n";
+        GC_INFO("Remote connected.");
 
-        while (sock.is_open()) {
+        for (;;) {
             std::array<char, 512> buf{};
-            const size_t sz = co_await sock.async_read_some(asio::buffer(buf.data(), buf.size()), asio::use_awaitable);
-
-            std::cout << "Received " << sz << " bytes of data\n";
-
-            std::cout << "Received string: " << std::string_view(buf.begin(), buf.end()) << "\n";
+            auto [ec2, sz] = co_await sock.async_read_some(asio::buffer(buf.data(), buf.size()), ec_awaitable);
+            if (ec2 == asio::error::eof) {
+                GC_INFO("Remote disconnected.");
+                break;
+            }
+            else if (ec2) {
+                gc::abortGame("sock.async_read_some() error: {}", ec2.message());
+            }
 
             size_t bytes_remaining = sz;
             while (bytes_remaining > 0) {
-                const size_t bytes_written =
-                    co_await sock.async_write_some(asio::buffer(buf.data() + sz - bytes_remaining, bytes_remaining), asio::use_awaitable);
-                std::cout << "Wrote " << bytes_written << " bytes\n";
+                auto [ec3, bytes_written] = co_await sock.async_write_some(asio::buffer(buf.data() + sz - bytes_remaining, bytes_remaining), ec_awaitable);
+                if (ec3) {
+                    gc::abortGame("sock.async_write_some() error: {}", ec3.message());
+                }
                 bytes_remaining -= bytes_written;
             }
         }
-
-        std::cout << "Closed connection\n";
     }
 }
 
@@ -74,10 +82,7 @@ int main()
             gc::app().window().setQuitFlag();
         }
 
-        auto count = ctx.poll();
-        if (count > 0) {
-            std::cout << "Poll ran " << count << " handlers\n";
-        }
+        ctx.poll();
 
         gc::app().vulkanRenderer().acquireAndPresent({});
     }

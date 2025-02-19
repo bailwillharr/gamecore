@@ -20,10 +20,12 @@ set(SRC_FILES
 	"src/gc_vulkan_device.cpp"
 	"src/gc_vulkan_allocator.cpp"
 	"src/gc_vk_mem_alloc_impl.cpp"
+	"src/gc_asio_impl.cpp"
 	"src/gc_vulkan_renderer.cpp"
 	"src/gc_vulkan_swapchain.cpp"
 	"src/gc_compile_shader.cpp"
 	"src/gc_vulkan_pipeline.cpp"
+	"src/gc_configuration.cpp"
 	
 )
 
@@ -53,7 +55,7 @@ set(INCLUDE_FILES
 	"include/gamecore/gc_vulkan_swapchain.h"
 	"include/gamecore/gc_compile_shader.h"
 	"include/gamecore/gc_vulkan_pipeline.h"
-	
+	"include/gamecore/gc_configuration.h"
 )
 
 # gamecore is a static library
@@ -80,14 +82,6 @@ if (GC_DEV_BUILD)
 endif()
 target_compile_definitions(${PROJECT_NAME} PUBLIC GC_LOGGER=GC_LOGGER_SPDLOG) # GC_LOGGER_SPDLOG or GC_LOGGER_NULL
 
-# compiler warnings
-if (MSVC)
-	target_compile_options(${PROJECT_NAME} PRIVATE /W3)
-	target_compile_options(${PROJECT_NAME} PRIVATE /MP)
-else()
-	target_compile_options(${PROJECT_NAME} PRIVATE -Wall -Wextra -pedantic)
-endif()
-
 target_include_directories(${PROJECT_NAME} PUBLIC include)
 target_include_directories(${PROJECT_NAME} PRIVATE src)
 
@@ -109,6 +103,9 @@ target_link_libraries(${PROJECT_NAME} PUBLIC Tracy::TracyClient)
 
 # asio
 target_link_libraries(${PROJECT_NAME} PUBLIC asio::asio)
+
+# json
+target_link_libraries(${PROJECT_NAME} PUBLIC nlohmann_json::nlohmann_json)
 
 # For some reason Vulkan::shaderc_combined doesn't link on linux even though FindVulkan.cmake finds the component??
 if (WIN32)
