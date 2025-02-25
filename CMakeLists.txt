@@ -1,11 +1,14 @@
 cmake_minimum_required(VERSION 3.25)
 
+project(gamecore_repo)
+
 set(CMAKE_CONFIGURATION_TYPES "Debug;Release;RelWithDebInfo" CACHE STRING "" FORCE)
 
 # Compile flags must be globally redefined to disable exceptions.
-# Additionally, for MSVC, warning C4530 (C++ exception handler used, but unwind semantics are not enabled.) is treated as an error
+# Additionally, for MSVC, warning C4530 (C++ exception handler used, but unwind semantics are not enabled.) is always treated as an error.
+# Compiler options such as compiler warnings, treating warnings as errors, are defined per project/target
 if (MSVC)
-set(CMAKE_CXX_FLAGS "/DWIN32 /D_WINDOWS /D_HAS_EXCEPTIONS=0 /EHs-c- /we4530 /Wall /WX" CACHE STRING "" FORCE)
+set(CMAKE_CXX_FLAGS "/DWIN32 /D_WINDOWS /D_HAS_EXCEPTIONS=0 /EHs-c- /we4530" CACHE STRING "" FORCE)
 set(CMAKE_CXX_FLAGS_DEBUG "/Ob0 /Od /RTC1" CACHE STRING "" FORCE)
 set(CMAKE_CXX_FLAGS_RELEASE "/O2 /Ob2 /DNDEBUG" CACHE STRING "" FORCE)
 set(CMAKE_CXX_FLAGS_REL_WITH_DEB_INFO "/O2 /Ob1 /DNDEBUG" CACHE STRING "" FORCE)
@@ -17,8 +20,6 @@ set(CMAKE_C_FLAGS_REL_WITH_DEB_INFO "/O2 /Ob1 /DNDEBUG" CACHE STRING "" FORCE)
 endif()
 
 set(CMAKE_EXPORT_COMPILE_COMMANDS ON CACHE BOOL "" FORCE)
-
-project(gamecore_repo)
 
 # download CPM.cmake
 file(
@@ -39,6 +40,7 @@ CPMAddPackage(
 		"SPDLOG_SYSTEM_INCLUDES ON"
 		"SPDLOG_USE_STD_FORMAT ON" # uses builtin fmt and C++20
 		"SPDLOG_NO_ATOMIC_LEVELS ON" # log levels aren't modified concurrently
+		"SPDLOG_NO_EXCEPTIONS ON"
 	EXCLUDE_FROM_ALL YES
 	SYSTEM YES
 )
@@ -129,6 +131,7 @@ CPMAddPackage(
 	URL https://github.com/nlohmann/json/archive/refs/tags/v3.11.3.zip
 	OPTIONS
 		"JSON_SystemInclude ON"
+		"JSON_NOEXCEPTION ON"
 	EXCLUDE_FROM_ALL YES
 	SYSTEM YES
 )

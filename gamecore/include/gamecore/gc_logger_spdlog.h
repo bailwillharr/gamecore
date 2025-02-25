@@ -17,7 +17,12 @@ class LoggerSpdlog final : public Logger {
 
 public:
     LoggerSpdlog();
+    LoggerSpdlog(const LoggerSpdlog&) = delete;
+
     ~LoggerSpdlog();
+
+    LoggerSpdlog& operator=(const LoggerSpdlog&) = delete;
+
     void log(std::string_view message, LogLevel level) override;
 };
 

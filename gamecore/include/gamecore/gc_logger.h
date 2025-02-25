@@ -24,6 +24,8 @@ enum class LogLevel { LVL_TRACE = 0, LVL_DEBUG = 1, LVL_INFO = 2, LVL_WARN = 3, 
 class Logger {
 
 public:
+    virtual ~Logger();
+
     /* only logs if GC_LOG_TRACE_DEBUG is defined */
     void trace(std::string_view message);
     /* only logs if GC_LOG_TRACE_DEBUG is defined */

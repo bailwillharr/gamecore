@@ -126,6 +126,7 @@ inline std::string vulkanResToString(VkResult res)
             return "VK_PIPELINE_BINARY_MISSING_KHR";
         case VK_ERROR_NOT_ENOUGH_SPACE_KHR:
             return "VK_ERROR_NOT_ENOUGH_SPACE_KHR";
+        case VK_RESULT_MAX_ENUM:
         default:
             return "(unknown)";
     }
@@ -148,6 +149,7 @@ inline std::string vulkanPresentModeToString(VkPresentModeKHR present_mode)
 			return "VK_PRESENT_MODE_SHARED_CONTINUOUS_REFRESH_KHR";
 		case VK_PRESENT_MODE_FIFO_LATEST_READY_EXT:
 			return "VK_PRESENT_MODE_FIFO_LATEST_READY_EXT";
+        case VK_PRESENT_MODE_MAX_ENUM_KHR:
 		default:
 			return "(unknown)";
 	}

@@ -18,6 +18,10 @@ endif()
 
 # compiling options:
 
+if (MSVC)
+	target_compile_options(${PROJECT_NAME} PRIVATE /W4 /WX) # warning level 4 and treat warnings as errors
+endif()
+
 if (WIN32)
 	target_compile_definitions(${PROJECT_NAME} PRIVATE NOMINMAX) # stop windows.h conflicting with 'std::max'
 endif()

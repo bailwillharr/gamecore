@@ -233,6 +233,9 @@ static std::atomic<bool> g_open_file_callback_finished;
 static std::filesystem::path g_open_file_callback_result;
 static void SDLCALL openFileCallback(void* userdata, const char* const* filelist, int filter)
 {
+    (void)userdata;
+    (void)filter;
+
     if (!filelist) {
         std::cerr << "SDL_ShowOpenFileDialog() error: " << SDL_GetError() << "\n";
         std::abort();
