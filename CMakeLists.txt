@@ -5,18 +5,25 @@ project(gamecore_repo)
 set(CMAKE_CONFIGURATION_TYPES "Debug;Release;RelWithDebInfo" CACHE STRING "" FORCE)
 
 # Compile flags must be globally redefined to disable exceptions.
+# Also disable RTTI.
+# Also enable link-time optimisation for release builds
 # Additionally, for MSVC, warning C4530 (C++ exception handler used, but unwind semantics are not enabled.) is always treated as an error.
 # Compiler options such as compiler warnings, treating warnings as errors, are defined per project/target
 if (MSVC)
-set(CMAKE_CXX_FLAGS "/DWIN32 /D_WINDOWS /D_HAS_EXCEPTIONS=0 /EHs-c- /we4530" CACHE STRING "" FORCE)
+set(CMAKE_CXX_FLAGS "/DWIN32 /D_WINDOWS /D_HAS_EXCEPTIONS=0 /EHs-c- /we4530 /GR-" CACHE STRING "" FORCE)
 set(CMAKE_CXX_FLAGS_DEBUG "/Ob0 /Od /RTC1" CACHE STRING "" FORCE)
-set(CMAKE_CXX_FLAGS_RELEASE "/O2 /Ob2 /DNDEBUG" CACHE STRING "" FORCE)
+set(CMAKE_CXX_FLAGS_RELEASE "/O2 /Ob2 /DNDEBUG /GL" CACHE STRING "" FORCE)
 set(CMAKE_CXX_FLAGS_REL_WITH_DEB_INFO "/O2 /Ob1 /DNDEBUG" CACHE STRING "" FORCE)
 
 set(CMAKE_C_FLAGS "/DWIN32 /D_WINDOWS" CACHE STRING "" FORCE)
 set(CMAKE_C_FLAGS_DEBUG "/Ob0 /Od /RTC1" CACHE STRING "" FORCE)
-set(CMAKE_C_FLAGS_RELEASE "/O2 /Ob2 /DNDEBUG" CACHE STRING "" FORCE)
+set(CMAKE_C_FLAGS_RELEASE "/O2 /Ob2 /DNDEBUG /GL" CACHE STRING "" FORCE)
 set(CMAKE_C_FLAGS_REL_WITH_DEB_INFO "/O2 /Ob1 /DNDEBUG" CACHE STRING "" FORCE)
+
+set(CMAKE_EXE_LINKER_FLAGS "/machine:x64" CACHE STRING "" FORCE)
+set(CMAKE_EXE_LINKER_FLAGS_DEBUG "/debug /INCREMENTAL" CACHE STRING "" FORCE)
+set(CMAKE_EXE_LINKER_FLAGS_RELEASE "/INCREMENTAL:NO /LTCG:STATUS" CACHE STRING "" FORCE)
+set(CMAKE_EXE_LINKER_FLAGS_REL_WITH_DEB_INFO "/debug /INCREMENTAL" CACHE STRING "" FORCE)
 endif()
 
 set(CMAKE_EXPORT_COMPILE_COMMANDS ON CACHE BOOL "" FORCE)

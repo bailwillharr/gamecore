@@ -157,7 +157,7 @@ VulkanDevice::VulkanDevice()
         debug_messenger_info.pfnUserCallback = vulkanMessageCallback;
         debug_messenger_info.pUserData = nullptr;
 
-        const char* const khronos_validation_layer_name = "VK_LAYER_KHRONOS_validation";
+        [[maybe_unused]] const char* const khronos_validation_layer_name = "VK_LAYER_KHRONOS_validation";
 
         VkApplicationInfo app_info{};
         app_info.sType = VK_STRUCTURE_TYPE_APPLICATION_INFO;
