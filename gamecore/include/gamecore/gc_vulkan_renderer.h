@@ -30,6 +30,11 @@ class VulkanRenderer {
     VulkanAllocator m_allocator;
     VulkanSwapchain m_swapchain;
 
+    VkFormat m_depth_stencil_format;
+    VkImage m_depth_stencil;
+    VkImageView m_depth_stencil_view;
+    VmaAllocation m_depth_stencil_allocation;
+
     uint64_t m_framecount = 0;
     uint64_t m_timeline_semaphore_value = 0; // increment every time 
     VkSemaphore m_timeline_semaphore = VK_NULL_HANDLE;
@@ -58,6 +63,8 @@ public:
 
     const VulkanDevice& getDevice() const { return m_device; }
     const VulkanSwapchain& getSwapchain() const { return m_swapchain; }
+
+    VkFormat getDepthStencilFormat() const { return m_depth_stencil_format; }
 
     void waitIdle();
 

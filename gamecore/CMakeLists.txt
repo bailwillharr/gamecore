@@ -111,6 +111,9 @@ target_link_libraries(${PROJECT_NAME} PUBLIC asio::asio)
 # json
 target_link_libraries(${PROJECT_NAME} PUBLIC nlohmann_json::nlohmann_json)
 
+# glm
+target_link_libraries(${PROJECT_NAME} PUBLIC glm)
+
 # For some reason Vulkan::shaderc_combined doesn't link on linux even though FindVulkan.cmake finds the component??
 if (WIN32)
 	target_link_libraries(${PROJECT_NAME} PUBLIC Vulkan::shaderc_combined)

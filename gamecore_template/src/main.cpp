@@ -191,8 +191,8 @@ int main([[maybe_unused]] int argc, [[maybe_unused]] char* argv[])
             inheritance_rendering_info.viewMask = 0;
             inheritance_rendering_info.colorAttachmentCount = 1;
             inheritance_rendering_info.pColorAttachmentFormats = &color_attachment_format;
-            inheritance_rendering_info.depthAttachmentFormat = VK_FORMAT_UNDEFINED;
-            inheritance_rendering_info.stencilAttachmentFormat = VK_FORMAT_UNDEFINED;
+            inheritance_rendering_info.depthAttachmentFormat = renderer.getDepthStencilFormat();
+            inheritance_rendering_info.stencilAttachmentFormat = inheritance_rendering_info.depthAttachmentFormat;
             inheritance_rendering_info.rasterizationSamples = VK_SAMPLE_COUNT_1_BIT;
             VkCommandBufferInheritanceInfo inheritance_info{};
             inheritance_info.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_INHERITANCE_INFO;
@@ -226,11 +226,10 @@ int main([[maybe_unused]] int argc, [[maybe_unused]] char* argv[])
             scissor.offset.y = 0;
             scissor.extent = swapchain.getExtent();
             vkCmdSetScissor(cmd, 0, 1, &scissor);
-            const auto mouse_pos = win.getMousePositionNorm();
-            const std::array<float, 2> push_val{x_pos, y_pos};
+            const float time = static_cast<float>(elapsed_time);
             vkCmdPushConstants(cmd, pipeline_layout, VK_SHADER_STAGE_VERTEX_BIT, 0,
-                               static_cast<uint32_t>(sizeof(decltype(push_val)::value_type) * push_val.size()), push_val.data());
-            vkCmdDraw(cmd, 3, 1, 0, 0);
+                               static_cast<uint32_t>(sizeof(time)), &time);
+            vkCmdDraw(cmd, 36, 1, 0, 0);
 
             GC_CHECKVK(vkEndCommandBuffer(cmd));
 

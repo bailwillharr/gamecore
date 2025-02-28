@@ -17,8 +17,8 @@ namespace gc {
 /* FIFO_RELAXED: Does not use exclusive fullscreen on Windows (composited). Allows tearing if frames are submitted late to allow FPS to 'catch up' with monitor refresh rate. */
 /* MAILBOX: Does not use exclusive fullscreen on Windows (composited). Latency may be slightly higher than IMMEDIATE. No tearing. */
 /* IMMEDIATE: Will use exclusive fullscreen on Windows (not composited). Probably the lowest latency option. Has tearing. */
-//static constexpr VkPresentModeKHR PREFERRED_PRESENT_MODE = VK_PRESENT_MODE_FIFO_KHR;
-static constexpr VkPresentModeKHR PREFERRED_PRESENT_MODE = VK_PRESENT_MODE_IMMEDIATE_KHR;
+static constexpr VkPresentModeKHR PREFERRED_PRESENT_MODE = VK_PRESENT_MODE_FIFO_KHR;
+//static constexpr VkPresentModeKHR PREFERRED_PRESENT_MODE = VK_PRESENT_MODE_IMMEDIATE_KHR;
 
 VulkanSwapchain::VulkanSwapchain(const VulkanDevice& device, SDL_Window* window_handle) : m_device(device), m_window_handle(window_handle)
 {
@@ -35,19 +35,6 @@ VulkanSwapchain::VulkanSwapchain(const VulkanDevice& device, SDL_Window* window_
     }
     if (surface_supported == VK_FALSE) {
         abortGame("Physical device does not support presentation to surface.");
-    }
-
-    // find depth stencil format to use
-    {
-        VkFormatProperties depth_format_props{};
-        vkGetPhysicalDeviceFormatProperties(m_device.getPhysicalDevice(), VK_FORMAT_D32_SFLOAT_S8_UINT,
-                                            &depth_format_props); // 100% coverage on Windows. Just use this.
-        if (depth_format_props.optimalTilingFeatures & VK_FORMAT_FEATURE_DEPTH_STENCIL_ATTACHMENT_BIT) {
-            m_depth_stencil_format = VK_FORMAT_D32_SFLOAT_S8_UINT;
-        }
-        else {
-            abortGame("Failed to find suitable depth-buffer image format!");
-        }
     }
 
     recreateSwapchain();

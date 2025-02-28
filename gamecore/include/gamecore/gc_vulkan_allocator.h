@@ -13,6 +13,8 @@ class VulkanAllocator {
 public:
     VulkanAllocator(const VulkanDevice& device);
     ~VulkanAllocator();
+
+    VmaAllocator getHandle();
 };
 
 }

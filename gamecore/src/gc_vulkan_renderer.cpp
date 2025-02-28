@@ -23,8 +23,61 @@
 
 namespace gc {
 
-static void recordCommandBuffer(VkImage swapchain_image, VkImageView swapchain_image_view, VkExtent2D swapchain_extent,
-                                VkCommandBuffer cmd, std::span<VkCommandBuffer> rendering_cmds)
+static void recreateDepthStencil(VkDevice device, VmaAllocator allocator, VkFormat format, VkExtent2D extent, VkImage& depth_stencil,
+                                 VkImageView& depth_stencil_view, VmaAllocation& depth_stencil_allocation)
+{
+    if (depth_stencil_view) {
+        vkDestroyImageView(device, depth_stencil_view, nullptr);
+    }
+    if (depth_stencil) {
+        vmaDestroyImage(allocator, depth_stencil, depth_stencil_allocation);
+    }
+
+    VkImageCreateInfo image_info{};
+    image_info.sType = VK_STRUCTURE_TYPE_IMAGE_CREATE_INFO;
+    image_info.pNext = nullptr;
+    image_info.flags = 0;
+    image_info.imageType = VK_IMAGE_TYPE_2D;
+    image_info.format = format;
+    image_info.extent.width = extent.width;
+    image_info.extent.height = extent.height;
+    image_info.extent.depth = 1;
+    image_info.mipLevels = 1;
+    image_info.arrayLayers = 1;
+    image_info.samples = VK_SAMPLE_COUNT_1_BIT;
+    image_info.tiling = VK_IMAGE_TILING_OPTIMAL;
+    image_info.usage = VK_IMAGE_USAGE_DEPTH_STENCIL_ATTACHMENT_BIT;
+    image_info.sharingMode = VK_SHARING_MODE_EXCLUSIVE;
+    image_info.queueFamilyIndexCount = 0;     // ignored
+    image_info.pQueueFamilyIndices = nullptr; // ingored
+    image_info.initialLayout = VK_IMAGE_LAYOUT_UNDEFINED;
+    VmaAllocationCreateInfo alloc_create_info{};
+    alloc_create_info.flags = VMA_ALLOCATION_CREATE_DEDICATED_MEMORY_BIT;
+    alloc_create_info.usage = VMA_MEMORY_USAGE_AUTO_PREFER_DEVICE;
+    alloc_create_info.priority = 1.0f;
+    GC_CHECKVK(vmaCreateImage(allocator, &image_info, &alloc_create_info, &depth_stencil, &depth_stencil_allocation, nullptr));
+
+    VkImageViewCreateInfo view_info{};
+    view_info.sType = VK_STRUCTURE_TYPE_IMAGE_VIEW_CREATE_INFO;
+    view_info.pNext = nullptr;
+    view_info.flags = 0;
+    view_info.image = depth_stencil;
+    view_info.viewType = VK_IMAGE_VIEW_TYPE_2D;
+    view_info.format = format;
+    view_info.components.r = VK_COMPONENT_SWIZZLE_IDENTITY;
+    view_info.components.g = VK_COMPONENT_SWIZZLE_IDENTITY;
+    view_info.components.b = VK_COMPONENT_SWIZZLE_IDENTITY;
+    view_info.components.a = VK_COMPONENT_SWIZZLE_IDENTITY;
+    view_info.subresourceRange.aspectMask = VK_IMAGE_ASPECT_DEPTH_BIT | VK_IMAGE_ASPECT_STENCIL_BIT;
+    view_info.subresourceRange.baseMipLevel = 0;
+    view_info.subresourceRange.levelCount = 1;
+    view_info.subresourceRange.baseArrayLayer = 0;
+    view_info.subresourceRange.layerCount = 1;
+    GC_CHECKVK(vkCreateImageView(device, &view_info, nullptr, &depth_stencil_view));
+}
+
+static void recordCommandBuffer(VkImage swapchain_image, VkImageView swapchain_image_view, VkImage depth_stencil, VkImageView depth_stencil_view,
+                                VkExtent2D swapchain_extent, VkCommandBuffer cmd, std::span<VkCommandBuffer> rendering_cmds)
 {
     ZoneScoped;
 
@@ -37,26 +90,44 @@ static void recordCommandBuffer(VkImage swapchain_image, VkImageView swapchain_i
     GC_CHECKVK(vkBeginCommandBuffer(cmd, &begin_info));
 
     { // transition undefined acquired swapchain image to a renderable color attachment image
-        VkImageMemoryBarrier2 barrier{};
-        barrier.sType = VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER_2;
-        barrier.srcStageMask = VK_PIPELINE_STAGE_2_COLOR_ATTACHMENT_OUTPUT_BIT;
-        barrier.srcAccessMask = VK_ACCESS_2_NONE_KHR;
-        barrier.dstStageMask = VK_PIPELINE_STAGE_2_COLOR_ATTACHMENT_OUTPUT_BIT; // image is next used as a color attachment in fragment shader
-        barrier.dstAccessMask = VK_ACCESS_2_COLOR_ATTACHMENT_WRITE_BIT;
-        barrier.oldLayout = VK_IMAGE_LAYOUT_UNDEFINED;
-        barrier.newLayout = VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL;
-        barrier.srcQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
-        barrier.dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
-        barrier.image = swapchain_image;
-        barrier.subresourceRange.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT;
-        barrier.subresourceRange.baseMipLevel = 0;
-        barrier.subresourceRange.levelCount = 1;
-        barrier.subresourceRange.baseArrayLayer = 0;
-        barrier.subresourceRange.layerCount = 1;
+        std::array<VkImageMemoryBarrier2, 2> barriers{};
+
+        barriers[0].sType = VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER_2;
+        barriers[0].srcStageMask = VK_PIPELINE_STAGE_2_COLOR_ATTACHMENT_OUTPUT_BIT;
+        barriers[0].srcAccessMask = VK_ACCESS_2_NONE;
+        barriers[0].dstStageMask = VK_PIPELINE_STAGE_2_COLOR_ATTACHMENT_OUTPUT_BIT; // image is next used as a color attachment in fragment shader
+        barriers[0].dstAccessMask = VK_ACCESS_2_COLOR_ATTACHMENT_WRITE_BIT;
+        barriers[0].oldLayout = VK_IMAGE_LAYOUT_UNDEFINED;
+        barriers[0].newLayout = VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL;
+        barriers[0].srcQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
+        barriers[0].dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
+        barriers[0].image = swapchain_image;
+        barriers[0].subresourceRange.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT;
+        barriers[0].subresourceRange.baseMipLevel = 0;
+        barriers[0].subresourceRange.levelCount = 1;
+        barriers[0].subresourceRange.baseArrayLayer = 0;
+        barriers[0].subresourceRange.layerCount = 1;
+
+        barriers[1].sType = VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER_2;
+        barriers[1].srcStageMask = VK_PIPELINE_STAGE_2_NONE;
+        barriers[1].srcAccessMask = VK_ACCESS_2_NONE;
+        barriers[1].dstStageMask = VK_ACCESS_2_DEPTH_STENCIL_ATTACHMENT_READ_BIT | VK_ACCESS_2_DEPTH_STENCIL_ATTACHMENT_WRITE_BIT;
+        barriers[1].dstAccessMask = VK_ACCESS_2_DEPTH_STENCIL_ATTACHMENT_READ_BIT | VK_ACCESS_2_DEPTH_STENCIL_ATTACHMENT_WRITE_BIT;
+        barriers[1].oldLayout = VK_IMAGE_LAYOUT_UNDEFINED;
+        barriers[1].newLayout = VK_IMAGE_LAYOUT_DEPTH_STENCIL_ATTACHMENT_OPTIMAL;
+        barriers[1].srcQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
+        barriers[1].dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
+        barriers[1].image = depth_stencil;
+        barriers[1].subresourceRange.aspectMask = VK_IMAGE_ASPECT_DEPTH_BIT | VK_IMAGE_ASPECT_STENCIL_BIT;
+        barriers[1].subresourceRange.baseMipLevel = 0;
+        barriers[1].subresourceRange.levelCount = 1;
+        barriers[1].subresourceRange.baseArrayLayer = 0;
+        barriers[1].subresourceRange.layerCount = 1;
+
         VkDependencyInfo dep{};
         dep.sType = VK_STRUCTURE_TYPE_DEPENDENCY_INFO;
-        dep.imageMemoryBarrierCount = 1;
-        dep.pImageMemoryBarriers = &barrier;
+        dep.imageMemoryBarrierCount = static_cast<uint32_t>(barriers.size());
+        dep.pImageMemoryBarriers = barriers.data();
         vkCmdPipelineBarrier2(cmd, &dep);
     }
 
@@ -72,6 +143,15 @@ static void recordCommandBuffer(VkImage swapchain_image, VkImageView swapchain_i
         color_attachment.clearValue.color.float32[1] = CLEAR_COLOR[1];
         color_attachment.clearValue.color.float32[2] = CLEAR_COLOR[2];
         color_attachment.clearValue.color.float32[3] = CLEAR_COLOR[3];
+        VkRenderingAttachmentInfo depth_attachment{};
+        depth_attachment.sType = VK_STRUCTURE_TYPE_RENDERING_ATTACHMENT_INFO;
+        depth_attachment.imageView = depth_stencil_view;
+        depth_attachment.imageLayout = VK_IMAGE_LAYOUT_DEPTH_STENCIL_ATTACHMENT_OPTIMAL;
+        depth_attachment.resolveMode = VK_RESOLVE_MODE_NONE;
+        depth_attachment.loadOp = VK_ATTACHMENT_LOAD_OP_CLEAR;
+        depth_attachment.storeOp = VK_ATTACHMENT_STORE_OP_NONE; // no need to preserve depth buffer after render pass
+        depth_attachment.clearValue.depthStencil.depth = 1.0f;
+        depth_attachment.clearValue.depthStencil.stencil = 0;
         VkRenderingInfo rendering_info{};
         rendering_info.sType = VK_STRUCTURE_TYPE_RENDERING_INFO;
         rendering_info.flags = VK_RENDERING_CONTENTS_SECONDARY_COMMAND_BUFFERS_BIT;
@@ -81,8 +161,8 @@ static void recordCommandBuffer(VkImage swapchain_image, VkImageView swapchain_i
         rendering_info.viewMask = 0;
         rendering_info.colorAttachmentCount = 1;
         rendering_info.pColorAttachments = &color_attachment;
-        rendering_info.pDepthAttachment = nullptr;
-        rendering_info.pStencilAttachment = nullptr;
+        rendering_info.pDepthAttachment = &depth_attachment;
+        rendering_info.pStencilAttachment = &depth_attachment;
         vkCmdBeginRendering(cmd, &rendering_info);
     }
 
@@ -155,6 +235,23 @@ VulkanRenderer::VulkanRenderer(SDL_Window* window_handle) : m_device(), m_alloca
     sem_info.flags = 0;
     GC_CHECKVK(vkCreateSemaphore(m_device.getDevice(), &sem_info, nullptr, &m_timeline_semaphore));
 
+    // find depth stencil format to use
+    {
+        VkFormatProperties depth_format_props{};
+        vkGetPhysicalDeviceFormatProperties(m_device.getPhysicalDevice(), VK_FORMAT_D32_SFLOAT_S8_UINT,
+                                            &depth_format_props); // 100% coverage on Windows. Just use this.
+        if (depth_format_props.optimalTilingFeatures & VK_FORMAT_FEATURE_DEPTH_STENCIL_ATTACHMENT_BIT) {
+            m_depth_stencil_format = VK_FORMAT_D32_SFLOAT_S8_UINT;
+        }
+        else {
+            abortGame("Failed to find suitable depth-buffer image format!");
+        }
+    }
+    m_depth_stencil = VK_NULL_HANDLE;
+    m_depth_stencil_view = VK_NULL_HANDLE;
+    recreateDepthStencil(m_device.getDevice(), m_allocator.getHandle(), m_depth_stencil_format, m_swapchain.getExtent(), m_depth_stencil, m_depth_stencil_view,
+                         m_depth_stencil_allocation);
+
     GC_TRACE("Initialised VulkanRenderer");
 }
 
@@ -163,6 +260,9 @@ VulkanRenderer::~VulkanRenderer()
     GC_TRACE("Destroying VulkanRenderer...");
 
     waitIdle();
+
+    vkDestroyImageView(m_device.getDevice(), m_depth_stencil_view, nullptr);
+    vmaDestroyImage(m_allocator.getHandle(), m_depth_stencil, m_depth_stencil_allocation);
 
     vkDestroySemaphore(m_device.getDevice(), m_timeline_semaphore, nullptr);
 
@@ -178,7 +278,7 @@ void VulkanRenderer::waitForRenderFinished()
 {
     ZoneScopedNC("Wait for render finished", tracy::Color::Crimson);
     if (m_framecount < VULKAN_FRAMES_IN_FLIGHT) {
-        //return;
+        // return;
     }
     else {
         // wait for v-sync is done here, if the present mode actually waits for v-sync
@@ -222,8 +322,8 @@ void VulkanRenderer::acquireAndPresent(std::span<VkCommandBuffer> rendering_cmds
         ZoneScopedN("Reset main command buffer");
         GC_CHECKVK(vkResetCommandPool(m_device.getDevice(), m_per_frame_in_flight[frame_in_flight_index].pool, 0));
     }
-    recordCommandBuffer(m_swapchain.getImage(image_index), m_swapchain.getImageView(image_index), m_swapchain.getExtent(),
-                        m_per_frame_in_flight[frame_in_flight_index].cmd, rendering_cmds);
+    recordCommandBuffer(m_swapchain.getImage(image_index), m_swapchain.getImageView(image_index), m_depth_stencil, m_depth_stencil_view,
+                        m_swapchain.getExtent(), m_per_frame_in_flight[frame_in_flight_index].cmd, rendering_cmds);
 
     {
         ZoneScopedN("Queue submit");
@@ -280,6 +380,8 @@ void VulkanRenderer::acquireAndPresent(std::span<VkCommandBuffer> rendering_cmds
     if (recreate_swapchain) {
         GC_CHECKVK(vkDeviceWaitIdle(m_device.getDevice()));
         m_swapchain.recreateSwapchain();
+        recreateDepthStencil(m_device.getDevice(), m_allocator.getHandle(), m_depth_stencil_format, m_swapchain.getExtent(), m_depth_stencil,
+                             m_depth_stencil_view, m_depth_stencil_allocation);
     }
 
     ++m_framecount;

@@ -143,6 +143,14 @@ CPMAddPackage(
 	SYSTEM YES
 )
 
+# glm
+CPMAddPackage(
+	NAME glm
+	VERSION 1.0.1
+	URL https://github.com/g-truc/glm/releases/download/1.0.1/glm-1.0.1-light.zip
+	SYSTEM YES
+)
+
 # shaderc_combined (from Vulkan SDK)
 find_package(Vulkan REQUIRED COMPONENTS shaderc_combined)
 

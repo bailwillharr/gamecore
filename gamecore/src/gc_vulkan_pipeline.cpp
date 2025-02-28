@@ -1,46 +1,58 @@
 #include "gamecore/gc_vulkan_pipeline.h"
 
+#include <fstream>
+#include <memory>
+#include <vector>
+
 #include "gamecore/gc_app.h"
 #include "gamecore/gc_vulkan_renderer.h"
 #include "gamecore/gc_vulkan_device.h"
 #include "gamecore/gc_compile_shader.h"
+#include "gamecore/gc_disk_io.h"
 
 namespace gc {
+
+static std::vector<char> readTextFile(const std::string& path)
+{
+    std::ifstream file(path, std::ios::ate);
+    if (file.is_open() == false) {
+        abortGame("Unable to open file: {}", path);
+    }
+
+    std::vector<char> buffer(static_cast<std::size_t>(file.tellg()) + 1);
+
+    file.seekg(0);
+
+    int i = 0;
+    while (!file.eof()) {
+        char c{};
+        file.read(&c, 1); // reading 1 char at a time
+
+        buffer.data()[i] = c;
+
+        ++i;
+    }
+
+    // append zero byte
+    buffer.data()[buffer.size() - 1] = '\0';
+
+    file.close();
+
+    return buffer;
+}
 
 std::pair<VkPipeline, VkPipelineLayout> createPipeline()
 {
     VkDevice device = app().vulkanRenderer().getDevice().getDevice();
 
-    static const std::string vertex_src{
-        "\
-        #version 450\n\
-        const vec2 vertices[] = {vec2(0.0, 0.5), vec2(-0.4330127018922193, -0.25), vec2(0.4330127018922193, -0.25)};\n\
-        const vec3 colors[] = {vec3(1.0, 0.0, 0.0), vec3(0.0, 1.0, 0.0), vec3(0.0, 0.0, 1.0)};\n\
-        layout(push_constant) uniform Constants { vec2 pos; } constants;\n\
-        layout(location = 0) out vec3 color;\n\
-        void main() {\n\
-            gl_Position = vec4(vertices[gl_VertexIndex], 0.0, 1.0);\n\
-            gl_Position.xy += constants.pos;\n\
-            color = colors[gl_VertexIndex];\n\
-            color.r *= (cos(constants.pos.x) + 1.0) * 0.5;\n\
-            color.g *= (sin(constants.pos.y) + 1.0) * 0.5;\n\
-            color.b *= (sin(constants.pos.x * 2.0) + 1.0) * 0.5;\n\
-            gl_Position.y *= -1.0;\n\
-        }\n\
-        "};
+    const auto vertex_src = readTextFile(std::filesystem::path(findContentDir().value() / "cube.vert").string());
+    const std::string vertex_src_string(vertex_src.data());
 
-    static const std::string fragment_src{
-        "\
-        #version 450\n\
-        layout(location = 0) in vec3 color;\n\
-        layout(location = 0) out vec4 outColor;\n\
-        void main() {\n\
-        outColor = vec4(color, 1.0);\n\
-        }\n\
-        "};
+    const auto fragment_src = readTextFile(std::filesystem::path(findContentDir().value() / "cube.frag").string());
+    const std::string fragment_src_string(fragment_src.data());
 
-    const auto vertex_spv = compileShaderModule(vertex_src, ShaderModuleType::VERTEX);
-    const auto fragment_spv = compileShaderModule(fragment_src, ShaderModuleType::FRAGMENT);
+    const auto vertex_spv = compileShaderModule(vertex_src_string, ShaderModuleType::VERTEX);
+    const auto fragment_spv = compileShaderModule(fragment_src_string, ShaderModuleType::FRAGMENT);
     if (vertex_spv.empty() || fragment_spv.empty()) {
         abortGame("Shader compile failed");
     }
@@ -148,7 +160,7 @@ std::pair<VkPipeline, VkPipelineLayout> createPipeline()
 
     VkPushConstantRange push_const_range{};
     push_const_range.offset = 0;
-    push_const_range.size = sizeof(float) * 2; // vec2
+    push_const_range.size = sizeof(float) * 16; // mat4
     push_const_range.stageFlags = VK_SHADER_STAGE_VERTEX_BIT;
 
     VkPipelineLayoutCreateInfo layout_info{};
@@ -169,8 +181,22 @@ std::pair<VkPipeline, VkPipelineLayout> createPipeline()
     rendering_info.viewMask = 0;
     rendering_info.colorAttachmentCount = 1;
     rendering_info.pColorAttachmentFormats = &color_attachment_format;
-    rendering_info.depthAttachmentFormat = VK_FORMAT_UNDEFINED;
-    rendering_info.stencilAttachmentFormat = VK_FORMAT_UNDEFINED;
+    rendering_info.depthAttachmentFormat = app().vulkanRenderer().getDepthStencilFormat();
+    rendering_info.stencilAttachmentFormat = rendering_info.depthAttachmentFormat;
+
+    VkPipelineDepthStencilStateCreateInfo depth_stencil{};
+    depth_stencil.sType = VK_STRUCTURE_TYPE_PIPELINE_DEPTH_STENCIL_STATE_CREATE_INFO;
+    depth_stencil.pNext = nullptr;
+    depth_stencil.flags = 0;
+    depth_stencil.depthTestEnable = VK_FALSE;
+    depth_stencil.depthWriteEnable = VK_FALSE;
+    depth_stencil.depthCompareOp = VK_COMPARE_OP_LESS_OR_EQUAL;
+    depth_stencil.depthBoundsTestEnable = VK_FALSE;
+    depth_stencil.stencilTestEnable = VK_FALSE;
+    // depth_stencil.front = ;
+    // depth_stencil.back = ;
+    depth_stencil.minDepthBounds = 0.0f;
+    depth_stencil.maxDepthBounds = 1.0f;
 
     VkGraphicsPipelineCreateInfo info{};
     info.sType = VK_STRUCTURE_TYPE_GRAPHICS_PIPELINE_CREATE_INFO;
@@ -184,7 +210,7 @@ std::pair<VkPipeline, VkPipelineLayout> createPipeline()
     info.pViewportState = &viewport;
     info.pRasterizationState = &rasterization;
     info.pMultisampleState = &multisampling;
-    info.pDepthStencilState = nullptr; // no depth stencil attachments used during rendering
+    info.pDepthStencilState = &depth_stencil;
     info.pColorBlendState = &color_blend;
     info.pDynamicState = &dynamic;
     info.layout = layout;
