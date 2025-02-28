@@ -160,7 +160,7 @@ std::pair<VkPipeline, VkPipelineLayout> createPipeline()
 
     VkPushConstantRange push_const_range{};
     push_const_range.offset = 0;
-    push_const_range.size = sizeof(float) * 16; // mat4
+    push_const_range.size = sizeof(float) * 16 * 2; // mat4 * 2
     push_const_range.stageFlags = VK_SHADER_STAGE_VERTEX_BIT;
 
     VkPipelineLayoutCreateInfo layout_info{};

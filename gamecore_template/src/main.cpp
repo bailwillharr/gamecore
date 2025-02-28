@@ -9,6 +9,10 @@
 #include <gamecore/gc_content.h>
 #include <gamecore/gc_vulkan_pipeline.h>
 
+#include <gtc/quaternion.hpp>
+#include <mat4x4.hpp>
+#include <glm.hpp>
+
 #include <SDL3/SDL_main.h>
 #include <SDL3/SDL.h>
 
@@ -226,9 +230,32 @@ int main([[maybe_unused]] int argc, [[maybe_unused]] char* argv[])
             scissor.offset.y = 0;
             scissor.extent = swapchain.getExtent();
             vkCmdSetScissor(cmd, 0, 1, &scissor);
-            const float time = static_cast<float>(elapsed_time);
+
+			const glm::quat rotation{ 1.0f, 0.0f, 0.0f, 0.0f };
+			const glm::vec3 position{ 0.0f, 0.0f, glm::sin(elapsed_time) * 10.0f };
+			glm::vec3 scale{ 1.0f, 1.0f, 1.0f };
+			scale *= 0.2f;
+
+			// apply rotation
+			glm::mat4 world_transform = glm::mat4_cast(rotation);
+			// apply position
+			world_transform[3][0] = position.x;
+			world_transform[3][1] = position.y;
+			world_transform[3][1] = position.z;
+			// apply scale
+			world_transform = glm::scale(world_transform, scale);
+
+			struct PushConstants {
+				glm::mat4 world_transform;
+				glm::mat4 projection;
+			} push_constants{};
+
+			push_constants.world_transform = world_transform;
+			push_constants.projection = glm::perspectiveRH_ZO(glm::radians(45.0f), 1.0f, 0.1f, 50.0f);
+
             vkCmdPushConstants(cmd, pipeline_layout, VK_SHADER_STAGE_VERTEX_BIT, 0,
-                               static_cast<uint32_t>(sizeof(time)), &time);
+                               static_cast<uint32_t>(sizeof(PushConstants)), &push_constants);
+
             vkCmdDraw(cmd, 36, 1, 0, 0);
 
             GC_CHECKVK(vkEndCommandBuffer(cmd));

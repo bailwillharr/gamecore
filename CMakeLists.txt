@@ -148,8 +148,11 @@ CPMAddPackage(
 	NAME glm
 	VERSION 1.0.1
 	URL https://github.com/g-truc/glm/releases/download/1.0.1/glm-1.0.1-light.zip
-	SYSTEM YES
+	DOWNLOAD_ONLY YES # built-in CMakeLists.txt doesn't work
 )
+add_library(glm INTERFACE)
+add_library(glm::glm ALIAS glm)
+target_include_directories(glm SYSTEM INTERFACE ${glm_SOURCE_DIR})
 
 # shaderc_combined (from Vulkan SDK)
 find_package(Vulkan REQUIRED COMPONENTS shaderc_combined)

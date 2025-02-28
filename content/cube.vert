@@ -2,6 +2,7 @@
 
 layout(push_constant) uniform PushConstants {
     mat4 world_transform;
+	mat4 projection;
 } pc;
 
 // Cube vertex positions
@@ -27,7 +28,6 @@ const uint indices[36] = uint[](
 );
 
 void main() {
-    gl_Position.xyz = vertices[indices[gl_VertexIndex]];
-    gl_Position.w = 1.0;
+    gl_Position = pc.world_transform * vec4(vertices[indices[gl_VertexIndex]], 1.0f);
     gl_Position.y *= -1.0;
 }
