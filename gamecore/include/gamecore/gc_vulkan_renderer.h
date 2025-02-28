@@ -63,6 +63,7 @@ public:
 
     const VulkanDevice& getDevice() const { return m_device; }
     const VulkanSwapchain& getSwapchain() const { return m_swapchain; }
+    VmaAllocator getAllocator() const { return m_allocator.getHandle(); }
 
     VkFormat getDepthStencilFormat() const { return m_depth_stencil_format; }
 

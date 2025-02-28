@@ -109,9 +109,9 @@ static void recordCommandBuffer(VkImage swapchain_image, VkImageView swapchain_i
         barriers[0].subresourceRange.layerCount = 1;
 
         barriers[1].sType = VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER_2;
-        barriers[1].srcStageMask = VK_PIPELINE_STAGE_2_NONE;
-        barriers[1].srcAccessMask = VK_ACCESS_2_NONE;
-        barriers[1].dstStageMask = VK_ACCESS_2_DEPTH_STENCIL_ATTACHMENT_READ_BIT | VK_ACCESS_2_DEPTH_STENCIL_ATTACHMENT_WRITE_BIT;
+        barriers[1].srcStageMask = VK_PIPELINE_STAGE_2_EARLY_FRAGMENT_TESTS_BIT | VK_PIPELINE_STAGE_2_LATE_FRAGMENT_TESTS_BIT;
+        barriers[1].srcAccessMask = VK_ACCESS_2_DEPTH_STENCIL_ATTACHMENT_WRITE_BIT; // previous read doesn't matter
+        barriers[1].dstStageMask = VK_PIPELINE_STAGE_2_EARLY_FRAGMENT_TESTS_BIT | VK_PIPELINE_STAGE_2_LATE_FRAGMENT_TESTS_BIT;
         barriers[1].dstAccessMask = VK_ACCESS_2_DEPTH_STENCIL_ATTACHMENT_READ_BIT | VK_ACCESS_2_DEPTH_STENCIL_ATTACHMENT_WRITE_BIT;
         barriers[1].oldLayout = VK_IMAGE_LAYOUT_UNDEFINED;
         barriers[1].newLayout = VK_IMAGE_LAYOUT_DEPTH_STENCIL_ATTACHMENT_OPTIMAL;
@@ -238,10 +238,10 @@ VulkanRenderer::VulkanRenderer(SDL_Window* window_handle) : m_device(), m_alloca
     // find depth stencil format to use
     {
         VkFormatProperties depth_format_props{};
-        vkGetPhysicalDeviceFormatProperties(m_device.getPhysicalDevice(), VK_FORMAT_D32_SFLOAT_S8_UINT,
-                                            &depth_format_props); // 100% coverage on Windows. Just use this.
+        vkGetPhysicalDeviceFormatProperties(m_device.getPhysicalDevice(), VK_FORMAT_D24_UNORM_S8_UINT,
+                                            &depth_format_props); // NVIDIA Best practices recommend this
         if (depth_format_props.optimalTilingFeatures & VK_FORMAT_FEATURE_DEPTH_STENCIL_ATTACHMENT_BIT) {
-            m_depth_stencil_format = VK_FORMAT_D32_SFLOAT_S8_UINT;
+            m_depth_stencil_format = VK_FORMAT_D24_UNORM_S8_UINT;
         }
         else {
             abortGame("Failed to find suitable depth-buffer image format!");

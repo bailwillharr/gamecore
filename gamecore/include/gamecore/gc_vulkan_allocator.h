@@ -14,7 +14,7 @@ public:
     VulkanAllocator(const VulkanDevice& device);
     ~VulkanAllocator();
 
-    VmaAllocator getHandle();
+    VmaAllocator getHandle() const;
 };
 
 }

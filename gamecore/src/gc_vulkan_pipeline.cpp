@@ -41,7 +41,7 @@ static std::vector<char> readTextFile(const std::string& path)
     return buffer;
 }
 
-std::pair<VkPipeline, VkPipelineLayout> createPipeline()
+std::pair<VkPipeline, VkPipelineLayout> createPipeline(VkDescriptorSetLayout set_layout)
 {
     VkDevice device = app().vulkanRenderer().getDevice().getDevice();
 
@@ -167,8 +167,8 @@ std::pair<VkPipeline, VkPipelineLayout> createPipeline()
     layout_info.sType = VK_STRUCTURE_TYPE_PIPELINE_LAYOUT_CREATE_INFO;
     layout_info.pNext = nullptr;
     layout_info.flags = 0;
-    layout_info.setLayoutCount = 0;
-    layout_info.pSetLayouts = nullptr;
+    layout_info.setLayoutCount = 1;
+    layout_info.pSetLayouts = &set_layout;
     layout_info.pushConstantRangeCount = 1;
     layout_info.pPushConstantRanges = &push_const_range;
     VkPipelineLayout layout = VK_NULL_HANDLE;
@@ -188,8 +188,8 @@ std::pair<VkPipeline, VkPipelineLayout> createPipeline()
     depth_stencil.sType = VK_STRUCTURE_TYPE_PIPELINE_DEPTH_STENCIL_STATE_CREATE_INFO;
     depth_stencil.pNext = nullptr;
     depth_stencil.flags = 0;
-    depth_stencil.depthTestEnable = VK_FALSE;
-    depth_stencil.depthWriteEnable = VK_FALSE;
+    depth_stencil.depthTestEnable = VK_TRUE;
+    depth_stencil.depthWriteEnable = VK_TRUE;
     depth_stencil.depthCompareOp = VK_COMPARE_OP_LESS_OR_EQUAL;
     depth_stencil.depthBoundsTestEnable = VK_FALSE;
     depth_stencil.stencilTestEnable = VK_FALSE;
@@ -234,5 +234,4 @@ void destroyPipeline(VkPipeline pipeline, VkPipelineLayout layout)
     vkDestroyPipelineLayout(device, layout, nullptr);
 }
 
-
-}
+} // namespace gc

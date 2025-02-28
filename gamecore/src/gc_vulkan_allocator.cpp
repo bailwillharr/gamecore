@@ -76,6 +76,6 @@ VulkanAllocator::~VulkanAllocator()
     vmaDestroyAllocator(m_handle);
 }
 
-VmaAllocator VulkanAllocator::getHandle() { return m_handle; }
+VmaAllocator VulkanAllocator::getHandle() const { return m_handle; }
 
 } // namespace gc
