@@ -264,6 +264,7 @@ VulkanDevice::VulkanDevice()
             // unlink memory priority struct from m_features_enabled chain
             m_features_enabled.vulkan13.pNext = m_features_enabled.memory_priority.pNext;
         }
+        m_features_enabled.features.features.samplerAnisotropy = VK_TRUE;
 
         VkDeviceCreateInfo device_info{};
         device_info.sType = VK_STRUCTURE_TYPE_DEVICE_CREATE_INFO;

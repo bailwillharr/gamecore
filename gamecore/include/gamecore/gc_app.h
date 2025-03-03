@@ -34,6 +34,8 @@ private:
     App();
     ~App();
 
+    void run();
+
 public:
     App(const App&) = delete;
     App(App&&) = delete;

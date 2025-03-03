@@ -67,6 +67,7 @@ public:
     inline const VkDevice& getDevice() const { return m_device; }
     inline const VkPhysicalDevice& getPhysicalDevice() const { return m_physical_device; }
     inline const VulkanQueue& getMainQueue() const { return m_main_queue; }
+    inline const VulkanDeviceProperties& getProperties() const { return m_properties; }
 
     bool isExtensionEnabled(std::string_view name) const;
 };

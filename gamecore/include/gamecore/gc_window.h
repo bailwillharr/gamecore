@@ -77,8 +77,12 @@ public:
     // If width or height == 0, fullscreen == true will use desktop resolution and fullscreen == false will maximise the window
     void setSize(uint32_t width, uint32_t height, bool fullscreen);
 
+private:
     std::array<uint32_t, 2> getSize() const;
+
+public:
     bool getIsFullscreen() const;
+    bool getIsMinimised() const;
 
     // Keybard and mouse input
     bool getKeyDown(SDL_Scancode key) const;

@@ -13,12 +13,14 @@
 namespace gc {
 
 /* Present modes: */
-/* FIFO: Does not use exclusive fullscreen on Windows (composited). Highest latency as rendering is locked to monitor refresh rate. No tearing. Slowdowns will half the FPS. */
-/* FIFO_RELAXED: Does not use exclusive fullscreen on Windows (composited). Allows tearing if frames are submitted late to allow FPS to 'catch up' with monitor refresh rate. */
+/* FIFO: Does not use exclusive fullscreen on Windows (composited). Highest latency as rendering is locked to monitor refresh rate. No tearing. Slowdowns will
+ * half the FPS. */
+/* FIFO_RELAXED: Does not use exclusive fullscreen on Windows (composited). Allows tearing if frames are submitted late to allow FPS to 'catch up' with monitor
+ * refresh rate. */
 /* MAILBOX: Does not use exclusive fullscreen on Windows (composited). Latency may be slightly higher than IMMEDIATE. No tearing. */
 /* IMMEDIATE: Will use exclusive fullscreen on Windows (not composited). Probably the lowest latency option. Has tearing. */
-//static constexpr VkPresentModeKHR PREFERRED_PRESENT_MODE = VK_PRESENT_MODE_FIFO_KHR;
-static constexpr VkPresentModeKHR PREFERRED_PRESENT_MODE = VK_PRESENT_MODE_IMMEDIATE_KHR;
+static constexpr VkPresentModeKHR PREFERRED_PRESENT_MODE = VK_PRESENT_MODE_FIFO_KHR;
+// static constexpr VkPresentModeKHR PREFERRED_PRESENT_MODE = VK_PRESENT_MODE_IMMEDIATE_KHR;
 
 VulkanSwapchain::VulkanSwapchain(const VulkanDevice& device, SDL_Window* window_handle) : m_device(device), m_window_handle(window_handle)
 {
@@ -52,7 +54,7 @@ VulkanSwapchain::~VulkanSwapchain()
     SDL_Vulkan_DestroySurface(m_device.getInstance(), m_surface, nullptr);
 }
 
-void VulkanSwapchain::recreateSwapchain()
+bool VulkanSwapchain::recreateSwapchain()
 {
 
     // Get surface present modes
@@ -90,6 +92,10 @@ void VulkanSwapchain::recreateSwapchain()
         abortGame("vkGetPhysicalDeviceSurfaceCapabilities2KHR() error: {}", vulkanResToString(res));
     }
 
+    // Extent
+    m_extent = surface_caps.surfaceCapabilities.currentExtent;
+    if (m_extent.width == 0 || m_extent.height == 0) return false; // <-- EARLY RETURN HERE IF WINDOW IS MINIMISED
+
     // Get surface formats
     uint32_t surface_format_count{};
     if (VkResult res = vkGetPhysicalDeviceSurfaceFormatsKHR(m_device.getPhysicalDevice(), m_surface, &surface_format_count, nullptr); res != VK_SUCCESS) {
@@ -117,24 +123,10 @@ void VulkanSwapchain::recreateSwapchain()
         min_image_count = surface_caps.surfaceCapabilities.maxImageCount;
     }
 
-	// Use triple buffering
-//    if (m_present_mode == VK_PRESENT_MODE_FIFO_KHR && min_image_count == 2) {
-//        min_image_count = 3;
-//    }
-
-    // Extent
-    if (surface_caps.surfaceCapabilities.currentExtent.width != UINT32_MAX) {
-        m_extent = surface_caps.surfaceCapabilities.currentExtent;
-    }
-    else {
-        // otherwise get extent from SDL
-        int w{}, h{};
-        if (!SDL_GetWindowSizeInPixels(m_window_handle, &w, &h)) {
-            abortGame("SDL_GetWindowSizeInPixels() error: {}", SDL_GetError());
-        }
-        m_extent.width = static_cast<uint32_t>(w);
-        m_extent.height = static_cast<uint32_t>(h);
-    }
+    // Use triple buffering
+    //    if (m_present_mode == VK_PRESENT_MODE_FIFO_KHR && min_image_count == 2) {
+    //        min_image_count = 3;
+    //    }
 
     // clamp extent to min and max
     if (m_extent.width > surface_caps.surfaceCapabilities.maxImageExtent.width) {
@@ -169,8 +161,8 @@ void VulkanSwapchain::recreateSwapchain()
     sc_info.imageArrayLayers = 1;
     sc_info.imageUsage = VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT; // it's VkImageView is used with a VkFramebuffer
     sc_info.imageSharingMode = VK_SHARING_MODE_EXCLUSIVE;
-    sc_info.queueFamilyIndexCount = 0;     // ignored with VK_SHARING_MODE_EXCLUSIVE
-    sc_info.pQueueFamilyIndices = nullptr; // ignored with VK_SHARING_MODE_EXCLUSIVE
+    sc_info.queueFamilyIndexCount = 0;                        // ignored with VK_SHARING_MODE_EXCLUSIVE
+    sc_info.pQueueFamilyIndices = nullptr;                    // ignored with VK_SHARING_MODE_EXCLUSIVE
     sc_info.preTransform = surface_caps.surfaceCapabilities.currentTransform;
     sc_info.compositeAlpha = VK_COMPOSITE_ALPHA_OPAQUE_BIT_KHR;
     sc_info.presentMode = m_present_mode;
@@ -228,7 +220,10 @@ void VulkanSwapchain::recreateSwapchain()
     // create depth/stencil image and image view
 
     // done
-    GC_DEBUG("Recreated swapchain. new extent: ({}, {}), requested image count: {}, new image count: {}", sc_info.imageExtent.width, sc_info.imageExtent.height, min_image_count, image_count);
+    GC_DEBUG("Recreated swapchain. new extent: ({}, {}), requested image count: {}, new image count: {}", sc_info.imageExtent.width, sc_info.imageExtent.height,
+             min_image_count, image_count);
+
+    return true;
 }
 
 } // namespace gc

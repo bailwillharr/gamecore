@@ -1,5 +1,4 @@
 #pragma once
-#pragma once
 
 #include <array>
 #include <vector>
@@ -40,6 +39,8 @@ class VulkanRenderer {
     VkSemaphore m_timeline_semaphore = VK_NULL_HANDLE;
 
     std::array<VulkanPerFrameInFlight, VULKAN_FRAMES_IN_FLIGHT> m_per_frame_in_flight{};
+
+    bool m_minimised = false;
 
 public:
     VulkanRenderer(SDL_Window* window_handle);

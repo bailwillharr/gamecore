@@ -173,8 +173,8 @@ int main([[maybe_unused]] int argc, [[maybe_unused]] char* argv[])
         for (uint32_t y = 0; y < image_info.extent.height; ++y) {
             for (uint32_t x = 0; x < image_info.extent.width; ++x) {
                 source[y * image_info.extent.width + x].r = ((x + y) % 2) * 255;
-                source[y * image_info.extent.width + x].g = ((x + y + 1) % 2) * 255;
-                source[y * image_info.extent.width + x].b = 0;
+                source[y * image_info.extent.width + x].g = 0;
+                source[y * image_info.extent.width + x].b = ((x + y) % 2) * 255;
                 source[y * image_info.extent.width + x].a = 255;
             }
         }
@@ -318,7 +318,8 @@ int main([[maybe_unused]] int argc, [[maybe_unused]] char* argv[])
         sampler_info.addressModeV = VK_SAMPLER_ADDRESS_MODE_REPEAT;
         sampler_info.addressModeW = VK_SAMPLER_ADDRESS_MODE_REPEAT;
         sampler_info.mipLodBias = 0.0f;
-        sampler_info.anisotropyEnable = VK_FALSE;
+        sampler_info.anisotropyEnable = VK_TRUE;
+        sampler_info.maxAnisotropy = device.getProperties().props.properties.limits.maxSamplerAnisotropy;
         sampler_info.compareEnable = VK_FALSE;
         sampler_info.unnormalizedCoordinates = VK_FALSE;
         GC_CHECKVK(vkCreateSampler(device.getDevice(), &sampler_info, nullptr, &my_sampler));
@@ -497,7 +498,7 @@ int main([[maybe_unused]] int argc, [[maybe_unused]] char* argv[])
 
             vkCmdBindDescriptorSets(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, pipeline_layout, 0, 1, &descriptor_set, 0, nullptr);
 
-            const glm::quat rotation = glm::angleAxis(static_cast<float>(elapsed_time), glm::vec3{0.0f, 1.0f, 0.0f});
+            const glm::quat rotation = glm::angleAxis(static_cast<float>(elapsed_time), glm::normalize(glm::vec3{0.4f, 3.0f, 1.0f}));
             const glm::vec3 position{glm::sin(elapsed_time), glm::cos(elapsed_time) * 0.5f, -3.0f};
             glm::vec3 scale{1.0f, 1.0f, 1.0f};
             scale *= 0.2f;

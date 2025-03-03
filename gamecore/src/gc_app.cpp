@@ -61,6 +61,11 @@ App::~App()
     }
 }
 
+void App::run()
+{
+
+}
+
 void App::initialise()
 {
     if (s_app) {

@@ -81,7 +81,8 @@ static void recordCommandBuffer(VkImage swapchain_image, VkImageView swapchain_i
 {
     ZoneScoped;
 
-    constexpr std::array<float, 4> CLEAR_COLOR{1.0f, 1.0f, 1.0f, 1.0f};
+    // constexpr std::array<float, 4> CLEAR_COLOR{1.0f, 1.0f, 1.0f, 1.0f};
+    constexpr std::array<float, 4> CLEAR_COLOR{0.0f, 0.0f, 0.0f, 1.0f};
 
     VkCommandBufferBeginInfo begin_info{};
     begin_info.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO;
@@ -298,11 +299,11 @@ void VulkanRenderer::acquireAndPresent(std::span<VkCommandBuffer> rendering_cmds
 {
     bool recreate_swapchain = app().window().getResizedFlag();
 
-    uint32_t frame_in_flight_index = getFrameInFlightIndex();
+    const uint32_t frame_in_flight_index = getFrameInFlightIndex();
 
     uint32_t image_index{};
-
-    { // No blocking here. takes something like 2us. Apparently it *can* block
+    {
+        // No blocking here. takes something like 2us. Apparently it *can* block
         ZoneScopedN("Acquire swapchain image");
         if (VkResult res = vkAcquireNextImageKHR(m_device.getDevice(), m_swapchain.getSwapchain(), UINT64_MAX,
                                                  m_per_frame_in_flight[frame_in_flight_index].image_acquired_semaphore, VK_NULL_HANDLE, &image_index);
@@ -377,11 +378,14 @@ void VulkanRenderer::acquireAndPresent(std::span<VkCommandBuffer> rendering_cmds
         }
     }
 
+    // if window was minimised, we can only exit that rendering state through app().window().getResizedFlag() as acquireNextImage and
+    // queuePresent are not called when the window is minimised
     if (recreate_swapchain) {
         GC_CHECKVK(vkDeviceWaitIdle(m_device.getDevice()));
-        m_swapchain.recreateSwapchain();
-        recreateDepthStencil(m_device.getDevice(), m_allocator.getHandle(), m_depth_stencil_format, m_swapchain.getExtent(), m_depth_stencil,
-                             m_depth_stencil_view, m_depth_stencil_allocation);
+        if (m_swapchain.recreateSwapchain()) {
+            recreateDepthStencil(m_device.getDevice(), m_allocator.getHandle(), m_depth_stencil_format, m_swapchain.getExtent(), m_depth_stencil,
+                                 m_depth_stencil_view, m_depth_stencil_allocation);
+        }
     }
 
     ++m_framecount;

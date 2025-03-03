@@ -34,7 +34,8 @@ public:
 
     inline VkSwapchainKHR getSwapchain() const { return m_swapchain; }
 
-    void recreateSwapchain();
+    // returns false if the swapchain could not be recreated due to window being minimised
+    bool recreateSwapchain();
 
     inline uint32_t getImageCount() const { return static_cast<uint32_t>(m_images.size()); }
     inline VkImage getImage(uint32_t index) const { return m_images[index]; }
