@@ -25,6 +25,7 @@ set(SRC_FILES
 	"src/gc_vulkan_swapchain.cpp"
 	"src/gc_compile_shader.cpp"
 	"src/gc_vulkan_pipeline.cpp"
+	"src/gc_vulkan_presentation.cpp"
 	"src/gc_configuration.cpp"
 	
 )
@@ -55,6 +56,7 @@ set(INCLUDE_FILES
 	"include/gamecore/gc_vulkan_swapchain.h"
 	"include/gamecore/gc_compile_shader.h"
 	"include/gamecore/gc_vulkan_pipeline.h"
+	"include/gamecore/gc_vulkan_presentation.h"
 	"include/gamecore/gc_configuration.h"
 )
 

@@ -139,7 +139,7 @@ VulkanDevice::VulkanDevice()
         for (uint32_t i = 0; i < window_extension_count; ++i) {
             instance_extensions.push_back(window_extensions[i]);
         }
-        
+
         // The above code pushes back VK_KHR_surface and VK_KHR_win32_surface on windows
 
 #ifdef GC_VULKAN_VALIDATION
@@ -147,7 +147,6 @@ VulkanDevice::VulkanDevice()
 #endif
         instance_extensions.push_back(VK_KHR_GET_SURFACE_CAPABILITIES_2_EXTENSION_NAME);
         instance_extensions.push_back(VK_EXT_SURFACE_MAINTENANCE_1_EXTENSION_NAME);
-
 
         VkDebugUtilsMessengerCreateInfoEXT debug_messenger_info{};
         debug_messenger_info.sType = VK_STRUCTURE_TYPE_DEBUG_UTILS_MESSENGER_CREATE_INFO_EXT;
@@ -212,31 +211,35 @@ VulkanDevice::VulkanDevice()
         auto queue_family_properties = getQueueFamilyProperties(m_physical_device);
 
         /* get primary queue family (first queue that supports graphics) */
-        m_main_queue.queue = VK_NULL_HANDLE; // this is set just after device is created
-        m_main_queue.queue_family_index = 0;
+        uint32_t main_queue_family_queue_count{};
+        m_main_queue = VK_NULL_HANDLE; // this is set just after device is created
+        m_main_queue_family_index = 0;
         for (const VkQueueFamilyProperties& props : queue_family_properties) {
             if (props.queueFlags & VK_QUEUE_GRAPHICS_BIT) {
+                main_queue_family_queue_count = props.queueCount;
                 break;
             }
-            ++m_main_queue.queue_family_index;
+            ++m_main_queue_family_index;
         }
-        if (m_main_queue.queue_family_index == queue_family_properties.size()) {
+        if (m_main_queue_family_index == queue_family_properties.size()) {
             abortGame("No Vulkan device queue with graphics support found.");
         }
 
-        if (!SDL_Vulkan_GetPresentationSupport(m_instance, m_physical_device, m_main_queue.queue_family_index)) {
+        if (!SDL_Vulkan_GetPresentationSupport(m_instance, m_physical_device, m_main_queue_family_index)) {
             /* Ensure queue family #0 supports presentation. */
             /* All real Vulkan capable GPUs are going to support presentation. This is here just in case. */
             abortGame("Vulkan queue family #0 doesn't support presentation.");
         }
+
+        const bool separate_present_queue = (main_queue_family_queue_count > 1);
+        const std::vector<float> queue_priorities{1.0f, 1.0f}; // same priority for main queue and present
         std::vector<VkDeviceQueueCreateInfo> queue_infos{};
-        const float queue_priority = 1.0f;
-        // For now only create a main queue for graphics operations
+        // Create a main queue for graphics operations and also a separate present queue on same family if available
         queue_infos.push_back(VkDeviceQueueCreateInfo{.sType = VK_STRUCTURE_TYPE_DEVICE_QUEUE_CREATE_INFO,
                                                       .pNext = nullptr,
-                                                      .queueFamilyIndex = m_main_queue.queue_family_index,
-                                                      .queueCount = 1,
-                                                      .pQueuePriorities = &queue_priority});
+                                                      .queueFamilyIndex = m_main_queue_family_index,
+                                                      .queueCount = separate_present_queue ? 2u : 1u,
+                                                      .pQueuePriorities = queue_priorities.data()});
 
         constexpr std::array<const char*, 2> REQUIRED_EXTENSION_NAMES{VK_KHR_SWAPCHAIN_EXTENSION_NAME, VK_EXT_SWAPCHAIN_MAINTENANCE_1_EXTENSION_NAME};
         constexpr std::array<const char*, 2> OPTIONAL_EXTENSION_NAMES{VK_EXT_MEMORY_PRIORITY_EXTENSION_NAME, VK_EXT_MEMORY_BUDGET_EXTENSION_NAME};
@@ -281,12 +284,20 @@ VulkanDevice::VulkanDevice()
             vkDestroyInstance(m_instance, nullptr);
             abortGame("vkCreateDevice() error: {}", vulkanResToString(res));
         }
-    }
 
-    volkLoadDevice(m_device);
+        volkLoadDevice(m_device);
 
-    { // Get Queues
-        vkGetDeviceQueue(m_device, m_main_queue.queue_family_index, 0, &m_main_queue.queue);
+        {
+            // Get Queues
+            vkGetDeviceQueue(m_device, m_main_queue_family_index, 0, &m_main_queue);
+            if (separate_present_queue) {
+                vkGetDeviceQueue(m_device, m_main_queue_family_index, 1, &m_present_queue);
+            }
+            else {
+                m_present_queue = m_main_queue;
+            }
+        }
+
     }
 
     GC_TRACE("Initialised VulkanDevice");

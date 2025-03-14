@@ -71,7 +71,7 @@ int main()
 
     while (!gc::app().window().shouldQuit()) {
 
-        gc::app().vulkanRenderer().waitForRenderFinished();
+        gc::app().vulkanRenderer().waitForPresentFinished();
 
         gc::app().window().processEvents();
 

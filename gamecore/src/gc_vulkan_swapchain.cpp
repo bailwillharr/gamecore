@@ -48,9 +48,9 @@ VulkanSwapchain::~VulkanSwapchain()
 {
     GC_TRACE("Destroying VulkanSwapchain...");
     for (VkImageView view : m_image_views) {
-        vkDestroyImageView(m_device.getDevice(), view, nullptr);
+        vkDestroyImageView(m_device.getHandle(), view, nullptr);
     }
-    vkDestroySwapchainKHR(m_device.getDevice(), m_swapchain, nullptr);
+    vkDestroySwapchainKHR(m_device.getHandle(), m_swapchain, nullptr);
     SDL_Vulkan_DestroySurface(m_device.getInstance(), m_surface, nullptr);
 }
 
@@ -169,28 +169,28 @@ bool VulkanSwapchain::recreateSwapchain()
     sc_info.clipped = VK_TRUE;
     sc_info.oldSwapchain = old_swapchain; // which is VK_NULL_HANDLE on first swapchain creation
 
-    if (VkResult res = vkCreateSwapchainKHR(m_device.getDevice(), &sc_info, nullptr, &m_swapchain); res != VK_SUCCESS) {
+    if (VkResult res = vkCreateSwapchainKHR(m_device.getHandle(), &sc_info, nullptr, &m_swapchain); res != VK_SUCCESS) {
         abortGame("vkCreateSwapchainKHR() error: {}", vulkanResToString(res));
     }
 
     // (destroy old swapchain)
     if (old_swapchain != VK_NULL_HANDLE) {
-        vkDestroySwapchainKHR(m_device.getDevice(), old_swapchain, nullptr);
+        vkDestroySwapchainKHR(m_device.getHandle(), old_swapchain, nullptr);
     }
 
     // get all image handles
     uint32_t image_count{};
-    if (VkResult res = vkGetSwapchainImagesKHR(m_device.getDevice(), m_swapchain, &image_count, nullptr); res != VK_SUCCESS) {
+    if (VkResult res = vkGetSwapchainImagesKHR(m_device.getHandle(), m_swapchain, &image_count, nullptr); res != VK_SUCCESS) {
         abortGame("vkGetSwapchainImagesKHR() error: {}", vulkanResToString(res));
     }
     m_images.resize(image_count);
-    if (VkResult res = vkGetSwapchainImagesKHR(m_device.getDevice(), m_swapchain, &image_count, m_images.data()); res != VK_SUCCESS) {
+    if (VkResult res = vkGetSwapchainImagesKHR(m_device.getHandle(), m_swapchain, &image_count, m_images.data()); res != VK_SUCCESS) {
         abortGame("vkGetPhysicalDeviceSurfacePresentModesKHR() error: {}", vulkanResToString(res));
     }
 
     // (destroy old image views)
     for (VkImageView image_view : m_image_views) {
-        vkDestroyImageView(m_device.getDevice(), image_view, nullptr);
+        vkDestroyImageView(m_device.getHandle(), image_view, nullptr);
     }
     // create image views
     m_image_views.resize(image_count);
@@ -211,7 +211,7 @@ bool VulkanSwapchain::recreateSwapchain()
         view_info.subresourceRange.levelCount = 1;
         view_info.subresourceRange.baseArrayLayer = 0;
         view_info.subresourceRange.layerCount = 1;
-        if (VkResult res = vkCreateImageView(m_device.getDevice(), &view_info, nullptr, &m_image_views[i]); res != VK_SUCCESS) {
+        if (VkResult res = vkCreateImageView(m_device.getHandle(), &view_info, nullptr, &m_image_views[i]); res != VK_SUCCESS) {
             abortGame("vkCreateImageView() error: {}", vulkanResToString(res));
         }
     }

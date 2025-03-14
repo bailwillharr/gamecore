@@ -40,20 +40,18 @@ struct VulkanDeviceFeatures {
     }
 };
 
-struct VulkanQueue {
-    VkQueue queue;
-    uint32_t queue_family_index;
-};
-
 class VulkanDevice {
     VkInstance m_instance = VK_NULL_HANDLE;
     VkDebugUtilsMessengerEXT m_debug_messenger = VK_NULL_HANDLE;
     VkPhysicalDevice m_physical_device = VK_NULL_HANDLE;
     VkDevice m_device = VK_NULL_HANDLE;
-    VulkanQueue m_main_queue{};
     VulkanDeviceProperties m_properties{};
     VulkanDeviceFeatures m_features_enabled{};
     std::vector<std::string> m_extensions_enabled{};
+
+    VkQueue m_main_queue{};
+    VkQueue m_present_queue{};
+    uint32_t m_main_queue_family_index{};
 
 public:
     VulkanDevice();
@@ -64,9 +62,14 @@ public:
     VulkanDevice operator=(const VulkanDevice&) = delete;
 
     inline const VkInstance& getInstance() const { return m_instance; }
-    inline const VkDevice& getDevice() const { return m_device; }
+    inline const VkDevice& getHandle() const { return m_device; }
     inline const VkPhysicalDevice& getPhysicalDevice() const { return m_physical_device; }
-    inline const VulkanQueue& getMainQueue() const { return m_main_queue; }
+
+    inline uint32_t getMainQueueFamilyIndex() const { return m_main_queue_family_index; }
+    inline VkQueue getMainQueue() const { return m_main_queue; }
+    // present queue is always same queue family as main queues
+    inline VkQueue getPresentQueue() const { return m_present_queue; }
+
     inline const VulkanDeviceProperties& getProperties() const { return m_properties; }
 
     bool isExtensionEnabled(std::string_view name) const;

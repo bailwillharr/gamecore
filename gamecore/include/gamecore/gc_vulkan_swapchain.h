@@ -1,6 +1,7 @@
 #pragma once
 
 #include <vector>
+#include <span>
 
 #include <SDL3/SDL_video.h>
 
@@ -38,7 +39,7 @@ public:
     bool recreateSwapchain();
 
     inline uint32_t getImageCount() const { return static_cast<uint32_t>(m_images.size()); }
-    inline VkImage getImage(uint32_t index) const { return m_images[index]; }
+    inline const std::vector<VkImage>& getImages() const { return m_images; }
     inline VkImageView getImageView(uint32_t index) const { return m_image_views[index]; }
     inline VkExtent2D getExtent() const { return m_extent; }
     inline VkSurfaceFormatKHR getSurfaceFormat() const { return m_surface_format; }

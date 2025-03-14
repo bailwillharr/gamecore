@@ -45,7 +45,7 @@ VulkanAllocator::VulkanAllocator(const VulkanDevice& device)
 
     VmaAllocatorCreateInfo createInfo{.flags = 0,
                                       .physicalDevice = device.getPhysicalDevice(),
-                                      .device = device.getDevice(),
+                                      .device = device.getHandle(),
                                       .preferredLargeHeapBlockSize = 0, // set to zero for default, which is currently 256 MiB
                                       .pAllocationCallbacks = nullptr,
                                       .pDeviceMemoryCallbacks = nullptr,
