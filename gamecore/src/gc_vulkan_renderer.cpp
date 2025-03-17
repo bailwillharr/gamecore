@@ -202,7 +202,8 @@ static void recordCommandBuffer(VkImage swapchain_image, VkImageView swapchain_i
     GC_CHECKVK(vkEndCommandBuffer(cmd));
 }
 
-static void recreatePerSwapchainImageResources(VulkanDevice& device, std::vector<PerSwapchainImageResources>& resources, const std::vector<VkImage>& swapchain_images, VkExtent2D extent)
+static void recreatePerSwapchainImageResources(VulkanDevice& device, std::vector<PerSwapchainImageResources>& resources,
+                                               const std::vector<VkImage>& swapchain_images, VkExtent2D extent)
 {
     for (const PerSwapchainImageResources& per_swapchain_image : resources) {
         vkDestroySemaphore(device.getHandle(), per_swapchain_image.image_acquired, nullptr);
@@ -319,7 +320,8 @@ static void recreatePerSwapchainImageResources(VulkanDevice& device, std::vector
     }
 }
 
-VulkanRenderer::VulkanRenderer(SDL_Window* window_handle) : m_device(), m_allocator(m_device), m_swapchain(m_device, window_handle)
+VulkanRenderer::VulkanRenderer(SDL_Window* window_handle)
+    : m_device(), m_allocator(m_device), m_swapchain(m_device, window_handle), m_image_acquired_semaphores(m_device.getHandle())
 {
     VkSemaphoreTypeCreateInfo sem_type{};
     sem_type.sType = VK_STRUCTURE_TYPE_SEMAPHORE_TYPE_CREATE_INFO;
@@ -364,7 +366,6 @@ VulkanRenderer::~VulkanRenderer()
     vkDestroySemaphore(m_device.getHandle(), m_timeline_semaphore, nullptr);
 
     for (auto& per_swapchain_image : m_swapchain_image_resources) {
-        vkDestroySemaphore(m_device.getHandle(), per_swapchain_image.image_acquired, nullptr);
         vkDestroySemaphore(m_device.getHandle(), per_swapchain_image.ready_to_present, nullptr);
         vkDestroyCommandPool(m_device.getHandle(), per_swapchain_image.copy_image_pool, nullptr);
     }
@@ -396,8 +397,10 @@ void VulkanRenderer::acquireAndPresent(VkImage image_to_present)
 
     const uint32_t frame_in_flight_index = getFrameInFlightIndex();
 
+    const auto [image_acquired_semaphore, image_acquire_semaphore_index] = m_image_acquired_semaphores.retrieveSemaphore();
+
     uint32_t image_index{};
-    if (VkResult res = vkAcquireNextImageKHR(m_device.getHandle(), m_swapchain.getSwapchain(), 0, m_image_acquired_semaphores[frame_in_flight_index],
+    if (VkResult res = vkAcquireNextImageKHR(m_device.getHandle(), m_swapchain.getSwapchain(), 0, image_acquired_semaphore,
                                              VK_NULL_HANDLE, &image_index);
         res != VK_SUCCESS) {
         if (res == VK_SUBOPTIMAL_KHR) {
@@ -414,11 +417,11 @@ void VulkanRenderer::acquireAndPresent(VkImage image_to_present)
 
         VkSemaphoreSubmitInfo wait_semaphore_info{};
         wait_semaphore_info.sType = VK_STRUCTURE_TYPE_SEMAPHORE_SUBMIT_INFO;
-        wait_semaphore_info.semaphore = m_image_acquired_semaphores[frame_in_flight_index];
+        wait_semaphore_info.semaphore = image_acquired_semaphore;
         wait_semaphore_info.stageMask = VK_PIPELINE_STAGE_2_COLOR_ATTACHMENT_OUTPUT_BIT;
         std::array<VkSemaphoreSubmitInfo, 2> signal_semaphore_infos{};
         signal_semaphore_infos[0].sType = VK_STRUCTURE_TYPE_SEMAPHORE_SUBMIT_INFO;
-        signal_semaphore_infos[0].semaphore = m_ready_to_present_semaphores[frame_in_flight_index];
+        signal_semaphore_infos[0].semaphore = m_swapchain_image_resources[image_index].ready_to_present;
         signal_semaphore_infos[0].stageMask = VK_PIPELINE_STAGE_2_COLOR_ATTACHMENT_OUTPUT_BIT;
         signal_semaphore_infos[1].sType = VK_STRUCTURE_TYPE_SEMAPHORE_SUBMIT_INFO;
         signal_semaphore_infos[1].semaphore = m_timeline_semaphore;
@@ -426,7 +429,7 @@ void VulkanRenderer::acquireAndPresent(VkImage image_to_present)
         signal_semaphore_infos[1].value = m_framecount + 1;
         VkCommandBufferSubmitInfo cmd_buf_info{};
         cmd_buf_info.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_SUBMIT_INFO;
-        cmd_buf_info.commandBuffer = m_copy_framebuffer_command_buffers[frame_in_flight_index];
+        cmd_buf_info.commandBuffer = m_swapchain_image_resources[image_index].copy_image_cmdbuf;
         VkSubmitInfo2 submit_info{};
         submit_info.sType = VK_STRUCTURE_TYPE_SUBMIT_INFO_2;
         submit_info.waitSemaphoreInfoCount = 1;
@@ -445,7 +448,7 @@ void VulkanRenderer::acquireAndPresent(VkImage image_to_present)
         VkPresentInfoKHR present_info{};
         present_info.sType = VK_STRUCTURE_TYPE_PRESENT_INFO_KHR;
         present_info.waitSemaphoreCount = 1;
-        present_info.pWaitSemaphores = &m_ready_to_present_semaphores[frame_in_flight_index];
+        present_info.pWaitSemaphores = &m_swapchain_image_resources[image_index].ready_to_present;
         present_info.swapchainCount = 1;
         present_info.pSwapchains = &swapchain;
         present_info.pImageIndices = &image_index;

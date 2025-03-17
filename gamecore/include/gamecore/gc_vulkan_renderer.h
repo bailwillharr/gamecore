@@ -4,6 +4,7 @@
 #include <vector>
 #include <tuple>
 #include <span>
+#include <bitset>
 
 #include <SDL3/SDL_vulkan.h>
 
@@ -11,6 +12,7 @@
 #include "gamecore/gc_vulkan_device.h"
 #include "gamecore/gc_vulkan_allocator.h"
 #include "gamecore/gc_vulkan_swapchain.h"
+#include "gamecore/gc_assert.h"
 
 namespace gc {
 
@@ -23,39 +25,64 @@ struct PerSwapchainImageResources {
     VkCommandBuffer copy_image_cmdbuf{};
 };
 
-/* A pool of binary semaphores */
+/* A pool of binary semaphores and fences to keep track of vkAcquireNextImageKHR() */
 class SemaphorePool {
     static constexpr size_t NUM_SEMAPHORES = 8;
     VkDevice m_device;
     std::array<VkSemaphore, NUM_SEMAPHORES> m_semaphores{};
-    uint64_t m_semaphore_in_use_mask{};
-
-    static_assert(NUM_SEMAPHORES <= sizeof(m_semaphore_in_use_mask) * 8);
+    std::array<VkFence, NUM_SEMAPHORES> m_fences{};
 
 public:
     explicit SemaphorePool(VkDevice device) : m_device(device) {}
     inline ~SemaphorePool()
     {
-        for (VkSemaphore sem : m_semaphores) {
-            vkDestroySemaphore(m_device, sem, nullptr);
+        for (uint32_t i = 0; i < static_cast<uint32_t>(NUM_SEMAPHORES); ++i) {
+            if (m_semaphores[i] != VK_NULL_HANDLE) {
+                vkDestroySemaphore(m_device, m_semaphores[i], nullptr);
+            }
+            if (m_fences[i] != VK_NULL_HANDLE) {
+                vkDestroyFence(m_device, m_fences[i], nullptr);
+            }
         }
     }
 
-    /* Get a semaphore ready to use */
-    inline std::pair<VkSemaphore, uint32_t> retrieveSemaphore()
+    /* Get a semaphore and fence that are ready to use */
+    /* If none are available, wait for */
+    inline uint32_t retrieve(VkSemaphore& semaphore, VkFence& fence)
     {
-        for (uint32_t i = 0; i < static_cast<uint32_t>(m_semaphores.size()); ++i) {
-            if ((m_semaphore_in_use_mask & (1LL << i)) == 0) {
-                if (m_semaphores[i] == VK_NULL_HANDLE) {
-                    VkSemaphoreCreateInfo info{};
-                    info.sType = VK_STRUCTURE_TYPE_SEMAPHORE_CREATE_INFO;
-                    GC_CHECKVK(vkCreateSemaphore(m_device, &info, nullptr, &m_semaphores[i]));
+        GC_ASSERT(semaphore == VK_NULL_HANDLE);
+        GC_ASSERT(fence == VK_NULL_HANDLE);
+        for (uint32_t i = 0; i < static_cast<uint32_t>(NUM_SEMAPHORES); ++i) {
+            if (m_fences[i] == VK_NULL_HANDLE) {
+                VkSemaphoreCreateInfo sem_info{};
+                sem_info.sType = VK_STRUCTURE_TYPE_SEMAPHORE_CREATE_INFO;
+                GC_CHECKVK(vkCreateSemaphore(m_device, &sem_info, nullptr, &m_semaphores[i]));
+                VkFenceCreateInfo fence_info{};
+                fence_info.sType = VK_STRUCTURE_TYPE_FENCE_CREATE_INFO;
+                GC_CHECKVK(vkCreateFence(m_device, &fence_info, nullptr, &m_fences[i]));
+                
+                semaphore = m_semaphores[i];
+                fence = m_fences[i];
+                return i;
+            }
+            else {
+                VkResult res = vkWaitForFences(m_device, 1, &m_fences[i], VK_FALSE, 0);
+                if (res == VK_SUCCESS) {
+                    semaphore = m_semaphores[i];
+                    fence = m_fences[i];
+                    return i;
                 }
-                m_semaphore_in_use_mask |= (1LL << i);
-                return std::make_pair(m_semaphores[i], i);
             }
         }
         abortGame("SemaphorePool ran out of semaphores");
+    }
+
+    inline void release(uint32_t index)
+    {
+        GC_ASSERT(m_semaphore_in_use_mask.test(index) == true);
+        GC_ASSERT(m_semaphores[index] != VK_NULL_HANDLE);
+        GC_ASSERT(m_fences[index] != VK_NULL_HANDLE);
+        m_semaphore_in_use_mask.reset(index);
     }
 };
 
@@ -70,6 +97,7 @@ class VulkanRenderer {
 
     // acquireAndPresent() should be able to queue up all the swapchain's images for presentation before blocking (assuming v-sync off)
     std::vector<PerSwapchainImageResources> m_swapchain_image_resources{};
+    SemaphorePool m_image_acquired_semaphores;
 
     VkImage m_depth_stencil;
     VkImageView m_depth_stencil_view;
