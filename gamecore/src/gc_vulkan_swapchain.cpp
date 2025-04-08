@@ -102,6 +102,8 @@ bool VulkanSwapchain::recreateSwapchain()
         if (!SDL_GetWindowSizeInPixels(m_window_handle, &w, &h)) {
             abortGame("SDL_GetWindowSizeInPixels() error: {}", SDL_GetError());
         }
+        m_extent.width = w;
+        m_extent.height = h;
     }
 
     // Get surface formats
