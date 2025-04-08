@@ -257,6 +257,7 @@ VulkanDevice::VulkanDevice()
         }
 
         // enable features here:
+        m_features_enabled.swapchain_maintenance_1.swapchainMaintenance1 = VK_TRUE;
         m_features_enabled.vulkan13.dynamicRendering = VK_TRUE;
         m_features_enabled.vulkan13.synchronization2 = VK_TRUE;
         m_features_enabled.vulkan12.timelineSemaphore = VK_TRUE;
@@ -265,7 +266,7 @@ VulkanDevice::VulkanDevice()
         }
         else {
             // unlink memory priority struct from m_features_enabled chain
-            m_features_enabled.vulkan13.pNext = m_features_enabled.memory_priority.pNext;
+            m_features_enabled.swapchain_maintenance_1.pNext = m_features_enabled.memory_priority.pNext;
         }
         m_features_enabled.features.features.samplerAnisotropy = VK_TRUE;
 
