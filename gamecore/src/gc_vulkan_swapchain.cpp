@@ -95,6 +95,14 @@ bool VulkanSwapchain::recreateSwapchain()
     // Extent
     m_extent = surface_caps.surfaceCapabilities.currentExtent;
     if (m_extent.width == 0 || m_extent.height == 0) return false; // <-- EARLY RETURN HERE IF WINDOW IS MINIMISED
+    else if (m_extent.width == UINT32_MAX && m_extent.height == UINT32_MAX) {
+        // In this case, swapchain size dictates the size of the window.
+        // Just get the size from SDL
+        int w{}, h{};
+        if (!SDL_GetWindowSizeInPixels(m_window_handle, &w, &h)) {
+            abortGame("SDL_GetWindowSizeInPixels() error: {}", SDL_GetError());
+        }
+    }
 
     // Get surface formats
     uint32_t surface_format_count{};
