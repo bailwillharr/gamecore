@@ -15,10 +15,14 @@ inline Tick tick(std::string name)
     return std::make_pair(name, std::chrono::steady_clock::now());
 }
 
-inline void tock(Tick tick)
+/* Logs the time taken and returns the time taken in seconds */
+inline double tock(Tick tick)
 {
-    const auto duration = std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::steady_clock::now() - tick.second);
-    GC_DEBUG("Stopwatch '{}' took {}", tick.first, duration);
+    using namespace std::literals;
+
+    const double duration_sec = (std::chrono::steady_clock::now() - tick.second) / 1.0s;
+    GC_DEBUG("Stopwatch '{}' took {} ms", tick.first, duration_sec * 1000.0);
+    return duration_sec;
 }
 
 } // namespace gc

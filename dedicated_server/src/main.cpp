@@ -71,8 +71,6 @@ int main()
 
     while (!gc::app().window().shouldQuit()) {
 
-        gc::app().vulkanRenderer().waitForPresentFinished();
-
         gc::app().window().processEvents();
 
         if (gc::app().window().getKeyPress(SDL_SCANCODE_F11)) {

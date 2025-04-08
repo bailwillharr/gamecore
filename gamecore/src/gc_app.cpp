@@ -53,6 +53,9 @@ App::App() : m_main_thread_id(std::this_thread::get_id())
 App::~App()
 {
     GC_TRACE("Destroying application...");
+
+    m_vulkan_renderer->waitIdle();
+
     // job threads should be stopped here because otherwise other engine systems may shut down while still in use by those threads.
     // Ideally, job system shouldn't be busy at this point anyway since jobs shouldn't be left running.
     if (jobs().isBusy()) {

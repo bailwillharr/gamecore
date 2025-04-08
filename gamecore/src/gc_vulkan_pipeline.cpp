@@ -43,7 +43,7 @@ static std::vector<char> readTextFile(const std::string& path)
 
 std::pair<VkPipeline, VkPipelineLayout> createPipeline(VkDescriptorSetLayout set_layout)
 {
-    VkDevice device = app().vulkanRenderer().getHandle().getHandle();
+    VkDevice device = app().vulkanRenderer().getDevice().getHandle();
 
     const auto vertex_src = readTextFile(std::filesystem::path(findContentDir().value() / "cube.vert").string());
     const std::string vertex_src_string(vertex_src.data());
@@ -229,7 +229,7 @@ std::pair<VkPipeline, VkPipelineLayout> createPipeline(VkDescriptorSetLayout set
 
 void destroyPipeline(VkPipeline pipeline, VkPipelineLayout layout)
 {
-    VkDevice device = app().vulkanRenderer().getHandle().getHandle();
+    VkDevice device = app().vulkanRenderer().getDevice().getHandle();
     vkDestroyPipeline(device, pipeline, nullptr);
     vkDestroyPipelineLayout(device, layout, nullptr);
 }

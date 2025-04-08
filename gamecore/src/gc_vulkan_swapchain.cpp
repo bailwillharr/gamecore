@@ -19,8 +19,8 @@ namespace gc {
  * refresh rate. */
 /* MAILBOX: Does not use exclusive fullscreen on Windows (composited). Latency may be slightly higher than IMMEDIATE. No tearing. */
 /* IMMEDIATE: Will use exclusive fullscreen on Windows (not composited). Probably the lowest latency option. Has tearing. */
-static constexpr VkPresentModeKHR PREFERRED_PRESENT_MODE = VK_PRESENT_MODE_FIFO_KHR;
-// static constexpr VkPresentModeKHR PREFERRED_PRESENT_MODE = VK_PRESENT_MODE_IMMEDIATE_KHR;
+//static constexpr VkPresentModeKHR PREFERRED_PRESENT_MODE = VK_PRESENT_MODE_FIFO_KHR;
+static constexpr VkPresentModeKHR PREFERRED_PRESENT_MODE = VK_PRESENT_MODE_IMMEDIATE_KHR;
 
 VulkanSwapchain::VulkanSwapchain(const VulkanDevice& device, SDL_Window* window_handle) : m_device(device), m_window_handle(window_handle)
 {
@@ -159,7 +159,7 @@ bool VulkanSwapchain::recreateSwapchain()
     sc_info.imageColorSpace = m_surface_format.colorSpace;
     sc_info.imageExtent = m_extent;
     sc_info.imageArrayLayers = 1;
-    sc_info.imageUsage = VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT; // it's VkImageView is used with a VkFramebuffer
+    sc_info.imageUsage = VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT | VK_IMAGE_USAGE_TRANSFER_DST_BIT; // it's VkImageView is used with a VkFramebuffer
     sc_info.imageSharingMode = VK_SHARING_MODE_EXCLUSIVE;
     sc_info.queueFamilyIndexCount = 0;                        // ignored with VK_SHARING_MODE_EXCLUSIVE
     sc_info.pQueueFamilyIndices = nullptr;                    // ignored with VK_SHARING_MODE_EXCLUSIVE
