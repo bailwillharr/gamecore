@@ -308,7 +308,7 @@ bool VulkanSwapchain::acquireAndPresent(VkImage image_to_present, bool window_re
     }
 
 	if (window_resized) {
-		recreate_swapchain = true;
+		//recreate_swapchain = true;
 	}
 
     if (recreate_swapchain) {

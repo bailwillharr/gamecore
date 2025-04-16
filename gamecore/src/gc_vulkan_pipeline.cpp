@@ -3,6 +3,7 @@
 #include <fstream>
 #include <memory>
 #include <vector>
+#include <array>
 
 #include "gamecore/gc_app.h"
 #include "gamecore/gc_vulkan_renderer.h"
