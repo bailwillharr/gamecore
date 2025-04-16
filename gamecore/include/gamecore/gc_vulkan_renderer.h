@@ -1,11 +1,5 @@
 #pragma once
 
-#include <array>
-#include <vector>
-#include <tuple>
-#include <span>
-#include <bitset>
-
 #include <SDL3/SDL_vulkan.h>
 
 #include "gamecore/gc_vulkan_common.h"
@@ -36,18 +30,11 @@ public:
 
     VulkanRenderer operator=(const VulkanRenderer&) = delete;
 
-    const VulkanDevice& getDevice() const { return m_device; }
-    const VulkanSwapchain& getSwapchain() const { return m_swapchain; }
+    VulkanDevice& getDevice() { return m_device; }
+    VulkanSwapchain& getSwapchain() { return m_swapchain; }
     VmaAllocator getAllocator() const { return m_allocator.getHandle(); }
 
     VkFormat getDepthStencilFormat() const { return m_depth_stencil_format; }
-
-    // Call to present given image to the window.
-    // The image may not be queued for presentation (skipped) if any of the following are true:
-    //  - the window is minimised
-    //  - swapchain is out-of-date and cannot be recreated for whatever reason
-    // The function will block if no image is available yet
-    void acquireAndPresent(VkImage image_to_present);
 
     void waitIdle();
 };

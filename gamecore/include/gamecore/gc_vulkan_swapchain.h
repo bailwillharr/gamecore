@@ -48,12 +48,11 @@ public:
     inline VkSurfaceFormatKHR getSurfaceFormat() const { return m_surface_format; }
 
     // Call to present given image to the window.
-    // Returns true if swapchain was recreated
-    // The image may not be queued for presentation (skipped) if any of the following are true:
-    //  - the window is minimised
-    //  - swapchain is out-of-date and cannot be recreated for whatever reason
-    // The function will block if no image is available yet
-    bool acquireAndPresent(VkImage image_to_present);
+	// Returns true if the swapchain is recreated (typically means window is resized)
+	// The function will wait until timeline_semaphore reaches 'value' before copying image_to_present.
+	// When the copy is complete, timeline_semaphore will be set to 'value' + 1.
+	// This is the case even when the swapchain is recreated or cannot be recreated (typically because the window is minimised)
+    bool acquireAndPresent(VkImage image_to_present, bool window_resized, VkSemaphore timeline_semaphore, uint64_t value);
 
 private:
     // returns false if the swapchain could not be recreated due to window being minimised

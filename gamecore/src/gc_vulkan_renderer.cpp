@@ -111,13 +111,15 @@ VulkanRenderer::~VulkanRenderer()
     vmaDestroyImage(m_allocator.getHandle(), m_depth_stencil, m_depth_stencil_allocation);
 }
 
-void VulkanRenderer::acquireAndPresent(VkImage image_to_present)
+/*
+void VulkanRenderer::acquireAndPresent(VkImage image_to_present, bool window_resized, VkFence& copy_finished)
 {
-    if (m_swapchain.acquireAndPresent(image_to_present)) {
+    if (m_swapchain.acquireAndPresent(image_to_present, window_resized, copy_finished)) {
         recreateDepthStencil(m_device.getHandle(), m_allocator.getHandle(), m_depth_stencil_format, m_swapchain.getExtent(), m_depth_stencil,
                              m_depth_stencil_view, m_depth_stencil_allocation);
     }
 }
+*/
 
 void VulkanRenderer::waitIdle()
 {

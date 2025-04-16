@@ -161,6 +161,6 @@ add_subdirectory(gamecore)
 
 add_subdirectory(gamecore_template)
 
-add_subdirectory(dedicated_server)
+#add_subdirectory(dedicated_server)
 
 add_subdirectory(tools/gcpak_editor)

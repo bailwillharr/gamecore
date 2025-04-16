@@ -118,7 +118,8 @@
       },
       "cacheVariables": {
         "CMAKE_BUILD_TYPE": "Debug",
-        "GC_DEV_BUILD": "ON"
+        "GC_DEV_BUILD": "ON",
+		"GC_PROFILING": "OFF"
       },
       "condition": {
         "type": "equals",
@@ -133,7 +134,8 @@
       "inherits": "x64-debug-linux",
       "cacheVariables": {
         "CMAKE_BUILD_TYPE": "RelWithDebInfo",
-        "GC_DEV_BUILD": "ON"
+        "GC_DEV_BUILD": "ON",
+		"GC_PROFILING": "OFF"
       },
       "condition": {
         "type": "equals",
@@ -148,7 +150,24 @@
       "inherits": "x64-debug-linux",
       "cacheVariables": {
         "CMAKE_BUILD_TYPE": "Release",
-        "GC_DEV_BUILD": "OFF"
+        "GC_DEV_BUILD": "OFF",
+		"GC_PROFILING": "OFF"
+      },
+      "condition": {
+        "type": "equals",
+        "lhs": "${hostSystemName}",
+        "rhs": "Linux"
+      }
+    },
+    {
+      "name": "x64-dist-linux-profiling",
+      "displayName": "x64 Distribution Profiling",
+      "description": "Profiling on, Optimisation on, hot reloading disabled, no symbols",
+      "inherits": "x64-debug-linux",
+      "cacheVariables": {
+        "CMAKE_BUILD_TYPE": "Release",
+        "GC_DEV_BUILD": "OFF",
+		"GC_PROFILING": "ON"
       },
       "condition": {
         "type": "equals",
@@ -156,5 +175,6 @@
         "rhs": "Linux"
       }
     }
+ 
   ]
 }

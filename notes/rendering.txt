@@ -1,0 +1,13 @@
+To present:
+acquireAndPresent(VkImage image, VkFence copy_finished);
+
+In a renderer the source image will be remade every frame. It will only need to be recreated when the swapchain is resized (recreated).
+
+You want N frames in flight. acquireAndPresent() should not care about frames in flight and should not deal with that.
+
+You need to know when acquireAndPresent has finished copying the image to know when the image can be reused for the Nth later frame.
+
+It should be possible to make the GPU copy in acquireAndPresent() wait for a semaphore to be signalled, to indicate that the image is ready.
+
+Possible solution:
+	acquireAndPresent takes a timeline semaphore and value, and waits for the semaphore to reach that value in order to begin the copy.
