@@ -15,16 +15,6 @@
 
 namespace gc {
 
-/* Present modes: */
-/* FIFO: Does not use exclusive fullscreen on Windows (composited). Highest latency as rendering is locked to monitor refresh rate. No tearing. Slowdowns will
- * half the FPS. */
-/* FIFO_RELAXED: Does not use exclusive fullscreen on Windows (composited). Allows tearing if frames are submitted late to allow FPS to 'catch up' with monitor
- * refresh rate. */
-/* MAILBOX: Does not use exclusive fullscreen on Windows (composited). Latency may be slightly higher than IMMEDIATE. No tearing. */
-/* IMMEDIATE: Will use exclusive fullscreen on Windows (not composited). Probably the lowest latency option. Has tearing. */
-//static constexpr VkPresentModeKHR PREFERRED_PRESENT_MODE = VK_PRESENT_MODE_FIFO_KHR;
-static constexpr VkPresentModeKHR PREFERRED_PRESENT_MODE = VK_PRESENT_MODE_IMMEDIATE_KHR;
-
 static void recreatePerSwapchainImageResources(const VulkanDevice& device, uint32_t image_count,
                                                std::vector<PerSwapchainImageResources>& resources_per_swapchain_image)
 {
@@ -110,9 +100,6 @@ VulkanSwapchain::~VulkanSwapchain()
         }
     }
 
-    for (VkImageView view : m_image_views) {
-        vkDestroyImageView(m_device.getHandle(), view, nullptr);
-    }
     vkDestroySwapchainKHR(m_device.getHandle(), m_swapchain, nullptr);
     SDL_Vulkan_DestroySurface(m_device.getInstance(), m_surface, nullptr);
 }
@@ -308,11 +295,11 @@ bool VulkanSwapchain::acquireAndPresent(VkImage image_to_present, bool window_re
     }
 
     if (window_resized) {
-        // recreate_swapchain = true;
+        recreate_swapchain = true;
     }
 
     if (recreate_swapchain) {
-        GC_CHECKVK(vkDeviceWaitIdle(m_device.getHandle()));
+		GC_CHECKVK(vkDeviceWaitIdle(m_device.getHandle()));
         if (recreateSwapchain()) {
             // recreateDepthStencil(m_device.getHandle(), m_allocator.getHandle(), m_depth_stencil_format, m_swapchain.getExtent(), m_depth_stencil,
             //                      m_depth_stencil_view, m_depth_stencil_allocation);
@@ -340,10 +327,11 @@ bool VulkanSwapchain::recreateSwapchain()
         abortGame("vkGetPhysicalDeviceSurfacePresentModesKHR() error: {}", vulkanResToString(res));
     }
     // for now, use Mailbox if available otherwise FIFO
-    if (std::find(present_modes.cbegin(), present_modes.cend(), PREFERRED_PRESENT_MODE) != present_modes.cend()) {
-        m_present_mode = PREFERRED_PRESENT_MODE;
+    if (std::find(present_modes.cbegin(), present_modes.cend(), m_requested_present_mode) != present_modes.cend()) {
+        m_present_mode = m_requested_present_mode;
     }
     else {
+		GC_WARN("Requested present mode is unavailable");
         m_present_mode = VK_PRESENT_MODE_FIFO_KHR; // FIFO is always available
     }
 
@@ -406,6 +394,8 @@ bool VulkanSwapchain::recreateSwapchain()
         min_image_count = surface_caps.surfaceCapabilities.maxImageCount;
     }
 
+	GC_TRACE("Min image count: {}", min_image_count);
+
     // Use triple buffering
     constexpr bool USE_TRIPLE_BUFFERING = true;
     if constexpr (USE_TRIPLE_BUFFERING) {
@@ -445,7 +435,7 @@ bool VulkanSwapchain::recreateSwapchain()
     sc_info.imageColorSpace = m_surface_format.colorSpace;
     sc_info.imageExtent = m_extent;
     sc_info.imageArrayLayers = 1;
-    sc_info.imageUsage = VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT | VK_IMAGE_USAGE_TRANSFER_DST_BIT; // it's VkImageView is used with a VkFramebuffer
+    sc_info.imageUsage = VK_IMAGE_USAGE_TRANSFER_DST_BIT;
     sc_info.imageSharingMode = VK_SHARING_MODE_EXCLUSIVE;
     sc_info.queueFamilyIndexCount = 0;                                                          // ignored with VK_SHARING_MODE_EXCLUSIVE
     sc_info.pQueueFamilyIndices = nullptr;                                                      // ignored with VK_SHARING_MODE_EXCLUSIVE
@@ -472,34 +462,6 @@ bool VulkanSwapchain::recreateSwapchain()
     m_images.resize(image_count);
     if (VkResult res = vkGetSwapchainImagesKHR(m_device.getHandle(), m_swapchain, &image_count, m_images.data()); res != VK_SUCCESS) {
         abortGame("vkGetPhysicalDeviceSurfacePresentModesKHR() error: {}", vulkanResToString(res));
-    }
-
-    // (destroy old image views)
-    for (VkImageView image_view : m_image_views) {
-        vkDestroyImageView(m_device.getHandle(), image_view, nullptr);
-    }
-    // create image views
-    m_image_views.resize(image_count);
-    for (size_t i = 0; i < image_count; ++i) {
-        VkImageViewCreateInfo view_info{};
-        view_info.sType = VK_STRUCTURE_TYPE_IMAGE_VIEW_CREATE_INFO;
-        view_info.pNext = nullptr;
-        view_info.flags = 0;
-        view_info.image = m_images[i];
-        view_info.viewType = VK_IMAGE_VIEW_TYPE_2D;
-        view_info.format = sc_info.imageFormat;
-        view_info.components.r = VK_COMPONENT_SWIZZLE_IDENTITY;
-        view_info.components.g = VK_COMPONENT_SWIZZLE_IDENTITY;
-        view_info.components.b = VK_COMPONENT_SWIZZLE_IDENTITY;
-        view_info.components.a = VK_COMPONENT_SWIZZLE_IDENTITY;
-        view_info.subresourceRange.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT;
-        view_info.subresourceRange.baseMipLevel = 0;
-        view_info.subresourceRange.levelCount = 1;
-        view_info.subresourceRange.baseArrayLayer = 0;
-        view_info.subresourceRange.layerCount = 1;
-        if (VkResult res = vkCreateImageView(m_device.getHandle(), &view_info, nullptr, &m_image_views[i]); res != VK_SUCCESS) {
-            abortGame("vkCreateImageView() error: {}", vulkanResToString(res));
-        }
     }
 
     // (destroy old depth/stencil image and image view)

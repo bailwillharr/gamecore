@@ -28,6 +28,8 @@
 
 #include <vulkan/vulkan.h>
 #include <shaderc/shaderc.hpp>
+
+#include <array>
 #include <stdexcept>
 #include <string>
 #include <vector>
@@ -274,6 +276,8 @@ int main([[maybe_unused]] int argc, [[maybe_unused]] char* argv[])
             }
         }
 
+		bool change_present_mode = false;
+
         {
             ZoneScopedN("ImGui stuff");
             ImGui_ImplSDL3_NewFrame();
@@ -283,6 +287,49 @@ int main([[maybe_unused]] int argc, [[maybe_unused]] char* argv[])
             ImGui::ShowDemoWindow();
 
             ImGui::Begin("Settings");
+			
+			ImGui::Text("Present mode: %s", gc::vulkanPresentModeToString(renderer.getSwapchain().getCurrentPresentMode()).c_str());
+			ImGui::Text("Image count: %d", renderer.getSwapchain().getImageCount());
+
+			std::array<const char*, 4> present_modes{ "Immediate", "Mailbox", "FIFO", "FIFO Relaxed" };
+
+			int present_mode_choice = 0;
+			switch (renderer.getSwapchain().getCurrentPresentMode()) {
+				case VK_PRESENT_MODE_IMMEDIATE_KHR:
+					present_mode_choice = 0;
+					break;
+				case VK_PRESENT_MODE_MAILBOX_KHR:
+					present_mode_choice = 1;
+					break;
+				case VK_PRESENT_MODE_FIFO_KHR:
+					present_mode_choice = 2;
+					break;
+				case VK_PRESENT_MODE_FIFO_RELAXED_KHR:
+					present_mode_choice = 3;
+					break;
+				default:
+					break;
+			}
+
+			if (ImGui::Combo("Requested present mode", &present_mode_choice, present_modes.data(), present_modes.size())) {
+				change_present_mode = true;
+				switch (present_mode_choice) {
+					case 0:
+						renderer.getSwapchain().setRequestedPresentMode(VK_PRESENT_MODE_IMMEDIATE_KHR);
+						break;
+					case 1:
+						renderer.getSwapchain().setRequestedPresentMode(VK_PRESENT_MODE_MAILBOX_KHR);
+						break;
+					case 2:
+						renderer.getSwapchain().setRequestedPresentMode(VK_PRESENT_MODE_FIFO_KHR);
+						break;
+					case 3:
+						renderer.getSwapchain().setRequestedPresentMode(VK_PRESENT_MODE_FIFO_RELAXED_KHR);
+						break;
+					default:
+						break;
+				}
+			}
 
             ImGui::Checkbox("Wait after state update", &wait_after_update_switch);
 
@@ -290,6 +337,8 @@ int main([[maybe_unused]] int argc, [[maybe_unused]] char* argv[])
 
             ImGui::SliderInt("CPU Delay (ms)", &update_delay, 0, 100);
             ImGui::SliderInt("CPU Delay During Cmd Buffer Rec. (ms)", &recording_delay, 0, 100);
+
+			ImGui::Text("Frames in flight: %d", static_cast<int>(fif.size()));
 
             ImGui::End();
 
@@ -356,8 +405,8 @@ int main([[maybe_unused]] int argc, [[maybe_unused]] char* argv[])
             {
                 VkImageMemoryBarrier2 barrier{};
                 barrier.sType = VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER_2;
-                barrier.srcStageMask = VK_PIPELINE_STAGE_2_NONE;
-                barrier.srcAccessMask = VK_ACCESS_2_NONE;
+                barrier.srcStageMask = VK_PIPELINE_STAGE_2_LATE_FRAGMENT_TESTS_BIT;
+                barrier.srcAccessMask = VK_ACCESS_2_DEPTH_STENCIL_ATTACHMENT_WRITE_BIT;
                 barrier.dstStageMask = VK_PIPELINE_STAGE_2_EARLY_FRAGMENT_TESTS_BIT;
                 barrier.dstAccessMask = VK_ACCESS_2_DEPTH_STENCIL_ATTACHMENT_WRITE_BIT;
                 barrier.oldLayout = VK_IMAGE_LAYOUT_UNDEFINED;
@@ -465,9 +514,7 @@ int main([[maybe_unused]] int argc, [[maybe_unused]] char* argv[])
             push_constants.projection = projection;
             vkCmdPushConstants(stuff.cmd, pipeline_layout, VK_SHADER_STAGE_VERTEX_BIT, 0, static_cast<uint32_t>(sizeof(PushConstants)), &push_constants);
 
-            for (int i = 0; i < 5000; ++i) {
-                vkCmdDraw(stuff.cmd, 36, i, 0, 0);
-            }
+            vkCmdDraw(stuff.cmd, 36, 1, 0, 0);
 
             ImGui_ImplVulkan_RenderDrawData(ImGui::GetDrawData(), stuff.cmd);
 
@@ -539,7 +586,7 @@ int main([[maybe_unused]] int argc, [[maybe_unused]] char* argv[])
         }
 
         // Queue image for presentation
-        const bool resized = renderer.getSwapchain().acquireAndPresent(image, win.getResizedFlag(), timeline_semaphore, timeline_value);
+        const bool resized = renderer.getSwapchain().acquireAndPresent(image, win.getResizedFlag() || change_present_mode, timeline_semaphore, timeline_value);
         timeline_value += 1;
 
         present_finished_value = timeline_value; // Timeline semaphore will reach this value when image can be used again.

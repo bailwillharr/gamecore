@@ -32,9 +32,17 @@ class VulkanSwapchain {
 
     VkSwapchainKHR m_swapchain = VK_NULL_HANDLE;
     std::vector<VkImage> m_images{};
-    std::vector<VkImageView> m_image_views{};
 
     std::vector<PerSwapchainImageResources> m_resources_per_swapchain_image{};
+
+	/* Present modes: */
+	/* FIFO: Does not use exclusive fullscreen on Windows (composited). Highest latency as rendering is locked to monitor refresh rate. No tearing. Slowdowns will
+	 * half the FPS. */
+	/* FIFO_RELAXED: Does not use exclusive fullscreen on Windows (composited). Allows tearing if frames are submitted late to allow FPS to 'catch up' with monitor
+	 * refresh rate. */
+	/* MAILBOX: Does not use exclusive fullscreen on Windows (composited). Latency may be slightly higher than IMMEDIATE. No tearing. */
+	/* IMMEDIATE: Will use exclusive fullscreen on Windows (not composited). Probably the lowest latency option. Has tearing. */
+	VkPresentModeKHR m_requested_present_mode = VK_PRESENT_MODE_FIFO_KHR;
 
 public:
     VulkanSwapchain(const VulkanDevice& device, SDL_Window* window);
@@ -46,6 +54,13 @@ public:
 
     inline VkExtent2D getExtent() const { return m_extent; }
     inline VkSurfaceFormatKHR getSurfaceFormat() const { return m_surface_format; }
+	inline VkPresentModeKHR getCurrentPresentMode() const { return m_present_mode; }
+
+	// Do not use this value to duplicate resources etc.
+	inline int getImageCount() const { return static_cast<int>(m_images.size()); }
+
+	// Will be applied when the swapchain is next recreated
+	inline void setRequestedPresentMode(VkPresentModeKHR mode) { m_requested_present_mode = mode; }
 
     // Call to present given image to the window.
 	// Returns true if the swapchain is recreated (typically means window is resized)
