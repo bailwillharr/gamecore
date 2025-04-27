@@ -175,15 +175,16 @@ std::pair<VkPipeline, VkPipelineLayout> createPipeline(VkDescriptorSetLayout set
     VkPipelineLayout layout = VK_NULL_HANDLE;
     GC_CHECKVK(vkCreatePipelineLayout(device, &layout_info, nullptr, &layout));
 
-    VkFormat color_attachment_format = app().vulkanRenderer().getSwapchain().getSurfaceFormat().format;
+    const VkFormat color_attachment_format = app().vulkanRenderer().getSwapchain().getSurfaceFormat().format;
+    const VkFormat depth_stencil_attachment_format = app().vulkanRenderer().getDepthStencilFormat();
     VkPipelineRenderingCreateInfo rendering_info{};
     rendering_info.sType = VK_STRUCTURE_TYPE_PIPELINE_RENDERING_CREATE_INFO;
     rendering_info.pNext = nullptr;
     rendering_info.viewMask = 0;
     rendering_info.colorAttachmentCount = 1;
     rendering_info.pColorAttachmentFormats = &color_attachment_format;
-    rendering_info.depthAttachmentFormat = app().vulkanRenderer().getDepthStencilFormat();
-    rendering_info.stencilAttachmentFormat = rendering_info.depthAttachmentFormat;
+    rendering_info.depthAttachmentFormat = depth_stencil_attachment_format;
+    rendering_info.stencilAttachmentFormat = depth_stencil_attachment_format;
 
     VkPipelineDepthStencilStateCreateInfo depth_stencil{};
     depth_stencil.sType = VK_STRUCTURE_TYPE_PIPELINE_DEPTH_STENCIL_STATE_CREATE_INFO;

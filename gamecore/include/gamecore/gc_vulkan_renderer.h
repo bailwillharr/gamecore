@@ -17,6 +17,9 @@ class VulkanRenderer {
     VulkanAllocator m_allocator;
     VulkanSwapchain m_swapchain;
 
+    // global descriptor pool
+    VkDescriptorPool m_desciptor_pool{};
+
     VkImage m_depth_stencil;
     VkImageView m_depth_stencil_view;
     VmaAllocation m_depth_stencil_allocation;
@@ -34,7 +37,13 @@ public:
     VulkanSwapchain& getSwapchain() { return m_swapchain; }
     VmaAllocator getAllocator() const { return m_allocator.getHandle(); }
 
+    VkDescriptorPool getDescriptorPool() const { return m_desciptor_pool; }
+
     VkFormat getDepthStencilFormat() const { return m_depth_stencil_format; }
+    VkImage getDepthStencilImage() const { return m_depth_stencil; }
+    VkImageView getDepthStencilImageView() const { return m_depth_stencil_view; }
+
+    void recreateDepthStencil(); 
 
     void waitIdle();
 };

@@ -11,3 +11,23 @@ It should be possible to make the GPU copy in acquireAndPresent() wait for a sem
 
 Possible solution:
 	acquireAndPresent takes a timeline semaphore and value, and waits for the semaphore to reach that value in order to begin the copy.
+
+
+
+Reducing input lag and ensuring a steady frame rate:
+
+When wanting to use v-sync (VK_PRESENT_MODE_FIFO_KHR), the swapchain can use either 2 images (double buffering) or 3 (triple buffering).
+
+When using double buffering, the renderer should only have 1 frame-in-flight and wait for the command buffer to finish before polling input events
+(i.e., before win.processEvents() is called).
+If 2 frames-in-flight are used with double-buffering, the swapchain method acquireAndPresent() must wait on a fence for the 2nd last image to finish.
+Once this wait completes, the current frame is presented, and the next frame is immediately presented. This causes the application main loop to have an
+inconsistent frame rate. Something like: 16ms, 32ms, 0.1ms, 16ms, 32ms, 0.1ms, etc..
+
+When using triple buffering, 2 frames in flight can be used while still maintaining a consistent framerate. Again, input lag can be reduced by waiting
+for the frame in flight's command buffer to finish before win.processEvents() and game logic. However, this may not be the case when the application has
+a high CPU or GPU workload, in which case it may be beneficial to wait for the command buffer to finish as late as possible (after game logic).
+
+When using IMMEDIATE mode, the only clear benefit of using 2 frames-in-flight, as opposed to 1, is when the application is heavily CPU-bound during command buffer recording.
+In that case the CPU must wait for the previous frame to finish rendering before command buffer recording can begin.
+Even with only 1 frame-in-flight, the application's game logic (before command buffer recording) can safely take up as much time as the GPU takes to render a frame.

@@ -154,6 +154,42 @@ add_library(glm INTERFACE)
 add_library(glm::glm ALIAS glm)
 target_include_directories(glm SYSTEM INTERFACE ${glm_SOURCE_DIR})
 
+# ImGui
+CPMAddPackage(
+  NAME imgui
+  VERSION 1.91.9
+  GITHUB_REPOSITORY ocornut/imgui
+  DOWNLOAD_ONLY YES
+)
+file(
+  DOWNLOAD
+  "https://gist.githubusercontent.com/rokups/f771217b2d530d170db5cb1e08e9a8f4/raw/4c2c14374ab878ca2f45daabfed4c156468e4e27/CMakeLists.txt"
+  "${imgui_SOURCE_DIR}/CMakeLists.txt"
+  EXPECTED_HASH SHA256=fd62f69364ce13a4f7633a9b50ae6672c466bcc44be60c69c45c0c6e225bb086
+)
+add_library(imgui STATIC
+	"${imgui_SOURCE_DIR}/imconfig.h"
+	"${imgui_SOURCE_DIR}/imgui.cpp"
+	"${imgui_SOURCE_DIR}/imgui.h"
+	"${imgui_SOURCE_DIR}/imgui_demo.cpp"
+	"${imgui_SOURCE_DIR}/imgui_draw.cpp"
+	"${imgui_SOURCE_DIR}/imgui_internal.h"
+	"${imgui_SOURCE_DIR}/imgui_tables.cpp"
+	"${imgui_SOURCE_DIR}/imgui_widgets.cpp"
+	"${imgui_SOURCE_DIR}/imstb_rectpack.h"
+	"${imgui_SOURCE_DIR}/imstb_textedit.h"
+	"${imgui_SOURCE_DIR}/imstb_truetype.h"
+	"${imgui_SOURCE_DIR}/backends/imgui_impl_vulkan.cpp"
+	"${imgui_SOURCE_DIR}/backends/imgui_impl_vulkan.h"
+	"${imgui_SOURCE_DIR}/backends/imgui_impl_sdl3.cpp"
+	"${imgui_SOURCE_DIR}/backends/imgui_impl_sdl3.h"
+)
+target_compile_definitions(imgui PUBLIC IMGUI_DISABLE_OBSOLETE_FUNCTIONS)
+target_compile_definitions(imgui PUBLIC IMGUI_IMPL_VULKAN_NO_PROTOTYPES) # use ImGui_ImplVulkan_LoadFunctions()
+target_include_directories(imgui PUBLIC ${imgui_SOURCE_DIR})
+target_link_libraries(imgui PRIVATE volk::volk)
+target_link_libraries(imgui PRIVATE SDL3::SDL3)
+
 # shaderc_combined (from Vulkan SDK)
 find_package(Vulkan REQUIRED COMPONENTS shaderc_combined)
 

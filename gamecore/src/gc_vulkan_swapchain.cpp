@@ -129,7 +129,7 @@ bool VulkanSwapchain::acquireAndPresent(VkImage image_to_present, bool window_re
     /* Creating/destroying semaphores are lightweight operations (~5us) */
     /* Semaphores are created and then assigned to their place in the m_image_acquired_semaphores array based on the image index. */
     /* This prevents semaphores from being leaked. */
-	// TODO: It should be possible to not have to recreate semaphores all the time
+    // TODO: It should be possible to not have to recreate semaphores all the time
     VkSemaphore image_acquired_semaphore{};
     {
         VkSemaphoreCreateInfo info{};
@@ -249,22 +249,22 @@ bool VulkanSwapchain::acquireAndPresent(VkImage image_to_present, bool window_re
     { /* Copy the parameter image to the retrieved swapchain image. */
         ZoneScopedN("Submit acquireAndPresent cmdbuf");
 
-		// [0] waits for image acquire, [1] waits for parameter image to be ready
-		std::array<VkSemaphoreSubmitInfo, 2> wait_semaphore_infos{};
+        // [0] waits for image acquire, [1] waits for parameter image to be ready
+        std::array<VkSemaphoreSubmitInfo, 2> wait_semaphore_infos{};
         wait_semaphore_infos[0].sType = VK_STRUCTURE_TYPE_SEMAPHORE_SUBMIT_INFO;
         wait_semaphore_infos[0].semaphore = m_resources_per_swapchain_image[image_index].image_acquired;
         wait_semaphore_infos[0].stageMask = VK_PIPELINE_STAGE_2_COPY_BIT;
-		wait_semaphore_infos[1].sType = VK_STRUCTURE_TYPE_SEMAPHORE_SUBMIT_INFO;
-		wait_semaphore_infos[1].semaphore = timeline_semaphore;
-		wait_semaphore_infos[1].value = value;
-		wait_semaphore_infos[1].stageMask = VK_PIPELINE_STAGE_2_COPY_BIT;
+        wait_semaphore_infos[1].sType = VK_STRUCTURE_TYPE_SEMAPHORE_SUBMIT_INFO;
+        wait_semaphore_infos[1].semaphore = timeline_semaphore;
+        wait_semaphore_infos[1].value = value;
+        wait_semaphore_infos[1].stageMask = VK_PIPELINE_STAGE_2_COPY_BIT;
 
-		// [0] signals for vkQueuePresentKHR(), [1] signals for caller to indicate image_to_present can be reused
-		std::array<VkSemaphoreSubmitInfo, 2> signal_semaphore_infos{};        
-		signal_semaphore_infos[0].sType = VK_STRUCTURE_TYPE_SEMAPHORE_SUBMIT_INFO;
+        // [0] signals for vkQueuePresentKHR(), [1] signals for caller to indicate image_to_present can be reused
+        std::array<VkSemaphoreSubmitInfo, 2> signal_semaphore_infos{};
+        signal_semaphore_infos[0].sType = VK_STRUCTURE_TYPE_SEMAPHORE_SUBMIT_INFO;
         signal_semaphore_infos[0].semaphore = m_resources_per_swapchain_image[image_index].ready_to_present;
         signal_semaphore_infos[0].stageMask = VK_PIPELINE_STAGE_2_COPY_BIT;
-		signal_semaphore_infos[1].sType = VK_STRUCTURE_TYPE_SEMAPHORE_SUBMIT_INFO;
+        signal_semaphore_infos[1].sType = VK_STRUCTURE_TYPE_SEMAPHORE_SUBMIT_INFO;
         signal_semaphore_infos[1].semaphore = timeline_semaphore;
         signal_semaphore_infos[1].value = value + 1;
         signal_semaphore_infos[1].stageMask = VK_PIPELINE_STAGE_2_COPY_BIT;
@@ -307,9 +307,9 @@ bool VulkanSwapchain::acquireAndPresent(VkImage image_to_present, bool window_re
         }
     }
 
-	if (window_resized) {
-		//recreate_swapchain = true;
-	}
+    if (window_resized) {
+        // recreate_swapchain = true;
+    }
 
     if (recreate_swapchain) {
         GC_CHECKVK(vkDeviceWaitIdle(m_device.getHandle()));
@@ -407,8 +407,11 @@ bool VulkanSwapchain::recreateSwapchain()
     }
 
     // Use triple buffering
-    if (m_present_mode == VK_PRESENT_MODE_FIFO_KHR && min_image_count == 2 && surface_caps.surfaceCapabilities.maxImageCount >= 3) {
+    constexpr bool USE_TRIPLE_BUFFERING = true;
+    if constexpr (USE_TRIPLE_BUFFERING) {
+        if (m_present_mode == VK_PRESENT_MODE_FIFO_KHR && min_image_count == 2 && surface_caps.surfaceCapabilities.maxImageCount >= 3) {
             min_image_count = 3;
+        }
     }
 
     // clamp extent to min and max

@@ -3,12 +3,11 @@
 #define PI 3.1415926535897932384626433832795
 #define PI_INV 0.31830988618379067153776752674503
 
-layout(set = 0, binding = 0) uniform sampler2D materialSetAlbedoSampler;
-
 layout(location = 0) in vec2 fragUV; // for looking up textures
 layout(location = 1) in vec3 fragPosTangentSpace; // finding view vector
 layout(location = 2) in vec3 fragViewPosTangentSpace; // finding view vector
 layout(location = 3) in vec3 fragLightDirTangentSpace; // directional light
+layout(location = 4) in vec3 fragColor;
 
 layout(location = 0) out vec4 outColor;
 
@@ -20,7 +19,7 @@ float GGXDist(float alpha_2, float N_dot_H) {
 
 void main() {
 
-	const vec4 albedo_alpha = texture(materialSetAlbedoSampler, fragUV);
+	const vec4 albedo_alpha = vec4(fragColor, 1.0);
 	const vec3 albedo = albedo_alpha.xyz;
 
 	const float ao = 1.0;
@@ -65,5 +64,6 @@ void main() {
 
 	// tone mapping
 	const vec3 hdr_color = emission + lighting;
-	outColor = vec4(hdr_color / (hdr_color + 1.0), 1.0);
+	//outColor = vec4(hdr_color / (hdr_color + 1.0), 1.0);
+	outColor = vec4(fragColor, 1.0);
 }

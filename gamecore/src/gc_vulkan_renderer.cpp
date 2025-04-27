@@ -78,6 +78,22 @@ static void recreateDepthStencil(VkDevice device, VmaAllocator allocator, VkForm
 
 VulkanRenderer::VulkanRenderer(SDL_Window* window_handle) : m_device(), m_allocator(m_device), m_swapchain(m_device, window_handle)
 {
+    {
+        std::array<VkDescriptorPoolSize, 1> pool_sizes = {
+            {VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, 1},
+        };
+        VkDescriptorPoolCreateInfo pool_info = {};
+        pool_info.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_POOL_CREATE_INFO;
+        pool_info.flags = VK_DESCRIPTOR_POOL_CREATE_FREE_DESCRIPTOR_SET_BIT;
+        pool_info.maxSets = 0;
+        for (VkDescriptorPoolSize& pool_size : pool_sizes) {
+            pool_info.maxSets += pool_size.descriptorCount;
+        }
+        pool_info.poolSizeCount = static_cast<uint32_t>(pool_sizes.size());
+        pool_info.pPoolSizes = pool_sizes.data();
+        GC_CHECKVK(vkCreateDescriptorPool(m_device.getHandle(), &pool_info, nullptr, &m_desciptor_pool));
+    }
+
     // find depth stencil format to use
     {
         VkFormatProperties depth_format_props{};
@@ -94,7 +110,7 @@ VulkanRenderer::VulkanRenderer(SDL_Window* window_handle) : m_device(), m_alloca
     { /* This stuff must be done every time the swapchain is recreated */
         m_depth_stencil = VK_NULL_HANDLE;
         m_depth_stencil_view = VK_NULL_HANDLE;
-        recreateDepthStencil(m_device.getHandle(), m_allocator.getHandle(), m_depth_stencil_format, m_swapchain.getExtent(), m_depth_stencil,
+        ::gc::recreateDepthStencil(m_device.getHandle(), m_allocator.getHandle(), m_depth_stencil_format, m_swapchain.getExtent(), m_depth_stencil,
                              m_depth_stencil_view, m_depth_stencil_allocation);
     }
 
@@ -109,6 +125,8 @@ VulkanRenderer::~VulkanRenderer()
 
     vkDestroyImageView(m_device.getHandle(), m_depth_stencil_view, nullptr);
     vmaDestroyImage(m_allocator.getHandle(), m_depth_stencil, m_depth_stencil_allocation);
+
+    vkDestroyDescriptorPool(m_device.getHandle(), m_desciptor_pool, nullptr);
 }
 
 /*
@@ -125,6 +143,12 @@ void VulkanRenderer::waitIdle()
 {
     /* ensure GPU is not using any command buffers etc. */
     GC_CHECKVK(vkDeviceWaitIdle(m_device.getHandle()));
+}
+
+void VulkanRenderer::recreateDepthStencil()
+{
+    ::gc::recreateDepthStencil(m_device.getHandle(), m_allocator.getHandle(), m_depth_stencil_format, m_swapchain.getExtent(), m_depth_stencil,
+                               m_depth_stencil_view, m_depth_stencil_allocation);
 }
 
 } // namespace gc
