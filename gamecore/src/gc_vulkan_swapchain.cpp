@@ -104,11 +104,20 @@ VulkanSwapchain::~VulkanSwapchain()
     SDL_Vulkan_DestroySurface(m_device.getInstance(), m_surface, nullptr);
 }
 
-bool VulkanSwapchain::acquireAndPresent(VkImage image_to_present, bool window_resized, VkSemaphore timeline_semaphore, uint64_t value)
+bool VulkanSwapchain::acquireAndPresent(VkImage image_to_present, bool window_resized, VkSemaphore timeline_semaphore, uint64_t& value)
 {
     ZoneScoped;
 
     GC_ASSERT(image_to_present != VK_NULL_HANDLE);
+
+    if (m_minimised) {
+        m_minimised = !recreateSwapchain(); // false means minimised
+        if (m_minimised) { // is it still minimised?
+            // Do not attempt to acquire and present a swapchain image if the window is minimised (it won't work).
+            // False is returned here as there is no point in the application recreating images until the window is un-minimised and its new extent is determined.
+            return false;
+        }
+    }
 
     uint32_t image_index{};
     bool recreate_swapchain = false;
@@ -253,7 +262,10 @@ bool VulkanSwapchain::acquireAndPresent(VkImage image_to_present, bool window_re
         signal_semaphore_infos[0].stageMask = VK_PIPELINE_STAGE_2_COPY_BIT;
         signal_semaphore_infos[1].sType = VK_STRUCTURE_TYPE_SEMAPHORE_SUBMIT_INFO;
         signal_semaphore_infos[1].semaphore = timeline_semaphore;
-        signal_semaphore_infos[1].value = value + 1;
+
+        value = value + 1; // EDITING REFERENCE PARAMETER
+        signal_semaphore_infos[1].value = value;
+
         signal_semaphore_infos[1].stageMask = VK_PIPELINE_STAGE_2_COPY_BIT;
 
         VkCommandBufferSubmitInfo cmd_buf_info{};
@@ -299,14 +311,14 @@ bool VulkanSwapchain::acquireAndPresent(VkImage image_to_present, bool window_re
     }
 
     if (recreate_swapchain) {
-		GC_CHECKVK(vkDeviceWaitIdle(m_device.getHandle()));
+        GC_CHECKVK(vkDeviceWaitIdle(m_device.getHandle()));
         if (recreateSwapchain()) {
             // recreateDepthStencil(m_device.getHandle(), m_allocator.getHandle(), m_depth_stencil_format, m_swapchain.getExtent(), m_depth_stencil,
             //                      m_depth_stencil_view, m_depth_stencil_allocation);
             recreatePerSwapchainImageResources(m_device, static_cast<uint32_t>(m_images.size()), m_resources_per_swapchain_image);
         }
         else {
-            gc::abortGame("I'll deal with this later... :/");
+            m_minimised = true;
         }
     }
 
@@ -316,26 +328,7 @@ bool VulkanSwapchain::acquireAndPresent(VkImage image_to_present, bool window_re
 bool VulkanSwapchain::recreateSwapchain()
 {
 
-    // Get surface present modes
-    uint32_t present_mode_count{};
-    if (VkResult res = vkGetPhysicalDeviceSurfacePresentModesKHR(m_device.getPhysicalDevice(), m_surface, &present_mode_count, nullptr); res != VK_SUCCESS) {
-        abortGame("vkGetPhysicalDeviceSurfacePresentModesKHR() error: {}", vulkanResToString(res));
-    }
-    std::vector<VkPresentModeKHR> present_modes(present_mode_count);
-    if (VkResult res = vkGetPhysicalDeviceSurfacePresentModesKHR(m_device.getPhysicalDevice(), m_surface, &present_mode_count, present_modes.data());
-        res != VK_SUCCESS) {
-        abortGame("vkGetPhysicalDeviceSurfacePresentModesKHR() error: {}", vulkanResToString(res));
-    }
-    // for now, use Mailbox if available otherwise FIFO
-    if (std::find(present_modes.cbegin(), present_modes.cend(), m_requested_present_mode) != present_modes.cend()) {
-        m_present_mode = m_requested_present_mode;
-    }
-    else {
-		GC_WARN("Requested present mode is unavailable");
-        m_present_mode = VK_PRESENT_MODE_FIFO_KHR; // FIFO is always available
-    }
-
-    GC_DEBUG("Using present mode: {}", vulkanPresentModeToString(m_present_mode));
+    /* No members of the swapchain class are altered nor is the swapchain recreated if the window is minimised */
 
     // get capabilities. These can change, for example, if the window is made fullscreen or moved to another monitor.
     // minImageCount and maxImageCount can also change depending on desired present mode.
@@ -353,19 +346,45 @@ bool VulkanSwapchain::recreateSwapchain()
     }
 
     // Extent
-    m_extent = surface_caps.surfaceCapabilities.currentExtent;
-    if (m_extent.width == 0 || m_extent.height == 0)
-        return false; // <-- EARLY RETURN HERE IF WINDOW IS MINIMISED
-    else if (m_extent.width == UINT32_MAX && m_extent.height == UINT32_MAX) {
-        // In this case, swapchain size dictates the size of the window.
-        // Just get the size from SDL
-        int w{}, h{};
-        if (!SDL_GetWindowSizeInPixels(m_window_handle, &w, &h)) {
-            abortGame("SDL_GetWindowSizeInPixels() error: {}", SDL_GetError());
+    {
+        const VkExtent2D caps_current_extent = surface_caps.surfaceCapabilities.currentExtent;
+        if (caps_current_extent.width == 0 || caps_current_extent.height == 0)
+            return false; // <-- EARLY RETURN HERE IF WINDOW IS MINIMISED
+        else if (caps_current_extent.width == UINT32_MAX && caps_current_extent.height == UINT32_MAX) {
+            // In this case, swapchain size dictates the size of the window.
+            // Just get the size from SDL
+            int w{}, h{};
+            if (!SDL_GetWindowSizeInPixels(m_window_handle, &w, &h)) {
+                abortGame("SDL_GetWindowSizeInPixels() error: {}", SDL_GetError());
+            }
+            m_extent.width = w;
+            m_extent.height = h;
         }
-        m_extent.width = w;
-        m_extent.height = h;
+        else {
+            m_extent = caps_current_extent;
+        }
     }
+
+    // Get surface present modes
+    uint32_t present_mode_count{};
+    if (VkResult res = vkGetPhysicalDeviceSurfacePresentModesKHR(m_device.getPhysicalDevice(), m_surface, &present_mode_count, nullptr); res != VK_SUCCESS) {
+        abortGame("vkGetPhysicalDeviceSurfacePresentModesKHR() error: {}", vulkanResToString(res));
+    }
+    std::vector<VkPresentModeKHR> present_modes(present_mode_count);
+    if (VkResult res = vkGetPhysicalDeviceSurfacePresentModesKHR(m_device.getPhysicalDevice(), m_surface, &present_mode_count, present_modes.data());
+        res != VK_SUCCESS) {
+        abortGame("vkGetPhysicalDeviceSurfacePresentModesKHR() error: {}", vulkanResToString(res));
+    }
+    // for now, use Mailbox if available otherwise FIFO
+    if (std::find(present_modes.cbegin(), present_modes.cend(), m_requested_present_mode) != present_modes.cend()) {
+        m_present_mode = m_requested_present_mode;
+    }
+    else {
+        GC_WARN("Requested present mode is unavailable");
+        m_present_mode = VK_PRESENT_MODE_FIFO_KHR; // FIFO is always available
+    }
+
+    GC_DEBUG("Using present mode: {}", vulkanPresentModeToString(m_present_mode));
 
     // Get surface formats
     uint32_t surface_format_count{};
@@ -394,11 +413,10 @@ bool VulkanSwapchain::recreateSwapchain()
         min_image_count = surface_caps.surfaceCapabilities.maxImageCount;
     }
 
-	GC_TRACE("Min image count: {}", min_image_count);
+    GC_TRACE("Min image count: {}", min_image_count);
 
     // Use triple buffering
-    constexpr bool USE_TRIPLE_BUFFERING = true;
-    if constexpr (USE_TRIPLE_BUFFERING) {
+    if (m_fifo_triple_buffering) {
         if (m_present_mode == VK_PRESENT_MODE_FIFO_KHR && min_image_count == 2 && surface_caps.surfaceCapabilities.maxImageCount >= 3) {
             min_image_count = 3;
         }
@@ -437,8 +455,8 @@ bool VulkanSwapchain::recreateSwapchain()
     sc_info.imageArrayLayers = 1;
     sc_info.imageUsage = VK_IMAGE_USAGE_TRANSFER_DST_BIT;
     sc_info.imageSharingMode = VK_SHARING_MODE_EXCLUSIVE;
-    sc_info.queueFamilyIndexCount = 0;                                                          // ignored with VK_SHARING_MODE_EXCLUSIVE
-    sc_info.pQueueFamilyIndices = nullptr;                                                      // ignored with VK_SHARING_MODE_EXCLUSIVE
+    sc_info.queueFamilyIndexCount = 0;     // ignored with VK_SHARING_MODE_EXCLUSIVE
+    sc_info.pQueueFamilyIndices = nullptr; // ignored with VK_SHARING_MODE_EXCLUSIVE
     sc_info.preTransform = surface_caps.surfaceCapabilities.currentTransform;
     sc_info.compositeAlpha = VK_COMPOSITE_ALPHA_OPAQUE_BIT_KHR;
     sc_info.presentMode = m_present_mode;

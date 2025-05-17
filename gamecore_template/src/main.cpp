@@ -184,6 +184,7 @@ int main([[maybe_unused]] int argc, [[maybe_unused]] char* argv[])
     bool wait_after_update = true;
     int update_delay = 0;
     int recording_delay = 0;
+    int pacing_delay = 0;
 
     while (!win.shouldQuit()) {
 
@@ -276,7 +277,7 @@ int main([[maybe_unused]] int argc, [[maybe_unused]] char* argv[])
             }
         }
 
-		bool change_present_mode = false;
+        bool change_present_mode = false;
 
         {
             ZoneScopedN("ImGui stuff");
@@ -287,58 +288,67 @@ int main([[maybe_unused]] int argc, [[maybe_unused]] char* argv[])
             ImGui::ShowDemoWindow();
 
             ImGui::Begin("Settings");
-			
-			ImGui::Text("Present mode: %s", gc::vulkanPresentModeToString(renderer.getSwapchain().getCurrentPresentMode()).c_str());
-			ImGui::Text("Image count: %d", renderer.getSwapchain().getImageCount());
 
-			std::array<const char*, 4> present_modes{ "Immediate", "Mailbox", "FIFO", "FIFO Relaxed" };
+            ImGui::Text("Present mode: %s", gc::vulkanPresentModeToString(renderer.getSwapchain().getCurrentPresentMode()).c_str());
+            ImGui::Text("Image count: %d", renderer.getSwapchain().getImageCount());
 
-			int present_mode_choice = 0;
-			switch (renderer.getSwapchain().getCurrentPresentMode()) {
-				case VK_PRESENT_MODE_IMMEDIATE_KHR:
-					present_mode_choice = 0;
-					break;
-				case VK_PRESENT_MODE_MAILBOX_KHR:
-					present_mode_choice = 1;
-					break;
-				case VK_PRESENT_MODE_FIFO_KHR:
-					present_mode_choice = 2;
-					break;
-				case VK_PRESENT_MODE_FIFO_RELAXED_KHR:
-					present_mode_choice = 3;
-					break;
-				default:
-					break;
-			}
+            std::array<const char*, 5> present_modes{"Immediate", "Mailbox", "FIFO (DB)", "FIFO (TB)", "FIFO Relaxed"};
 
-			if (ImGui::Combo("Requested present mode", &present_mode_choice, present_modes.data(), present_modes.size())) {
-				change_present_mode = true;
-				switch (present_mode_choice) {
-					case 0:
-						renderer.getSwapchain().setRequestedPresentMode(VK_PRESENT_MODE_IMMEDIATE_KHR);
-						break;
-					case 1:
-						renderer.getSwapchain().setRequestedPresentMode(VK_PRESENT_MODE_MAILBOX_KHR);
-						break;
-					case 2:
-						renderer.getSwapchain().setRequestedPresentMode(VK_PRESENT_MODE_FIFO_KHR);
-						break;
-					case 3:
-						renderer.getSwapchain().setRequestedPresentMode(VK_PRESENT_MODE_FIFO_RELAXED_KHR);
-						break;
-					default:
-						break;
-				}
-			}
+            int present_mode_choice = 0;
+            switch (renderer.getSwapchain().getCurrentPresentMode()) {
+                case VK_PRESENT_MODE_IMMEDIATE_KHR:
+                    present_mode_choice = 0;
+                    break;
+                case VK_PRESENT_MODE_MAILBOX_KHR:
+                    present_mode_choice = 1;
+                    break;
+                case VK_PRESENT_MODE_FIFO_KHR:
+                    if (renderer.getSwapchain().getImageCount() == 2) {
+                        present_mode_choice = 2;
+                    }
+                    else {
+                        present_mode_choice = 3;
+                    }
+                    break;
+                case VK_PRESENT_MODE_FIFO_RELAXED_KHR:
+                    present_mode_choice = 4;
+                    break;
+                default:
+                    break;
+            }
+
+            if (ImGui::Combo("Requested present mode", &present_mode_choice, present_modes.data(), static_cast<int>(present_modes.size()))) {
+                change_present_mode = true;
+                switch (present_mode_choice) {
+                    case 0:
+                        renderer.getSwapchain().setRequestedPresentMode(VK_PRESENT_MODE_IMMEDIATE_KHR);
+                        break;
+                    case 1:
+                        renderer.getSwapchain().setRequestedPresentMode(VK_PRESENT_MODE_MAILBOX_KHR);
+                        break;
+                    case 2:
+                        renderer.getSwapchain().setRequestedPresentMode(VK_PRESENT_MODE_FIFO_KHR, false);
+                        break;
+                    case 3:
+                        renderer.getSwapchain().setRequestedPresentMode(VK_PRESENT_MODE_FIFO_KHR, true);
+                        break;
+                    case 4:
+                        renderer.getSwapchain().setRequestedPresentMode(VK_PRESENT_MODE_FIFO_RELAXED_KHR);
+                        break;
+                    default:
+                        break;
+                }
+            }
 
             ImGui::Checkbox("Wait after state update", &wait_after_update_switch);
 
             ImGui::SliderInt("FIF", &frames_in_flight, 1, 5);
 
-            ImGui::SliderInt("CPU Delay (ms)", &update_delay, 0, 100);
+            ImGui::SliderInt("CPU Frame Pacing Delay (ms)", &pacing_delay, 0, 100);
+            ImGui::SliderInt("CPU Game Update Delay (ms)", &update_delay, 0, 100);
             ImGui::SliderInt("CPU Delay During Cmd Buffer Rec. (ms)", &recording_delay, 0, 100);
 
-			ImGui::Text("Frames in flight: %d", static_cast<int>(fif.size()));
+            ImGui::Text("Frames in flight: %d", static_cast<int>(fif.size()));
 
             ImGui::End();
 
@@ -587,7 +597,6 @@ int main([[maybe_unused]] int argc, [[maybe_unused]] char* argv[])
 
         // Queue image for presentation
         const bool resized = renderer.getSwapchain().acquireAndPresent(image, win.getResizedFlag() || change_present_mode, timeline_semaphore, timeline_value);
-        timeline_value += 1;
 
         present_finished_value = timeline_value; // Timeline semaphore will reach this value when image can be used again.
 
@@ -599,6 +608,8 @@ int main([[maybe_unused]] int argc, [[maybe_unused]] char* argv[])
                         renderer.getSwapchain().getExtent(), image, allocation, view);
             renderer.recreateDepthStencil();
         }
+
+        SDL_DelayPrecise(static_cast<uint64_t>(pacing_delay) * 1000000);
 
         ++frame_count;
         FrameMark;

@@ -36,13 +36,18 @@ class VulkanSwapchain {
     std::vector<PerSwapchainImageResources> m_resources_per_swapchain_image{};
 
 	/* Present modes: */
-	/* FIFO: Does not use exclusive fullscreen on Windows (composited). Highest latency as rendering is locked to monitor refresh rate. No tearing. Slowdowns will
-	 * half the FPS. */
+	/* FIFO (double buffering): Does not use exclusive fullscreen on Windows (composited). High latency as rendering is locked to monitor refresh rate. No tearing. Slowdowns will
+	 * half the FPS. Only works smoothly with one frame in flight. */
+    /* FIFO (triple buffering): Does not use exclusive fullscreen on Windows (composited). Highest latency as rendering is locked to monitor refresh rate. No
+     * tearing. Permits for multiple frames in flight. */
 	/* FIFO_RELAXED: Does not use exclusive fullscreen on Windows (composited). Allows tearing if frames are submitted late to allow FPS to 'catch up' with monitor
 	 * refresh rate. */
 	/* MAILBOX: Does not use exclusive fullscreen on Windows (composited). Latency may be slightly higher than IMMEDIATE. No tearing. */
 	/* IMMEDIATE: Will use exclusive fullscreen on Windows (not composited). Probably the lowest latency option. Has tearing. */
 	VkPresentModeKHR m_requested_present_mode = VK_PRESENT_MODE_FIFO_KHR;
+    bool m_fifo_triple_buffering = false;
+
+    bool m_minimised = false;
 
 public:
     VulkanSwapchain(const VulkanDevice& device, SDL_Window* window);
@@ -60,14 +65,18 @@ public:
 	inline int getImageCount() const { return static_cast<int>(m_images.size()); }
 
 	// Will be applied when the swapchain is next recreated
-	inline void setRequestedPresentMode(VkPresentModeKHR mode) { m_requested_present_mode = mode; }
+    inline void setRequestedPresentMode(VkPresentModeKHR mode, bool fifo_triple_buffering = false)
+    {
+        m_requested_present_mode = mode;
+        m_fifo_triple_buffering = fifo_triple_buffering;
+    }
 
     // Call to present given image to the window.
 	// Returns true if the swapchain is recreated (typically means window is resized)
 	// The function will wait until timeline_semaphore reaches 'value' before copying image_to_present.
 	// When the copy is complete, timeline_semaphore will be set to 'value' + 1.
 	// This is the case even when the swapchain is recreated or cannot be recreated (typically because the window is minimised)
-    bool acquireAndPresent(VkImage image_to_present, bool window_resized, VkSemaphore timeline_semaphore, uint64_t value);
+    bool acquireAndPresent(VkImage image_to_present, bool window_resized, VkSemaphore timeline_semaphore, uint64_t& value);
 
 private:
     // returns false if the swapchain could not be recreated due to window being minimised
