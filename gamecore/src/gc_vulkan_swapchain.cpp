@@ -39,6 +39,7 @@ static void recreatePerSwapchainImageResources(const VulkanDevice& device, uint3
         {
             VkFenceCreateInfo info{};
             info.sType = VK_STRUCTURE_TYPE_FENCE_CREATE_INFO;
+            info.flags = VK_FENCE_CREATE_SIGNALED_BIT;
             GC_CHECKVK(vkCreateFence(device.getHandle(), &info, nullptr, &resources.command_buffer_finished));
         }
         {
@@ -77,9 +78,7 @@ VulkanSwapchain::VulkanSwapchain(const VulkanDevice& device, SDL_Window* window_
         abortGame("Physical device does not support presentation to surface.");
     }
 
-    if (!recreateSwapchain()) {
-        gc::abortGame("Failed to initialise swapchain!");
-    }
+    recreateSwapchain();
 
     // Per swapchain image stuff:
     recreatePerSwapchainImageResources(m_device, static_cast<uint32_t>(m_images.size()), m_resources_per_swapchain_image);
@@ -111,11 +110,17 @@ bool VulkanSwapchain::acquireAndPresent(VkImage image_to_present, bool window_re
     GC_ASSERT(image_to_present != VK_NULL_HANDLE);
 
     if (m_minimised) {
-        m_minimised = !recreateSwapchain(); // false means minimised
-        if (m_minimised) { // is it still minimised?
+        m_minimised = !isSwapchainCreatable(); // false means minimised
+        if (m_minimised) {                     // is it still minimised?
             // Do not attempt to acquire and present a swapchain image if the window is minimised (it won't work).
-            // False is returned here as there is no point in the application recreating images until the window is un-minimised and its new extent is determined.
+            // False is returned here as there is no point in the application recreating images until the window is un-minimised and its new extent is
+            // determined.
             return false;
+        }
+        else {
+            waitForSwapchainImageOperations();
+            recreateSwapchain();
+            recreatePerSwapchainImageResources(m_device, static_cast<uint32_t>(m_images.size()), m_resources_per_swapchain_image);
         }
     }
 
@@ -150,9 +155,10 @@ bool VulkanSwapchain::acquireAndPresent(VkImage image_to_present, bool window_re
     if (m_resources_per_swapchain_image[image_index].image_acquired != VK_NULL_HANDLE) {
         ZoneScopedNC("Wait for swapchain image", tracy::Color::Crimson);
         GC_CHECKVK(vkWaitForFences(m_device.getHandle(), 1, &m_resources_per_swapchain_image[image_index].command_buffer_finished, VK_FALSE, UINT64_MAX));
-        GC_CHECKVK(vkResetFences(m_device.getHandle(), 1, &m_resources_per_swapchain_image[image_index].command_buffer_finished));
         vkDestroySemaphore(m_device.getHandle(), m_resources_per_swapchain_image[image_index].image_acquired, nullptr);
     }
+    GC_CHECKVK(vkResetFences(m_device.getHandle(), 1,
+                             &m_resources_per_swapchain_image[image_index].command_buffer_finished)); // reset always as fences are created signaled
     m_resources_per_swapchain_image[image_index].image_acquired = image_acquired_semaphore;
 
     /* record command buffer */
@@ -242,6 +248,7 @@ bool VulkanSwapchain::acquireAndPresent(VkImage image_to_present, bool window_re
         GC_CHECKVK(vkEndCommandBuffer(cmd));
     }
 
+    /* submit */
     { /* Copy the parameter image to the retrieved swapchain image. */
         ZoneScopedN("Submit acquireAndPresent cmdbuf");
 
@@ -311,10 +318,10 @@ bool VulkanSwapchain::acquireAndPresent(VkImage image_to_present, bool window_re
     }
 
     if (recreate_swapchain) {
-        GC_CHECKVK(vkDeviceWaitIdle(m_device.getHandle()));
-        if (recreateSwapchain()) {
-            // recreateDepthStencil(m_device.getHandle(), m_allocator.getHandle(), m_depth_stencil_format, m_swapchain.getExtent(), m_depth_stencil,
-            //                      m_depth_stencil_view, m_depth_stencil_allocation);
+        if (isSwapchainCreatable()) {
+            // cannot call vkDestroySwapchain() until all operations on acquired swapchain images have finished.
+            waitForSwapchainImageOperations();
+            recreateSwapchain();
             recreatePerSwapchainImageResources(m_device, static_cast<uint32_t>(m_images.size()), m_resources_per_swapchain_image);
         }
         else {
@@ -325,7 +332,7 @@ bool VulkanSwapchain::acquireAndPresent(VkImage image_to_present, bool window_re
     return recreate_swapchain;
 }
 
-bool VulkanSwapchain::recreateSwapchain()
+void VulkanSwapchain::recreateSwapchain()
 {
 
     /* No members of the swapchain class are altered nor is the swapchain recreated if the window is minimised */
@@ -348,9 +355,7 @@ bool VulkanSwapchain::recreateSwapchain()
     // Extent
     {
         const VkExtent2D caps_current_extent = surface_caps.surfaceCapabilities.currentExtent;
-        if (caps_current_extent.width == 0 || caps_current_extent.height == 0)
-            return false; // <-- EARLY RETURN HERE IF WINDOW IS MINIMISED
-        else if (caps_current_extent.width == UINT32_MAX && caps_current_extent.height == UINT32_MAX) {
+        if (caps_current_extent.width == UINT32_MAX && caps_current_extent.height == UINT32_MAX) {
             // In this case, swapchain size dictates the size of the window.
             // Just get the size from SDL
             int w{}, h{};
@@ -488,8 +493,20 @@ bool VulkanSwapchain::recreateSwapchain()
     // done
     GC_DEBUG("Recreated swapchain. new extent: ({}, {}), requested image count: {}, new image count: {}", sc_info.imageExtent.width, sc_info.imageExtent.height,
              min_image_count, image_count);
+}
 
-    return true;
+bool VulkanSwapchain::isSwapchainCreatable()
+{
+    VkSurfaceCapabilitiesKHR surface_caps{};
+    GC_CHECKVK(vkGetPhysicalDeviceSurfaceCapabilitiesKHR(m_device.getPhysicalDevice(), m_surface, &surface_caps));
+    return (surface_caps.currentExtent.width > 0 && surface_caps.currentExtent.height > 0);
+}
+
+void VulkanSwapchain::waitForSwapchainImageOperations()
+{
+    // just waiting for the command_buffer_finished fences to complete is not enough as vkQueuePresent must be waited for too.
+    // This requires using an extension so just queuewaitidle for now
+    GC_CHECKVK(vkQueueWaitIdle(m_device.getPresentQueue()));
 }
 
 } // namespace gc

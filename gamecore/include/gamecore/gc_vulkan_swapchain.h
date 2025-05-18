@@ -79,8 +79,12 @@ public:
     bool acquireAndPresent(VkImage image_to_present, bool window_resized, VkSemaphore timeline_semaphore, uint64_t& value);
 
 private:
-    // returns false if the swapchain could not be recreated due to window being minimised
-    bool recreateSwapchain();
+    void recreateSwapchain();
+
+    // returns false if window is minimised
+    bool isSwapchainCreatable();
+
+    void waitForSwapchainImageOperations();
     
 };
 
