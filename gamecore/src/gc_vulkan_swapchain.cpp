@@ -427,6 +427,11 @@ void VulkanSwapchain::recreateSwapchain()
         }
     }
 
+    // always use at least 3 swapchain images with MAILBOX
+    if (m_present_mode == VK_PRESENT_MODE_MAILBOX_KHR && min_image_count < 3) {
+        min_image_count = 3;
+    }
+
     // clamp extent to min and max
     if (m_extent.width > surface_caps.surfaceCapabilities.maxImageExtent.width) {
         m_extent.width = surface_caps.surfaceCapabilities.maxImageExtent.width;
@@ -506,7 +511,7 @@ void VulkanSwapchain::waitForSwapchainImageOperations()
 {
     // just waiting for the command_buffer_finished fences to complete is not enough as vkQueuePresent must be waited for too.
     // This requires using an extension so just queuewaitidle for now
-    GC_CHECKVK(vkQueueWaitIdle(m_device.getPresentQueue()));
+    GC_CHECKVK(vkQueueWaitIdle(m_device.getMainQueue()));
 }
 
 } // namespace gc

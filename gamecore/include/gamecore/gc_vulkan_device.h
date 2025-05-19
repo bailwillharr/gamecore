@@ -70,8 +70,6 @@ public:
 
     inline uint32_t getMainQueueFamilyIndex() const { return m_main_queue_family_index; }
     inline VkQueue getMainQueue() const { return m_main_queue; }
-    // present queue is always same queue family as main queues
-    inline VkQueue getPresentQueue() const { return m_present_queue; }
 
     inline const VulkanDeviceProperties& getProperties() const { return m_properties; }
 

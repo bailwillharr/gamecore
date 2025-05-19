@@ -231,14 +231,15 @@ VulkanDevice::VulkanDevice()
             abortGame("Vulkan queue family #0 doesn't support presentation.");
         }
 
-        const bool separate_present_queue = (main_queue_family_queue_count > 1);
-        const std::vector<float> queue_priorities{1.0f, 1.0f}; // same priority for main queue and present
+        // Separate present queue adds very slight delay (0.05ms) to frame time with no apparent benefit
+
+        const std::vector<float> queue_priorities{1.0f};
         std::vector<VkDeviceQueueCreateInfo> queue_infos{};
-        // Create a main queue for graphics operations and also a separate present queue on same family if available
+        // Create a main queue for graphics operations
         queue_infos.push_back(VkDeviceQueueCreateInfo{.sType = VK_STRUCTURE_TYPE_DEVICE_QUEUE_CREATE_INFO,
                                                       .pNext = nullptr,
                                                       .queueFamilyIndex = m_main_queue_family_index,
-                                                      .queueCount = separate_present_queue ? 2u : 1u,
+                                                      .queueCount = 1u,
                                                       .pQueuePriorities = queue_priorities.data()});
 
         constexpr std::array<const char*, 2> REQUIRED_EXTENSION_NAMES{VK_KHR_SWAPCHAIN_EXTENSION_NAME, VK_EXT_SWAPCHAIN_MAINTENANCE_1_EXTENSION_NAME};
@@ -291,12 +292,6 @@ VulkanDevice::VulkanDevice()
         {
             // Get Queues
             vkGetDeviceQueue(m_device, m_main_queue_family_index, 0, &m_main_queue);
-            if (separate_present_queue) {
-                vkGetDeviceQueue(m_device, m_main_queue_family_index, 1, &m_present_queue);
-            }
-            else {
-                m_present_queue = m_main_queue;
-            }
         }
 
     }

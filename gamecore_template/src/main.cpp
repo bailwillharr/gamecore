@@ -182,6 +182,7 @@ int main([[maybe_unused]] int argc, [[maybe_unused]] char* argv[])
 
     bool wait_after_update_switch = true;
     bool wait_after_update = true;
+    bool imgui_enable = true;
     int update_delay = 0;
     int recording_delay = 0;
     int pacing_delay = 0;
@@ -279,11 +280,13 @@ int main([[maybe_unused]] int argc, [[maybe_unused]] char* argv[])
 
         bool change_present_mode = false;
 
-        {
+        ImGui_ImplSDL3_NewFrame();
+        ImGui_ImplVulkan_NewFrame();
+        ImGui::NewFrame();
+
+        if (imgui_enable) {
             ZoneScopedN("ImGui stuff");
-            ImGui_ImplSDL3_NewFrame();
-            ImGui_ImplVulkan_NewFrame();
-            ImGui::NewFrame();
+
 
             ImGui::ShowDemoWindow();
 
@@ -342,7 +345,7 @@ int main([[maybe_unused]] int argc, [[maybe_unused]] char* argv[])
 
             ImGui::Checkbox("Wait after state update", &wait_after_update_switch);
 
-            ImGui::SliderInt("FIF", &frames_in_flight, 1, 5);
+            ImGui::SliderInt("FIF", &frames_in_flight, 1, 50);
 
             ImGui::SliderInt("CPU Frame Pacing Delay (ms)", &pacing_delay, 0, 100);
             ImGui::SliderInt("CPU Game Update Delay (ms)", &update_delay, 0, 100);
@@ -350,10 +353,17 @@ int main([[maybe_unused]] int argc, [[maybe_unused]] char* argv[])
 
             ImGui::Text("Frames in flight: %d", static_cast<int>(fif.size()));
 
+            if (ImGui::Button("Abort game")) {
+                gc::abortGame("rip");
+            }
+
+            ImGui::Checkbox("Enable imgui", &imgui_enable);
+
             ImGui::End();
 
-            ImGui::Render();
         }
+
+        ImGui::Render();
 
         SDL_DelayPrecise(static_cast<uint64_t>(update_delay) * 1000000);
 
