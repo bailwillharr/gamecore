@@ -128,10 +128,8 @@ int main([[maybe_unused]] int argc, [[maybe_unused]] char* argv[])
         ImGuiIO& io = ImGui::GetIO();
         const char* user_dir = SDL_GetPrefPath("bailwillharr", "gamecore_template");
         if (user_dir) {
-            auto ini_path = std::string(std::filesystem::path(user_dir) / "imgui.ini");
-            char* ini_path_dest = new char[ini_path.size()];
-            strncpy(ini_path_dest, ini_path.c_str(), ini_path.size());
-            io.IniFilename = ini_path_dest;
+            static auto ini_path = (std::filesystem::path(user_dir) / "imgui.ini").string();
+            io.IniFilename = ini_path.c_str();
         }
         else {
             GC_ERROR("SDL_GetPrefPath() error: {}", SDL_GetError());
