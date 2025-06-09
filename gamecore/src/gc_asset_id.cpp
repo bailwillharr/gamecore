@@ -32,10 +32,7 @@ void loadAssetIDTable(const std::filesystem::path& file_path)
     }
 }
 #else
-void loadAssetIDTable(const std::filesystem::path& file_path)
-{
-    (void)file_path;
-}
+void loadAssetIDTable(const std::filesystem::path& file_path) { (void)file_path; }
 #endif
 
 std::string nameFromID(std::uint32_t id)

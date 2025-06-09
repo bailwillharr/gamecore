@@ -1,6 +1,5 @@
 #include "gamecore/gc_app.h"
 
-#include <array>
 #include <memory>
 #include <thread>
 
@@ -8,7 +7,6 @@
 
 #include "gamecore/gc_assert.h"
 #include "gamecore/gc_abort.h"
-#include "gamecore/gc_defines.h"
 #include "gamecore/gc_logger.h"
 #include "gamecore/gc_jobs.h"
 #include "gamecore/gc_content.h"
@@ -64,10 +62,7 @@ App::~App()
     }
 }
 
-void App::run()
-{
-
-}
+void App::run() {}
 
 void App::initialise()
 {

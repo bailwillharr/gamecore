@@ -30,7 +30,6 @@
 #include <shaderc/shaderc.hpp>
 
 #include <array>
-#include <stdexcept>
 #include <string>
 #include <vector>
 
@@ -123,6 +122,22 @@ int main([[maybe_unused]] int argc, [[maybe_unused]] char* argv[])
     int frames_in_flight = 2;
 
     ImGuiContext* imgui_context = ImGui::CreateContext();
+
+    // imgui config
+    {
+        ImGuiIO& io = ImGui::GetIO();
+        const char* user_dir = SDL_GetPrefPath("bailwillharr", "gamecore_template");
+        if (user_dir) {
+            auto ini_path = std::string(std::filesystem::path(user_dir) / "imgui.ini");
+            char* ini_path_dest = new char[ini_path.size()];
+            strncpy(ini_path_dest, ini_path.c_str(), ini_path.size());
+            io.IniFilename = ini_path_dest;
+        }
+        else {
+            GC_ERROR("SDL_GetPrefPath() error: {}", SDL_GetError());
+            io.IniFilename = nullptr;
+        }
+    }
 
     ImGui_ImplSDL3_InitForVulkan(win.getHandle());
 
@@ -278,6 +293,11 @@ int main([[maybe_unused]] int argc, [[maybe_unused]] char* argv[])
             }
         }
 
+        glm::vec3 clearColor{1.0f, 1.0f, 1.0f};
+        if (win.getButtonDown(gc::MouseButton::LEFT)) {
+            clearColor = glm::vec3{0.0f, 0.0f, 0.0f};
+        }
+
         bool change_present_mode = false;
 
         ImGui_ImplSDL3_NewFrame();
@@ -286,7 +306,6 @@ int main([[maybe_unused]] int argc, [[maybe_unused]] char* argv[])
 
         if (imgui_enable) {
             ZoneScopedN("ImGui stuff");
-
 
             ImGui::ShowDemoWindow();
 
@@ -360,7 +379,6 @@ int main([[maybe_unused]] int argc, [[maybe_unused]] char* argv[])
             ImGui::Checkbox("Enable imgui", &imgui_enable);
 
             ImGui::End();
-
         }
 
         ImGui::Render();
@@ -454,9 +472,9 @@ int main([[maybe_unused]] int argc, [[maybe_unused]] char* argv[])
                 color_attachment.resolveMode = VK_RESOLVE_MODE_NONE;
                 color_attachment.loadOp = VK_ATTACHMENT_LOAD_OP_CLEAR;
                 color_attachment.storeOp = VK_ATTACHMENT_STORE_OP_STORE;
-                color_attachment.clearValue.color.float32[0] = 1.0f;
-                color_attachment.clearValue.color.float32[1] = 1.0f;
-                color_attachment.clearValue.color.float32[2] = 1.0f;
+                color_attachment.clearValue.color.float32[0] = clearColor.r;
+                color_attachment.clearValue.color.float32[1] = clearColor.g;
+                color_attachment.clearValue.color.float32[2] = clearColor.b;
                 color_attachment.clearValue.color.float32[3] = 1.0f;
                 VkRenderingAttachmentInfo depth_attachment{};
                 depth_attachment.sType = VK_STRUCTURE_TYPE_RENDERING_ATTACHMENT_INFO;
