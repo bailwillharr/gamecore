@@ -5,8 +5,6 @@
 #include <SDL3/SDL_init.h>
 #include <SDL3/SDL_video.h>
 
-#include <backends/imgui_impl_sdl3.h>
-
 #include <tracy/Tracy.hpp>
 
 #include "gamecore/gc_logger.h"
@@ -96,19 +94,20 @@ void Window::processEvents()
     SDL_Event ev{};
     while (SDL_PollEvent(&ev)) {
 
-        ImGui_ImplSDL3_ProcessEvent(&ev);
+        /*
+                ImGui_ImplSDL3_ProcessEvent(&ev);
 
-        // cancel inputs that ImGui wants to intercept by setting ev.type to zero
-        {
-            const ImGuiIO& io = ImGui::GetIO();
-            if (io.WantCaptureKeyboard && (ev.type == SDL_EVENT_KEY_DOWN || ev.type == SDL_EVENT_KEY_UP)) {
-                ev.type = 0;
-            }
-            if (io.WantCaptureMouse && (ev.type == SDL_EVENT_MOUSE_BUTTON_DOWN || ev.type == SDL_EVENT_MOUSE_BUTTON_UP || ev.type == SDL_EVENT_MOUSE_MOTION ||
-                ev.type == SDL_EVENT_MOUSE_WHEEL)) {
-                ev.type = 0;
-            }
-        }
+                // cancel inputs that ImGui wants to intercept by setting ev.type to zero
+                {
+                    const ImGuiIO& io = ImGui::GetIO();
+                    if (io.WantCaptureKeyboard && (ev.type == SDL_EVENT_KEY_DOWN || ev.type == SDL_EVENT_KEY_UP)) {
+                        ev.type = 0;
+                    }
+                    if (io.WantCaptureMouse && (ev.type == SDL_EVENT_MOUSE_BUTTON_DOWN || ev.type == SDL_EVENT_MOUSE_BUTTON_UP || ev.type ==
+           SDL_EVENT_MOUSE_MOTION || ev.type == SDL_EVENT_MOUSE_WHEEL)) { ev.type = 0;
+                    }
+                }
+        */
 
         switch (ev.type) {
             case SDL_EVENT_QUIT:

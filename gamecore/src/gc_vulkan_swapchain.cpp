@@ -339,12 +339,9 @@ void VulkanSwapchain::recreateSwapchain()
 
     // get capabilities. These can change, for example, if the window is made fullscreen or moved to another monitor.
     // minImageCount and maxImageCount can also change depending on desired present mode.
-    VkSurfacePresentModeEXT surface_present_mode{};
-    surface_present_mode.sType = VK_STRUCTURE_TYPE_SURFACE_PRESENT_MODE_EXT;
-    surface_present_mode.presentMode = m_present_mode;
     VkPhysicalDeviceSurfaceInfo2KHR surface_info{};
     surface_info.sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_SURFACE_INFO_2_KHR;
-    surface_info.pNext = &surface_present_mode;
+    surface_info.pNext = nullptr;
     surface_info.surface = m_surface;
     VkSurfaceCapabilities2KHR surface_caps{};
     surface_caps.sType = VK_STRUCTURE_TYPE_SURFACE_CAPABILITIES_2_KHR;

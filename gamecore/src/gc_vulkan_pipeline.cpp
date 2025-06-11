@@ -6,7 +6,7 @@
 #include <array>
 
 #include "gamecore/gc_app.h"
-#include "gamecore/gc_vulkan_renderer.h"
+#include "gamecore/gc_render_backend.h"
 #include "gamecore/gc_vulkan_device.h"
 #include "gamecore/gc_compile_shader.h"
 #include "gamecore/gc_disk_io.h"

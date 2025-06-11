@@ -4,6 +4,9 @@
 #include <thread>
 
 #include <SDL3/SDL_init.h>
+#include <SDL3/SDL_filesystem.h>
+
+#include <imgui.h>
 
 #include "gamecore/gc_assert.h"
 #include "gamecore/gc_abort.h"
@@ -11,7 +14,7 @@
 #include "gamecore/gc_jobs.h"
 #include "gamecore/gc_content.h"
 #include "gamecore/gc_window.h"
-#include "gamecore/gc_vulkan_renderer.h"
+#include "gamecore/gc_render_backend.h"
 
 namespace gc {
 
@@ -36,14 +39,16 @@ App::App() : m_main_thread_id(std::this_thread::get_id())
         }
     }
 
+    m_jobs = std::make_unique<Jobs>(std::thread::hardware_concurrency());
+    
+    m_content = std::make_unique<Content>();
+    
     WindowInitInfo window_init_info{};
     window_init_info.load_vulkan = true;
     window_init_info.resizable = false;
-
-    m_jobs = std::make_unique<Jobs>(std::thread::hardware_concurrency());
-    m_content = std::make_unique<Content>();
     m_window = std::make_unique<Window>(window_init_info);
-    m_vulkan_renderer = std::make_unique<VulkanRenderer>(m_window->getHandle());
+    
+    m_vulkan_renderer = std::make_unique<RenderBackend>(m_window->getHandle());
 
     GC_TRACE("Initialised application");
 }
@@ -106,7 +111,7 @@ Window& App::window()
     return *m_window;
 }
 
-VulkanRenderer& App::vulkanRenderer()
+RenderBackend& App::vulkanRenderer()
 {
     GC_ASSERT(m_vulkan_renderer);
     return *m_vulkan_renderer;
