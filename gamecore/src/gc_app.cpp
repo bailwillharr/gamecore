@@ -30,7 +30,7 @@ App::App() : m_main_thread_id(std::this_thread::get_id())
         set_prop_success &= SDL_SetAppMetadataProperty(SDL_PROP_APP_METADATA_VERSION_STRING, "v0.0.0");
         set_prop_success &= SDL_SetAppMetadataProperty(SDL_PROP_APP_METADATA_IDENTIFIER_STRING, "bailwillharr.gamecore");
         set_prop_success &= SDL_SetAppMetadataProperty(SDL_PROP_APP_METADATA_CREATOR_STRING, "Bailey Harrison");
-        set_prop_success &= set_prop_success &= SDL_SetAppMetadataProperty(SDL_PROP_APP_METADATA_COPYRIGHT_STRING, "Copyright (c) 2024 Bailey Harrison");
+        set_prop_success &= SDL_SetAppMetadataProperty(SDL_PROP_APP_METADATA_COPYRIGHT_STRING, "Copyright (c) 2024 Bailey Harrison");
         set_prop_success &= SDL_SetAppMetadataProperty(SDL_PROP_APP_METADATA_URL_STRING, "https://github.com/bailwillharr/gamecore");
         set_prop_success &= SDL_SetAppMetadataProperty(SDL_PROP_APP_METADATA_TYPE_STRING, "game");
         if (!set_prop_success) {
@@ -40,14 +40,14 @@ App::App() : m_main_thread_id(std::this_thread::get_id())
     }
 
     m_jobs = std::make_unique<Jobs>(std::thread::hardware_concurrency());
-    
+
     m_content = std::make_unique<Content>();
-    
+
     WindowInitInfo window_init_info{};
     window_init_info.load_vulkan = true;
     window_init_info.resizable = false;
     m_window = std::make_unique<Window>(window_init_info);
-    
+
     m_vulkan_renderer = std::make_unique<RenderBackend>(m_window->getHandle());
 
     GC_TRACE("Initialised application");

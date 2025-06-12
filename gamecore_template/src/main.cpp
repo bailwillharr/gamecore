@@ -12,19 +12,10 @@
 #include <gamecore/gc_vulkan_swapchain.h>
 #include <gamecore/gc_stopwatch.h>
 
-#include <gtc/quaternion.hpp>
-#include <mat4x4.hpp>
-#include <glm.hpp>
-
 #include <SDL3/SDL_main.h>
 #include <SDL3/SDL.h>
 
 #include <tracy/Tracy.hpp>
-#include <tracy/TracyVulkan.hpp>
-
-#include <array>
-#include <string>
-#include <vector>
 
 int main([[maybe_unused]] int argc, [[maybe_unused]] char* argv[])
 {

@@ -1,21 +1,22 @@
 /*
-* This is the engine's rendering backend.
-* It operates at a relatively high level while directly calling the Vulkan API.
-* This is done instead of creating a Vulkan abstraction which would end up effectively being an OpenGL remake.
-* The kind of things this renderer should do include:
-*  - Managing render targets
-*  - Presenting to the screen
-*  - ImGui integration
-*  - Drawing UI
-*  - Drawing 3D meshes with materials/textures
-*  - Applying post-processing effects such as FXAA and bloom
-* Things the renderer should not do include:
-*  - Frustrum culling
-*  - GPU resource streaming (though this class should contain methods to upload/free GPU resources)
-*  - Anything that would involve accessing/modifying scene data (It should have no knowledge of what a 'scene' is)
-* For example, to render the 3D world, the application would give RenderBackend a list of GPU mesh handles, textures, etc to draw.
-* The RenderBackend should not be aware of things like LOD selection, and should assume all draw call data given to it is valid and all resources are resident in GPU memory.
-*/
+ * This is the engine's rendering backend.
+ * It operates at a relatively high level while directly calling the Vulkan API.
+ * This is done instead of creating a Vulkan abstraction which would end up effectively being an OpenGL remake.
+ * The kind of things this renderer should do include:
+ *  - Managing render targets
+ *  - Presenting to the screen
+ *  - ImGui integration
+ *  - Drawing UI
+ *  - Drawing 3D meshes with materials/textures
+ *  - Applying post-processing effects such as FXAA and bloom
+ * Things the renderer should not do include:
+ *  - Frustrum culling
+ *  - GPU resource streaming (though this class should contain methods to upload/free GPU resources)
+ *  - Anything that would involve accessing/modifying scene data (It should have no knowledge of what a 'scene' is)
+ * For example, to render the 3D world, the application would give RenderBackend a list of GPU mesh handles, textures, etc to draw.
+ * The RenderBackend should not be aware of things like LOD selection, and should assume all draw call data given to it is valid and all resources are resident
+ * in GPU memory.
+ */
 
 #pragma once
 
@@ -25,7 +26,6 @@
 #include "gamecore/gc_vulkan_device.h"
 #include "gamecore/gc_vulkan_allocator.h"
 #include "gamecore/gc_vulkan_swapchain.h"
-#include "gamecore/gc_assert.h"
 
 struct SDL_Window; // forward-dec
 
@@ -87,7 +87,6 @@ public:
 
 private:
     void recreateFramesInFlightResources();
-
 };
 
 } // namespace gc

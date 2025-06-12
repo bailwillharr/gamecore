@@ -1,9 +1,6 @@
 #include "gamecore/gc_render_backend.h"
 
-#include <cmath>
-
 #include <array>
-#include <span>
 
 #include <SDL3/SDL_vulkan.h>
 
@@ -17,9 +14,6 @@
 #include "gamecore/gc_logger.h"
 #include "gamecore/gc_app.h"
 #include "gamecore/gc_window.h"
-#include "gamecore/gc_content.h"
-#include "gamecore/gc_asset_id.h"
-#include "gamecore/gc_compile_shader.h"
 
 namespace gc {
 
@@ -160,10 +154,14 @@ RenderBackend::RenderBackend(SDL_Window* window_handle) : m_device(), m_allocato
 
     { /* This stuff must be done every time the swapchain is recreated */
         recreateDepthStencil(m_device.getHandle(), m_allocator.getHandle(), m_depth_stencil_format, m_swapchain.getExtent(), m_depth_stencil,
-                                   m_depth_stencil_allocation, m_depth_stencil_view);
-        recreateFramebufferImage(m_device.getHandle(), m_allocator.getHandle(), m_swapchain.getSurfaceFormat().format, m_swapchain.getExtent(), m_framebuffer_image,
-                                 m_framebuffer_image_allocation, m_framebuffer_image_view);
+                             m_depth_stencil_allocation, m_depth_stencil_view);
+        recreateFramebufferImage(m_device.getHandle(), m_allocator.getHandle(), m_swapchain.getSurfaceFormat().format, m_swapchain.getExtent(),
+                                 m_framebuffer_image, m_framebuffer_image_allocation, m_framebuffer_image_view);
     }
+
+    m_requested_frames_in_flight = 2;
+
+    // m_timeline_semaphore and the frame in flight command pools will be created when renderFrame() is called for the first time.
 
     GC_TRACE("Initialised RenderBackend");
 }
@@ -173,6 +171,14 @@ RenderBackend::~RenderBackend()
     GC_TRACE("Destroying RenderBackend...");
 
     waitIdle();
+
+    // destroy frame in flight resources
+    if (m_timeline_semaphore) {
+        vkDestroySemaphore(m_device.getHandle(), m_timeline_semaphore, nullptr);
+    }
+    for (const auto& stuff : m_fif) {
+        vkDestroyCommandPool(m_device.getHandle(), stuff.pool, nullptr);
+    }
 
     vkDestroyImageView(m_device.getHandle(), m_framebuffer_image_view, nullptr);
     vmaDestroyImage(m_allocator.getHandle(), m_framebuffer_image, m_framebuffer_image_allocation);
@@ -186,7 +192,208 @@ RenderBackend::~RenderBackend()
 void RenderBackend::renderFrame()
 {
     if (m_requested_frames_in_flight != static_cast<int>(m_fif.size())) {
+        recreateFramesInFlightResources();
+    }
 
+    auto& stuff = m_fif[m_frame_count % m_fif.size()];
+
+    { // Wait for command buffer to be available
+        ZoneScopedN("Wait for semaphore to reach:");
+        ZoneValue(stuff.command_buffer_available_value);
+        VkSemaphoreWaitInfo info{};
+        info.sType = VK_STRUCTURE_TYPE_SEMAPHORE_WAIT_INFO;
+        info.semaphoreCount = 1;
+        info.pSemaphores = &m_timeline_semaphore;
+        info.pValues = &stuff.command_buffer_available_value;
+        GC_CHECKVK(vkWaitSemaphores(m_device.getHandle(), &info, UINT64_MAX));
+    }
+
+    GC_CHECKVK(vkResetCommandPool(m_device.getHandle(), stuff.pool, 0));
+
+    {
+        VkCommandBufferBeginInfo info{};
+        info.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO;
+        info.flags = VK_COMMAND_BUFFER_USAGE_ONE_TIME_SUBMIT_BIT;
+        GC_CHECKVK(vkBeginCommandBuffer(stuff.cmd, &info));
+    }
+
+    /* Transition image to COLOR_ATTACHMENT_OPTIMAL layout */
+    {
+        VkImageMemoryBarrier2 barrier{};
+        barrier.sType = VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER_2;
+        barrier.srcStageMask = VK_PIPELINE_STAGE_2_NONE;
+        barrier.srcAccessMask = VK_ACCESS_2_NONE;
+        barrier.dstStageMask = VK_PIPELINE_STAGE_2_COLOR_ATTACHMENT_OUTPUT_BIT;
+        barrier.dstAccessMask = VK_ACCESS_2_COLOR_ATTACHMENT_WRITE_BIT;
+        barrier.oldLayout = VK_IMAGE_LAYOUT_UNDEFINED;
+        barrier.newLayout = VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL;
+        barrier.srcQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
+        barrier.dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
+        barrier.image = m_framebuffer_image;
+        barrier.subresourceRange.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT;
+        barrier.subresourceRange.baseMipLevel = 0;
+        barrier.subresourceRange.levelCount = 1;
+        barrier.subresourceRange.baseArrayLayer = 0;
+        barrier.subresourceRange.layerCount = 1;
+        VkDependencyInfo dep{};
+        dep.sType = VK_STRUCTURE_TYPE_DEPENDENCY_INFO;
+        dep.imageMemoryBarrierCount = 1;
+        dep.pImageMemoryBarriers = &barrier;
+        vkCmdPipelineBarrier2(stuff.cmd, &dep);
+    }
+
+    /* Transition depth stencil buffer to VK_IMAGE_LAYOUT_DEPTH_STENCIL_ATTACHMENT_OPTIMAL layout */
+    {
+        VkImageMemoryBarrier2 barrier{};
+        barrier.sType = VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER_2;
+        barrier.srcStageMask = VK_PIPELINE_STAGE_2_LATE_FRAGMENT_TESTS_BIT;
+        barrier.srcAccessMask = VK_ACCESS_2_DEPTH_STENCIL_ATTACHMENT_WRITE_BIT;
+        barrier.dstStageMask = VK_PIPELINE_STAGE_2_EARLY_FRAGMENT_TESTS_BIT;
+        barrier.dstAccessMask = VK_ACCESS_2_DEPTH_STENCIL_ATTACHMENT_WRITE_BIT;
+        barrier.oldLayout = VK_IMAGE_LAYOUT_UNDEFINED;
+        barrier.newLayout = VK_IMAGE_LAYOUT_DEPTH_STENCIL_ATTACHMENT_OPTIMAL;
+        barrier.srcQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
+        barrier.dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
+        barrier.image = m_depth_stencil;
+        barrier.subresourceRange.aspectMask = VK_IMAGE_ASPECT_DEPTH_BIT | VK_IMAGE_ASPECT_STENCIL_BIT;
+        barrier.subresourceRange.baseMipLevel = 0;
+        barrier.subresourceRange.levelCount = 1;
+        barrier.subresourceRange.baseArrayLayer = 0;
+        barrier.subresourceRange.layerCount = 1;
+        VkDependencyInfo dep{};
+        dep.sType = VK_STRUCTURE_TYPE_DEPENDENCY_INFO;
+        dep.imageMemoryBarrierCount = 1;
+        dep.pImageMemoryBarriers = &barrier;
+        vkCmdPipelineBarrier2(stuff.cmd, &dep);
+    }
+
+    {
+        VkRenderingAttachmentInfo color_attachment{};
+        color_attachment.sType = VK_STRUCTURE_TYPE_RENDERING_ATTACHMENT_INFO;
+        color_attachment.imageView = m_framebuffer_image_view;
+        color_attachment.imageLayout = VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL;
+        color_attachment.resolveMode = VK_RESOLVE_MODE_NONE;
+        color_attachment.loadOp = VK_ATTACHMENT_LOAD_OP_CLEAR;
+        color_attachment.storeOp = VK_ATTACHMENT_STORE_OP_STORE;
+        color_attachment.clearValue.color.float32[0] = 1.0f;
+        color_attachment.clearValue.color.float32[1] = 1.0f;
+        color_attachment.clearValue.color.float32[2] = 1.0f;
+        color_attachment.clearValue.color.float32[3] = 1.0f;
+        VkRenderingAttachmentInfo depth_attachment{};
+        depth_attachment.sType = VK_STRUCTURE_TYPE_RENDERING_ATTACHMENT_INFO;
+        depth_attachment.imageView = m_depth_stencil_view;
+        depth_attachment.imageLayout = VK_IMAGE_LAYOUT_DEPTH_STENCIL_ATTACHMENT_OPTIMAL;
+        depth_attachment.resolveMode = VK_RESOLVE_MODE_NONE;
+        depth_attachment.loadOp = VK_ATTACHMENT_LOAD_OP_CLEAR;
+        depth_attachment.storeOp = VK_ATTACHMENT_STORE_OP_DONT_CARE;
+        depth_attachment.clearValue.depthStencil.depth = 1.0f;
+        VkRenderingInfo info{};
+        info.sType = VK_STRUCTURE_TYPE_RENDERING_INFO;
+        info.renderArea.offset.x = 0;
+        info.renderArea.offset.y = 0;
+        info.renderArea.extent = m_swapchain.getExtent();
+        info.layerCount = 1;
+        info.viewMask = 0;
+        info.colorAttachmentCount = 1;
+        info.pColorAttachments = &color_attachment;
+        info.pDepthAttachment = &depth_attachment;
+        info.pStencilAttachment = nullptr;
+        vkCmdBeginRendering(stuff.cmd, &info);
+    }
+
+    // Set viewport and scissor (dynamic states)
+
+    const VkExtent2D swapchain_extent = m_swapchain.getExtent();
+
+    VkViewport viewport = {};
+    viewport.x = 0.0f;
+    viewport.y = 0.0f;
+    viewport.width = static_cast<float>(swapchain_extent.width);
+    viewport.height = static_cast<float>(swapchain_extent.height);
+    viewport.minDepth = 0.0f;
+    viewport.maxDepth = 1.0f;
+    vkCmdSetViewport(stuff.cmd, 0, 1, &viewport);
+
+    VkRect2D scissor = {};
+    scissor.offset = {0, 0};
+    scissor.extent = swapchain_extent;
+    vkCmdSetScissor(stuff.cmd, 0, 1, &scissor);
+
+    {
+        vkCmdEndRendering(stuff.cmd);
+    }
+
+    /* Transition image to TRANSFER_SRC layout */
+    {
+        VkImageMemoryBarrier2 barrier{};
+        barrier.sType = VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER_2;
+        barrier.srcStageMask = VK_PIPELINE_STAGE_2_COLOR_ATTACHMENT_OUTPUT_BIT;
+        barrier.srcAccessMask = VK_ACCESS_2_COLOR_ATTACHMENT_WRITE_BIT;
+        barrier.dstStageMask = VK_PIPELINE_STAGE_2_COPY_BIT;
+        barrier.dstAccessMask = VK_ACCESS_2_TRANSFER_READ_BIT;
+        barrier.oldLayout = VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL;
+        barrier.newLayout = VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL;
+        barrier.srcQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
+        barrier.dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
+        barrier.image = m_framebuffer_image;
+        barrier.subresourceRange.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT;
+        barrier.subresourceRange.baseMipLevel = 0;
+        barrier.subresourceRange.levelCount = 1;
+        barrier.subresourceRange.baseArrayLayer = 0;
+        barrier.subresourceRange.layerCount = 1;
+        VkDependencyInfo dep{};
+        dep.sType = VK_STRUCTURE_TYPE_DEPENDENCY_INFO;
+        dep.imageMemoryBarrierCount = 1;
+        dep.pImageMemoryBarriers = &barrier;
+        vkCmdPipelineBarrier2(stuff.cmd, &dep);
+    }
+
+    GC_CHECKVK(vkEndCommandBuffer(stuff.cmd));
+
+    /* Submit command buffer */
+    {
+        ZoneScopedN("Submit command buffer, signal with:");
+        ZoneValue(m_timeline_value + 1);
+
+        VkCommandBufferSubmitInfo cmd_info{};
+        cmd_info.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_SUBMIT_INFO;
+        cmd_info.commandBuffer = stuff.cmd;
+
+        VkSemaphoreSubmitInfo wait_info{};
+        wait_info.sType = VK_STRUCTURE_TYPE_SEMAPHORE_SUBMIT_INFO;
+        wait_info.semaphore = m_timeline_semaphore;
+        wait_info.stageMask = VK_PIPELINE_STAGE_2_CLEAR_BIT;
+        wait_info.value = m_present_finished_value;
+
+        m_timeline_value += 1;
+        stuff.command_buffer_available_value = m_timeline_value;
+
+        VkSemaphoreSubmitInfo signal_info{};
+        signal_info.sType = VK_STRUCTURE_TYPE_SEMAPHORE_SUBMIT_INFO;
+        signal_info.semaphore = m_timeline_semaphore;
+        signal_info.stageMask = VK_PIPELINE_STAGE_2_CLEAR_BIT;
+        signal_info.value = m_timeline_value;
+
+        VkSubmitInfo2 submit{};
+        submit.sType = VK_STRUCTURE_TYPE_SUBMIT_INFO_2;
+        submit.waitSemaphoreInfoCount = 1;
+        submit.pWaitSemaphoreInfos = &wait_info;
+        submit.commandBufferInfoCount = 1;
+        submit.pCommandBufferInfos = &cmd_info;
+        submit.signalSemaphoreInfoCount = 1;
+        submit.pSignalSemaphoreInfos = &signal_info;
+        GC_CHECKVK(vkQueueSubmit2(m_device.getMainQueue(), 1, &submit, VK_NULL_HANDLE));
+    }
+
+    const bool swapchain_recreated = m_swapchain.acquireAndPresent(m_framebuffer_image, app().window()., m_timeline_semaphore, m_timeline_value);
+
+    m_present_finished_value = m_timeline_value;
+
+    if (swapchain_recreated) {
+        recreateDepthStencil(m_device.getHandle(), m_allocator.getHandle(), m_depth_stencil_format, m_swapchain.getExtent(), m_depth_stencil,
+                             m_depth_stencil_allocation, m_depth_stencil_view);
+        recreateFramebufferImage(m_device.getHandle(), m_allocator.getHandle(), m_swapchain.getSurfaceFormat().format, m_swapchain.getExtent(),
+                                 m_framebuffer_image, m_framebuffer_image_allocation, m_framebuffer_image_view);
     }
 }
 
@@ -213,26 +420,26 @@ void RenderBackend::recreateFramesInFlightResources()
         VkSemaphoreCreateInfo info{};
         info.sType = VK_STRUCTURE_TYPE_SEMAPHORE_CREATE_INFO;
         info.pNext = &type_info;
-        GC_CHECKVK(vkCreateSemaphore(m_device.getHandle(), &info, nullptr, &timeline_semaphore));
+        GC_CHECKVK(vkCreateSemaphore(m_device.getHandle(), &info, nullptr, &m_timeline_semaphore));
     }
 
     m_timeline_value = 0;
     m_present_finished_value = 0;
 
-    for (const auto& stuff : fif) {
-        vkDestroyCommandPool(renderer.getDevice().getHandle(), stuff.pool, nullptr);
+    for (const auto& stuff : m_fif) {
+        vkDestroyCommandPool(m_device.getHandle(), stuff.pool, nullptr);
     }
 
-    fif.resize(frames_in_flight);
+    m_fif.resize(m_requested_frames_in_flight);
 
     /* Create 1 command buffer per frame in flight */
-    for (auto& stuff : fif) {
+    for (auto& stuff : m_fif) {
         {
             VkCommandPoolCreateInfo info{};
             info.sType = VK_STRUCTURE_TYPE_COMMAND_POOL_CREATE_INFO;
             info.flags = VK_COMMAND_POOL_CREATE_TRANSIENT_BIT;
-            info.queueFamilyIndex = renderer.getDevice().getMainQueueFamilyIndex();
-            GC_CHECKVK(vkCreateCommandPool(renderer.getDevice().getHandle(), &info, nullptr, &stuff.pool));
+            info.queueFamilyIndex = m_device.getMainQueueFamilyIndex();
+            GC_CHECKVK(vkCreateCommandPool(m_device.getHandle(), &info, nullptr, &stuff.pool));
         }
         {
             VkCommandBufferAllocateInfo info{};
@@ -240,7 +447,7 @@ void RenderBackend::recreateFramesInFlightResources()
             info.commandBufferCount = 1;
             info.commandPool = stuff.pool;
             info.level = VK_COMMAND_BUFFER_LEVEL_PRIMARY;
-            GC_CHECKVK(vkAllocateCommandBuffers(renderer.getDevice().getHandle(), &info, &stuff.cmd));
+            GC_CHECKVK(vkAllocateCommandBuffers(m_device.getHandle(), &info, &stuff.cmd));
         }
         stuff.command_buffer_available_value = 0;
     }
