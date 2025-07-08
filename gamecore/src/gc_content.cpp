@@ -20,6 +20,7 @@ struct PackageAssetInfo {
     GcpakAssetEntry entry;
 };
 
+// returns ifstream and number of entries in file
 static std::optional<std::pair<std::ifstream, std::uint32_t>> openAndValidateGcpak(const std::filesystem::path& file_path)
 {
     std::ifstream file(file_path, std::ios::in | std::ios::binary);
@@ -29,9 +30,8 @@ static std::optional<std::pair<std::ifstream, std::uint32_t>> openAndValidateGcp
     }
 
     GcpakHeader header{};
-    file.seekg(0, std::ios::beg);
     file.read(reinterpret_cast<char*>(&header), sizeof(GcpakHeader));
-    if (file.gcount() != sizeof(GcpakHeader)) {
+    if (!file || file.gcount() != sizeof(GcpakHeader)) {
         GC_ERROR("Failed to read gcpak header for file: {}, {}/{} bytes read", file_path.filename().string(), file.gcount(), sizeof(GcpakHeader));
         return {};
     }
@@ -51,11 +51,11 @@ static std::optional<std::pair<std::ifstream, std::uint32_t>> openAndValidateGcp
 }
 
 /* no bounds checking done, ensure index < header.num_entries */
-static std::optional<GcpakAssetEntry> getAssetEntry(std::ifstream& file, const int index)
+static std::optional<GcpakAssetEntry> getAssetEntry(std::ifstream& file, const uint32_t index)
 {
     GcpakAssetEntry entry{};
 
-    const std::streamoff offset = (-1LL - static_cast<std::streamoff>(index)) * sizeof(GcpakAssetEntry);
+    const std::streamoff offset = -static_cast<std::streamoff>((index + 1) * sizeof(GcpakAssetEntry));
     file.seekg(offset, std::ios::end);
 
     file.read(reinterpret_cast<char*>(&entry), sizeof(GcpakAssetEntry));
@@ -132,7 +132,7 @@ std::vector<uint8_t> Content::loadAsset(std::uint32_t id)
         GC_ASSERT(asset_info.file_index < m_package_file_mutexes.size());
         GC_ASSERT(asset_info.file_index < m_package_files.size());
 
-        std::lock_guard lock(m_package_file_mutexes[asset_info.file_index]);
+        std::lock_guard<std::mutex> lock(m_package_file_mutexes[asset_info.file_index]);
         auto& file = m_package_files[asset_info.file_index];
         file.seekg(asset_info.entry.offset, std::ios::beg);
         std::vector<uint8_t> data(asset_info.entry.size);

@@ -105,6 +105,10 @@ VulkanSwapchain::~VulkanSwapchain()
 
 bool VulkanSwapchain::acquireAndPresent(VkImage image_to_present, bool window_resized, VkSemaphore timeline_semaphore, uint64_t& value)
 {
+
+    // Currently, if window_resized is true, this function trys to present anyway, and only recreates the swapchain after trying to vkQueuePresent()
+    // This is probably not ideal.
+
     ZoneScoped;
 
     GC_ASSERT(image_to_present != VK_NULL_HANDLE);

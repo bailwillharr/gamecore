@@ -44,7 +44,7 @@ static std::vector<char> readTextFile(const std::string& path)
 
 std::pair<VkPipeline, VkPipelineLayout> createPipeline(VkDescriptorSetLayout set_layout)
 {
-    VkDevice device = app().vulkanRenderer().getDevice().getHandle();
+    VkDevice device = app().renderBackend().getDevice().getHandle();
 
     const auto vertex_src = readTextFile(std::filesystem::path(findContentDir().value() / "cube.vert").string());
     const std::string vertex_src_string(vertex_src.data());
@@ -175,8 +175,8 @@ std::pair<VkPipeline, VkPipelineLayout> createPipeline(VkDescriptorSetLayout set
     VkPipelineLayout layout = VK_NULL_HANDLE;
     GC_CHECKVK(vkCreatePipelineLayout(device, &layout_info, nullptr, &layout));
 
-    const VkFormat color_attachment_format = app().vulkanRenderer().getSwapchain().getSurfaceFormat().format;
-    const VkFormat depth_stencil_attachment_format = app().vulkanRenderer().getDepthStencilFormat();
+    const VkFormat color_attachment_format = app().renderBackend().getSwapchain().getSurfaceFormat().format;
+    const VkFormat depth_stencil_attachment_format = app().renderBackend().getDepthStencilFormat();
     VkPipelineRenderingCreateInfo rendering_info{};
     rendering_info.sType = VK_STRUCTURE_TYPE_PIPELINE_RENDERING_CREATE_INFO;
     rendering_info.pNext = nullptr;
@@ -231,7 +231,7 @@ std::pair<VkPipeline, VkPipelineLayout> createPipeline(VkDescriptorSetLayout set
 
 void destroyPipeline(VkPipeline pipeline, VkPipelineLayout layout)
 {
-    VkDevice device = app().vulkanRenderer().getDevice().getHandle();
+    VkDevice device = app().renderBackend().getDevice().getHandle();
     vkDestroyPipeline(device, pipeline, nullptr);
     vkDestroyPipelineLayout(device, layout, nullptr);
 }

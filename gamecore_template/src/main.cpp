@@ -1,62 +1,47 @@
 #include <gamecore/gc_app.h>
-#include <gamecore/gc_logger.h>
-#include <gamecore/gc_jobs.h>
 #include <gamecore/gc_window.h>
-#include <gamecore/gc_abort.h>
-#include <gamecore/gc_vulkan_common.h>
-#include <gamecore/gc_render_backend.h>
-#include <gamecore/gc_asset_id.h>
-#include <gamecore/gc_content.h>
-#include <gamecore/gc_vulkan_pipeline.h>
-#include <gamecore/gc_vulkan_allocator.h>
-#include <gamecore/gc_vulkan_swapchain.h>
-#include <gamecore/gc_stopwatch.h>
 
 #include <SDL3/SDL_main.h>
-#include <SDL3/SDL.h>
 
-#include <tracy/Tracy.hpp>
+#include <fstream>
+
+struct CmdLineOptions {};
+
+static CmdLineOptions parseCmdLine(int argc, char* argv[])
+{
+    (void)argc;
+    (void)argv;
+    return {};
+}
+
+struct X {
+    int i;
+    X() = default;
+};
 
 int main([[maybe_unused]] int argc, [[maybe_unused]] char* argv[])
 {
-    gc::App::initialise();
 
-    gc::Window& win = gc::app().window();
-    gc::RenderBackend& renderer = gc::app().vulkanRenderer();
+    std::ifstream my_file("C:\\storage dump 2\\test.raw", std::ios::binary | std::ios::in);
+
+
+    const CmdLineOptions cmd_line_options = parseCmdLine(argc, argv);
+
+    gc::AppInitOptions init_options{};
+    init_options.name = "gamecore_template";
+    init_options.author = "bailwillharr";
+    init_options.version = "v0.0.0";
+
+    gc::App::initialise(init_options);
+
+    gc::App& app = gc::app();
+    gc::Window& win = app.window();
 
     win.setTitle("Hello world!");
     win.setIsResizable(true);
     win.setWindowVisibility(true);
 
-    while (!win.shouldQuit()) {
-
-        win.processEvents();
-
-        {
-            ZoneScopedN("UI Logic");
-            if (win.getKeyDown(SDL_SCANCODE_ESCAPE)) {
-                win.setQuitFlag();
-            }
-            if (win.getKeyPress(SDL_SCANCODE_F11)) {
-                if (win.getIsFullscreen()) {
-                    win.setSize(0, 0, false);
-                }
-                else {
-                    win.setSize(0, 0, true);
-                }
-            }
-            if (win.getButtonPress(gc::MouseButton::X1)) {
-                // show/hide mouse
-                if (!SDL_SetWindowRelativeMouseMode(win.getHandle(), !SDL_GetWindowRelativeMouseMode(win.getHandle()))) {
-                    GC_ERROR("SDL_SetWindowRelativeMouseMode() error: {}", SDL_GetError());
-                }
-            }
-        }
-
-        renderer.renderFrame();
-
-        FrameMark;
-    }
+    app.run();
 
     gc::App::shutdown();
 

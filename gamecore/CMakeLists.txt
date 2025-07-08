@@ -1,5 +1,9 @@
 cmake_minimum_required(VERSION 3.25)
 
+if (NOT CMAKE_SOURCE_DIR STREQUAL PROJECT_SOURCE_DIR)
+    message(FATAL_ERROR "This project is not intended to be used as a subdirectory.")
+endif()
+
 option(GC_DEV_BUILD "Log trace and debug messages, run asserts" ON)
 
 project(gamecore LANGUAGES CXX VERSION "0.1.0")
@@ -24,10 +28,12 @@ set(SRC_FILES
 	"src/gc_render_backend.cpp"
 	"src/gc_vulkan_swapchain.cpp"
 	"src/gc_compile_shader.cpp"
-	"src/gc_vulkan_pipeline.cpp"
-	
+	"src/gc_vulkan_pipeline.cpp"	
 	"src/gc_configuration.cpp"
-	
+	"src/gc_debug_ui.cpp"
+	"src/gc_world.cpp"
+	"src/gc_importer_gltf.cpp"
+	"src/gc_ecs.cpp"
 )
 
 # Public API includes
@@ -56,8 +62,11 @@ set(INCLUDE_FILES
 	"include/gamecore/gc_vulkan_swapchain.h"
 	"include/gamecore/gc_compile_shader.h"
 	"include/gamecore/gc_vulkan_pipeline.h"
-	
 	"include/gamecore/gc_configuration.h"
+	"include/gamecore/gc_debug_ui.h"
+	"include/gamecore/gc_world.h"
+	"include/gamecore/gc_importer_gltf.h"
+	"include/gamecore/gc_ecs.h"
 )
 
 # gamecore is a static library
@@ -84,7 +93,7 @@ if (GC_DEV_BUILD)
 	target_compile_definitions(${PROJECT_NAME} PUBLIC GC_DO_ASSERTS)
 	target_compile_definitions(${PROJECT_NAME} PUBLIC GC_LOG_TRACE_DEBUG)
 	target_compile_definitions(${PROJECT_NAME} PUBLIC GC_LOOKUP_ASSET_IDS)
-	target_compile_definitions(${PROJECT_NAME} PUBLIC GC_VULKAN_VALIDATION)
+	#target_compile_definitions(${PROJECT_NAME} PUBLIC GC_VULKAN_VALIDATION) # Vulkan Configurator can do this
 endif()
 target_compile_definitions(${PROJECT_NAME} PUBLIC GC_LOGGER=GC_LOGGER_SPDLOG) # GC_LOGGER_SPDLOG or GC_LOGGER_NULL
 
@@ -118,6 +127,9 @@ target_link_libraries(${PROJECT_NAME} PUBLIC glm::glm)
 
 # imgui
 target_link_libraries(${PROJECT_NAME} PUBLIC imgui)
+
+# tinygltf
+target_link_libraries(${PROJECT_NAME} PUBLIC tinygltf)
 
 # For some reason Vulkan::shaderc_combined doesn't link on linux even though FindVulkan.cmake finds the component??
 if (WIN32)

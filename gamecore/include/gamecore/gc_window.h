@@ -15,7 +15,7 @@ struct SDL_Window; // forward-dec
 namespace gc {
 
 struct WindowInitInfo {
-    bool load_vulkan;
+    bool vulkan_support;
     bool resizable;
 };
 

@@ -2,11 +2,12 @@
 
 #include <memory>
 #include <thread>
+#include <string>
 
 #include <SDL3/SDL_init.h>
 #include <SDL3/SDL_filesystem.h>
 
-#include <imgui.h>
+#include <tracy/Tracy.hpp>
 
 #include "gamecore/gc_assert.h"
 #include "gamecore/gc_abort.h"
@@ -15,23 +16,24 @@
 #include "gamecore/gc_content.h"
 #include "gamecore/gc_window.h"
 #include "gamecore/gc_render_backend.h"
+#include "gamecore/gc_debug_ui.h"
+#include "gamecore/gc_world.h"
 
 namespace gc {
 
 // empty ptr, it is initialised manually in application
 App* App::s_app = nullptr;
 
-App::App() : m_main_thread_id(std::this_thread::get_id())
+App::App(const AppInitOptions& options) : m_main_thread_id(std::this_thread::get_id())
 {
     // Setup app metadata for SDL
     {
         bool set_prop_success = true;
-        set_prop_success &= SDL_SetAppMetadataProperty(SDL_PROP_APP_METADATA_NAME_STRING, "Gamecore Game Engine");
-        set_prop_success &= SDL_SetAppMetadataProperty(SDL_PROP_APP_METADATA_VERSION_STRING, "v0.0.0");
-        set_prop_success &= SDL_SetAppMetadataProperty(SDL_PROP_APP_METADATA_IDENTIFIER_STRING, "bailwillharr.gamecore");
-        set_prop_success &= SDL_SetAppMetadataProperty(SDL_PROP_APP_METADATA_CREATOR_STRING, "Bailey Harrison");
-        set_prop_success &= SDL_SetAppMetadataProperty(SDL_PROP_APP_METADATA_COPYRIGHT_STRING, "Copyright (c) 2024 Bailey Harrison");
-        set_prop_success &= SDL_SetAppMetadataProperty(SDL_PROP_APP_METADATA_URL_STRING, "https://github.com/bailwillharr/gamecore");
+        // These functions copy the strings so they do not need to be saved
+        set_prop_success &= SDL_SetAppMetadataProperty(SDL_PROP_APP_METADATA_NAME_STRING, options.name);
+        set_prop_success &= SDL_SetAppMetadataProperty(SDL_PROP_APP_METADATA_VERSION_STRING, options.version);
+        const auto identifier(std::string(options.author) + std::string(".") + std::string(options.name));
+        set_prop_success &= SDL_SetAppMetadataProperty(SDL_PROP_APP_METADATA_IDENTIFIER_STRING, identifier.c_str());
         set_prop_success &= SDL_SetAppMetadataProperty(SDL_PROP_APP_METADATA_TYPE_STRING, "game");
         if (!set_prop_success) {
             // not a big deal if these fail
@@ -39,25 +41,41 @@ App::App() : m_main_thread_id(std::this_thread::get_id())
         }
     }
 
+    // Get save directory (In $XDG_DATA_HOME on Linux and in %appdata% on Windows)
+    const char* user_dir = SDL_GetPrefPath(options.author, options.name);
+    if (user_dir) {
+        m_save_directory = std::filesystem::path(user_dir);
+        GC_INFO("Save directory: {}", m_save_directory.string());
+    }
+    else {
+        GC_ERROR("SDL_GetPrefPath() error: {}", SDL_GetError());
+        GC_ERROR("Failed to get save directory! Falling back to current working directory.");
+        m_save_directory = std::filesystem::current_path();
+    }
+
     m_jobs = std::make_unique<Jobs>(std::thread::hardware_concurrency());
 
     m_content = std::make_unique<Content>();
 
     WindowInitInfo window_init_info{};
-    window_init_info.load_vulkan = true;
+    window_init_info.vulkan_support = true;
     window_init_info.resizable = false;
     m_window = std::make_unique<Window>(window_init_info);
 
-    m_vulkan_renderer = std::make_unique<RenderBackend>(m_window->getHandle());
+    m_render_backend = std::make_unique<RenderBackend>(m_window->getHandle());
 
-    GC_TRACE("Initialised application");
+    m_debug_ui = std::make_unique<DebugUI>(m_window->getHandle(), *m_render_backend, m_save_directory / "imgui.ini");
+
+    m_world = std::make_unique<World>();
+
+    GC_TRACE("Initialised Application");
 }
 
 App::~App()
 {
-    GC_TRACE("Destroying application...");
+    GC_TRACE("Destroying Application...");
 
-    m_vulkan_renderer->waitIdle();
+    m_render_backend->waitIdle();
 
     // job threads should be stopped here because otherwise other engine systems may shut down while still in use by those threads.
     // Ideally, job system shouldn't be busy at this point anyway since jobs shouldn't be left running.
@@ -67,14 +85,12 @@ App::~App()
     }
 }
 
-void App::run() {}
-
-void App::initialise()
+void App::initialise(const AppInitOptions& options)
 {
     if (s_app) {
         abortGame("App::initialise() called when App is already initialised!");
     }
-    s_app = new App;
+    s_app = new App(options);
 }
 
 void App::shutdown()
@@ -111,10 +127,45 @@ Window& App::window()
     return *m_window;
 }
 
-RenderBackend& App::vulkanRenderer()
+RenderBackend& App::renderBackend()
 {
-    GC_ASSERT(m_vulkan_renderer);
-    return *m_vulkan_renderer;
+    GC_ASSERT(m_render_backend);
+    return *m_render_backend;
+}
+
+void App::run()
+{
+    GC_TRACE("Starting game loop...");
+    while (!window().shouldQuit()) {
+
+        window().processEvents();
+
+        {
+            ZoneScopedN("UI Logic");
+            if (window().getKeyDown(SDL_SCANCODE_ESCAPE)) {
+                window().setQuitFlag();
+            }
+            if (window().getKeyPress(SDL_SCANCODE_F11)) {
+                window().setSize(0, 0, !window().getIsFullscreen());
+            }
+            if (window().getKeyPress(SDL_SCANCODE_F10)) {
+                m_debug_ui->active = !m_debug_ui->active;
+            }
+            if (window().getButtonPress(gc::MouseButton::X1)) {
+                // show/hide mouse
+                if (!SDL_SetWindowRelativeMouseMode(window().getHandle(), !SDL_GetWindowRelativeMouseMode(window().getHandle()))) {
+                    GC_ERROR("SDL_SetWindowRelativeMouseMode() error: {}", SDL_GetError());
+                }
+            }
+        }
+
+        m_debug_ui->update();
+
+        renderBackend().renderFrame(window().getResizedFlag());
+
+        FrameMark;
+    }
+    GC_TRACE("Quitting...");
 }
 
 } // namespace gc

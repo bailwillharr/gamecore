@@ -6,14 +6,14 @@
 
 #include <tracy/Tracy.hpp>
 
+#include <backends/imgui_impl_vulkan.h>
+
 #include "gamecore/gc_vulkan_common.h"
 #include "gamecore/gc_abort.h"
 #include "gamecore/gc_vulkan_device.h"
 #include "gamecore/gc_vulkan_allocator.h"
 #include "gamecore/gc_vulkan_swapchain.h"
 #include "gamecore/gc_logger.h"
-#include "gamecore/gc_app.h"
-#include "gamecore/gc_window.h"
 
 namespace gc {
 
@@ -189,7 +189,7 @@ RenderBackend::~RenderBackend()
     vkDestroyDescriptorPool(m_device.getHandle(), m_desciptor_pool, nullptr);
 }
 
-void RenderBackend::renderFrame()
+void RenderBackend::renderFrame(bool window_resized)
 {
     if (m_requested_frames_in_flight != static_cast<int>(m_fif.size())) {
         recreateFramesInFlightResources();
@@ -319,9 +319,9 @@ void RenderBackend::renderFrame()
     scissor.extent = swapchain_extent;
     vkCmdSetScissor(stuff.cmd, 0, 1, &scissor);
 
-    {
-        vkCmdEndRendering(stuff.cmd);
-    }
+    ImGui_ImplVulkan_RenderDrawData(ImGui::GetDrawData(), stuff.cmd);
+
+    vkCmdEndRendering(stuff.cmd);
 
     /* Transition image to TRANSFER_SRC layout */
     {
@@ -385,7 +385,7 @@ void RenderBackend::renderFrame()
         GC_CHECKVK(vkQueueSubmit2(m_device.getMainQueue(), 1, &submit, VK_NULL_HANDLE));
     }
 
-    const bool swapchain_recreated = m_swapchain.acquireAndPresent(m_framebuffer_image, app().window()., m_timeline_semaphore, m_timeline_value);
+    const bool swapchain_recreated = m_swapchain.acquireAndPresent(m_framebuffer_image, window_resized, m_timeline_semaphore, m_timeline_value);
 
     m_present_finished_value = m_timeline_value;
 

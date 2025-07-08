@@ -1,6 +1,6 @@
 cmake_minimum_required(VERSION 3.25)
 
-project(gamecore_template LANGUAGES CXX)
+project(gamecore_template LANGUAGES CXX VERSION 0.1.0)
 
 set(SRC_FILES
 	"src/main.cpp"
@@ -11,12 +11,16 @@ if (WIN32)
 endif()
 
 if (WIN32 AND GAMECORE_TEMPLATE_WIN32_BUILD)
-	add_executable(${PROJECT_NAME} WIN32 ${SRC_FILES} "gamecore_template.rc")
+	add_executable(${PROJECT_NAME} WIN32 ${SRC_FILES} "resource/gamecore_template.rc")
 else()
 	add_executable(${PROJECT_NAME} ${SRC_FILES})
 endif()
 
+configure_file(gamecore_template.h.in gamecore_template.h @ONLY)
+
 # compiling options:
+
+target_include_directories(${PROJECT_NAME} PRIVATE ${PROJECT_BINARY_DIR})
 
 if (MSVC)
 	target_compile_options(${PROJECT_NAME} PRIVATE /W4 /WX) # warning level 4 and treat warnings as errors

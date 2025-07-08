@@ -12,9 +12,9 @@
 
 /* multithreaded job system */
 
-/* using a simple prime finder function to test: */
+/* using a simple prime finder function to test (7700K, 4 Cores, 8 Hyperthreading): */
 /* No job system, single thread: 60s */
-/* 8 Threads (multithreading): 18s */
+/* 8 Threads: 18s */
 /* 4 Threads: 37s */
 
 namespace gc {
@@ -37,7 +37,7 @@ class Jobs {
     std::vector<std::thread> m_workers;
 
 public:
-    Jobs(unsigned int num_threads);
+    explicit Jobs(unsigned int num_threads);
 
     ~Jobs();
 

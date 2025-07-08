@@ -64,14 +64,14 @@ class RenderBackend {
     uint64_t m_present_finished_value{};
 
 public:
-    RenderBackend(SDL_Window* window_handle);
+    explicit RenderBackend(SDL_Window* window_handle);
     RenderBackend(const RenderBackend&) = delete;
 
     ~RenderBackend();
 
     RenderBackend operator=(const RenderBackend&) = delete;
 
-    void renderFrame();
+    void renderFrame(bool window_resized);
 
     VulkanDevice& getDevice() { return m_device; }
     VulkanSwapchain& getSwapchain() { return m_swapchain; }

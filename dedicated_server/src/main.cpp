@@ -83,7 +83,7 @@ int main()
         ctx.poll();
 
 		VkFence fence{};
-        gc::app().vulkanRenderer().acquireAndPresent({}, gc::app().window().getResizedFlag(), fence);
+        gc::app().renderBackend().acquireAndPresent({}, gc::app().window().getResizedFlag(), fence);
     }
 
     // ctx.run(); // block until echo() has returned

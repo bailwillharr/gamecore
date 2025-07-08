@@ -4,15 +4,13 @@ project(gamecore_repo)
 
 set(CMAKE_CONFIGURATION_TYPES "Debug;Release;RelWithDebInfo")
 
-# Compile flags must be globally redefined to disable exceptions.
-# Also disable RTTI.
-# Also enable link-time optimisation for release builds
+# Enable link-time optimisation for release builds
 # Compiler options such as compiler warnings, treating warnings as errors,
 # are defined per project/target
 if(MSVC)
-  set(CMAKE_CXX_FLAGS "/DWIN32 /D_WINDOWS /D_HAS_EXCEPTIONS=0 /EHs-c- /GR-")
+  set(CMAKE_CXX_FLAGS "/DWIN32 /D_WINDOWS /D_HAS_EXCEPTIONS=1 /EHsc")
   set(CMAKE_CXX_FLAGS_DEBUG "/Ob0 /Od /RTC1")
-  set(CMAKE_CXX_FLAGS_RELEASE "/O2 /Ob2 /DNDEBUG /GL")
+  set(CMAKE_CXX_FLAGS_RELEASE "/O2 /Ob2 /Oi /Ot /arch:AVX2 /DNDEBUG /GL")
   set(CMAKE_CXX_FLAGS_REL_WITH_DEB_INFO "/O2 /Ob1 /DNDEBUG")
   set(CMAKE_C_FLAGS "/DWIN32 /D_WINDOWS")
   set(CMAKE_C_FLAGS_DEBUG "/Ob0 /Od /RTC1")
@@ -20,7 +18,7 @@ if(MSVC)
   set(CMAKE_C_FLAGS_REL_WITH_DEB_INFO "/O2 /Ob1 /DNDEBUG")
   set(CMAKE_EXE_LINKER_FLAGS "/machine:x64")
   set(CMAKE_EXE_LINKER_FLAGS_DEBUG "/debug /INCREMENTAL")
-  set(CMAKE_EXE_LINKER_FLAGS_RELEASE "/INCREMENTAL:NO /LTCG:STATUS")
+  set(CMAKE_EXE_LINKER_FLAGS_RELEASE "/INCREMENTAL:NO /OPT:REF /LTCG:STATUS")
   set(CMAKE_EXE_LINKER_FLAGS_REL_WITH_DEB_INFO "/debug /INCREMENTAL")
 endif()
 
@@ -46,7 +44,6 @@ cpmaddpackage(
     "SPDLOG_SYSTEM_INCLUDES ON"
     "SPDLOG_USE_STD_FORMAT ON" # uses builtin fmt and C++20
     "SPDLOG_NO_ATOMIC_LEVELS ON" # log levels aren't modified concurrently
-    "SPDLOG_NO_EXCEPTIONS ON"
   EXCLUDE_FROM_ALL YES
   SYSTEM YES
 )
@@ -144,7 +141,6 @@ cpmaddpackage(
   URL https://github.com/nlohmann/json/archive/refs/tags/v3.11.3.zip
   OPTIONS
     "JSON_SystemInclude ON"
-    "JSON_NOEXCEPTION ON"
   EXCLUDE_FROM_ALL YES
   SYSTEM YES
 )
@@ -196,6 +192,22 @@ target_compile_definitions(imgui PUBLIC IMGUI_IMPL_VULKAN_NO_PROTOTYPES)
 target_include_directories(imgui PUBLIC ${imgui_SOURCE_DIR})
 target_link_libraries(imgui PRIVATE volk::volk)
 target_link_libraries(imgui PRIVATE SDL3::SDL3)
+
+# tinygltf
+cpmaddpackage(
+  NAME tinygltf
+  VERSION 2.9.6
+  URL https://github.com/syoyo/tinygltf/archive/refs/tags/v2.9.6.zip
+  OPTIONS
+    "TINYGLTF_BUILD_LOADER_EXAMPLE OFF"
+    "TINYGLTF_HEADER_ONLY OFF"
+    "TINYGLTF_INSTALL OFF"
+    "TINYGLTF_INSTALL_VENDOR OFF"
+  EXCLUDE_FROM_ALL YES
+  SYSTEM YES
+)
+# tinygltf has its own json.hpp and stb_image_ libraries
+target_compile_definitions(tinygltf PUBLIC TINYGLTF_NO_EXTERNAL_IMAGE)
 
 # shaderc_combined (from Vulkan SDK)
 find_package(Vulkan REQUIRED COMPONENTS shaderc_combined REQUIRED)
