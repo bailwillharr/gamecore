@@ -66,6 +66,8 @@ public:
     Content& content();
     Window& window();
     RenderBackend& renderBackend();
+    DebugUI& debugUI();
+    World& world();
 
     // Call before using any engine functionality (apart from logging)
     static void initialise(const AppInitOptions& options);

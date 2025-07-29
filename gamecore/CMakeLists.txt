@@ -18,7 +18,7 @@ set(SRC_FILES
 	"src/gc_jobs.cpp"
 	"src/gc_content.cpp"
 	"src/gc_disk_io.cpp"
-	"src/gc_asset_id.cpp"
+	"src/gc_name.cpp"
 	"src/gc_units.cpp"
 	"src/gc_window.cpp"
 	"src/gc_vulkan_device.cpp"
@@ -34,6 +34,7 @@ set(SRC_FILES
 	"src/gc_world.cpp"
 	"src/gc_importer_gltf.cpp"
 	"src/gc_ecs.cpp"
+	"src/gc_transform_system.cpp"
 )
 
 # Public API includes
@@ -50,7 +51,7 @@ set(INCLUDE_FILES
 	"include/gamecore/gc_abort.h"
 	"include/gamecore/gc_disk_io.h"
 	"include/gamecore/gc_crc_table.h"
-	"include/gamecore/gc_asset_id.h"
+	"include/gamecore/gc_name.h"
 	"include/gamecore/gc_gcpak.h"
 	"include/gamecore/gc_stopwatch.h"
 	"include/gamecore/gc_units.h"
@@ -67,6 +68,8 @@ set(INCLUDE_FILES
 	"include/gamecore/gc_world.h"
 	"include/gamecore/gc_importer_gltf.h"
 	"include/gamecore/gc_ecs.h"
+	"include/gamecore/gc_core_components.h"
+	"include/gamecore/gc_transform_system.h"
 )
 
 # gamecore is a static library

@@ -3,10 +3,12 @@
 #include "gamecore/gc_ecs.h"
 #include "gamecore/gc_abort.h"
 #include "gamecore/gc_assert.h"
+#include "gamecore/gc_name.h"
+#include "gamecore/gc_core_components.h"
 
-#include <unordered_map>
-#include <typeinfo>
+#include <vector>
 #include <memory>
+#include <stack>
 
 #include <vec3.hpp>
 #include <ext/quaternion_float.hpp>
@@ -15,136 +17,135 @@
 
 namespace gc {
 
+template <typename T>
+concept ValidDerivedSystem = requires(World& world) { T(world); };
+
 class World {
+    struct ComponentArrayEntry {
+        std::unique_ptr<IComponentArray> component_array;
+        ComponentArrayType type;
+    };
+
+    std::vector<ComponentArrayEntry> m_component_arrays{};
+    std::vector<Signature> m_entity_signatures{};
+    std::stack<Entity> m_free_entity_ids;
+    std::vector<std::unique_ptr<System>> m_systems{};
+
 public:
     World();
     World(const World&) = delete;
-    World& operator=(const World&) = delete;
+
     ~World();
+
+    World& operator=(const World&) = delete;
 
     void update(float ts);
 
-    Entity createEntity();
+    Entity createEntity(Name name, Entity parent = ENTITY_NONE, const glm::vec3& position = glm::vec3{0.0f, 0.0f, 0.0f},
+                        const glm::quat& rotation = glm::quat{1.0f, 0.0f, 0.0f, 0.0f}, const glm::vec3& scale = glm::vec3{1.0f, 1.0f, 1.0f});
 
-    size_t getComponentSignaturePosition(size_t hash);
+    // This function will only succeed when the only remaining component is the TransformComponent
+    bool tryDeleteEntity(Entity entity);
 
-    template <typename T>
+    // Create a ComponentArray for the given component
+    template <typename T, ComponentArrayType ArrayType>
     void registerComponent()
     {
-        size_t hash = typeid(T).hash_code();
-        GC_ASSERT(m_component_arrays.contains(hash) == false && "Registering component type more than once.");
-        m_component_arrays.emplace(hash, std::make_unique<ComponentArray<T>>());
+        const uint32_t component_index = getComponentIndex<T>();
+        GC_ASSERT(component_index == m_component_arrays.size());
+        m_component_arrays.emplace_back(std::make_unique<ComponentArray<T, ArrayType>>(), ArrayType);
+    }
 
-        size_t signature_position = m_next_signature_position;
-        ++m_next_signature_position;
-        GC_ASSERT(signature_position < MAX_COMPONENTS && "Registering too many components!");
-        GC_ASSERT(m_component_signature_positions.contains(hash) == false);
-        m_component_signature_positions.emplace(hash, signature_position);
+    // The returned reference can be invalidated when addComponent() is called again for the same component type.
+    template <typename T>
+    T& addComponent(const Entity entity)
+    {
+        GC_ASSERT(entity != ENTITY_NONE);
+
+        const uint32_t component_index = getComponentIndex<T>();
+
+        GC_ASSERT(entity < static_cast<uint32_t>(m_entity_signatures.size()));
+        GC_ASSERT(!m_entity_signatures[entity].hasComponentIndex(component_index) && "Component already exists!");
+
+        m_entity_signatures[entity].setWithIndex(component_index);
+
+        GC_ASSERT(component_index < static_cast<uint32_t>(m_component_arrays.size()));
+        GC_ASSERT(m_component_arrays[component_index].component_array);
+
+        m_component_arrays[component_index].component_array->addComponent(entity);
+
+        if (m_component_arrays[component_index].type == ComponentArrayType::SPARSE) {
+            auto& component_array = static_cast<ComponentArray<T, ComponentArrayType::SPARSE>&>(*(m_component_arrays[component_index].component_array));
+            return component_array.get(entity);
+        }
+        else {
+            auto& component_array = static_cast<ComponentArray<T, ComponentArrayType::DENSE>&>(*(m_component_arrays[component_index].component_array));
+            return component_array.get(entity);
+        }
     }
 
     template <typename T>
-    T* getComponent(Entity entity)
+    void removeComponent(const Entity entity)
     {
-        // check if component exists on entity:
-        size_t hash = typeid(T).hash_code();
-        size_t signature_position = m_component_signature_positions.at(hash);
-        const auto& entity_signature = m_signatures.at(entity);
-        if (entity_signature.test(signature_position) == false) {
+        GC_ASSERT(entity != ENTITY_NONE);
+
+        const uint32_t component_index = getComponentIndex<T>();
+
+        GC_ASSERT(entity < static_cast<uint32_t>(m_entity_signatures.size()));
+        GC_ASSERT(m_entity_signatures[entity].hasComponentIndex(component_index) &&
+                  "Attempt to remove component from entity. But component didn't exist in the first place!");
+
+        m_entity_signatures[entity].setWithIndex(component_index, false);
+
+        GC_ASSERT(component_index < static_cast<uint32_t>(m_component_arrays.size()));
+        GC_ASSERT(m_component_arrays[component_index].component_array);
+
+        m_component_arrays[component_index].component_array->removeComponent(entity);
+    }
+
+    // returns nullptr if component does not exist in entity
+    template <typename T>
+    T* getComponent(const Entity entity)
+    {
+        GC_ASSERT(entity != ENTITY_NONE);
+
+        const uint32_t component_index = getComponentIndex<T>();
+
+        GC_ASSERT(entity < static_cast<uint32_t>(m_entity_signatures.size()));
+
+        if (!m_entity_signatures[entity].hasComponentIndex(component_index)) {
             return nullptr;
         }
+        else {
+            GC_ASSERT(component_index < static_cast<uint32_t>(m_component_arrays.size()));
+            GC_ASSERT(m_component_arrays[component_index].component_array);
 
-        auto array = getComponentArray<T>();
-        return array->getData(entity);
-    }
-
-    template <typename T>
-    T* addComponent(Entity entity, T&& comp = T{})
-    {
-        size_t hash = typeid(T).hash_code();
-
-        auto array = getComponentArray<T>();
-        array->insertData(entity, std::move(comp)); // errors if entity already exists in array
-
-        // set the component bit for this entity
-        size_t signature_position = m_component_signature_positions.at(hash);
-        auto& signature_ref = m_signatures.at(entity);
-        signature_ref.set(signature_position);
-
-        for (auto& [system_hash, system] : m_ecs_systems) {
-            if (system->m_entities.contains(entity)) continue;
-            if ((system->m_signature & signature_ref) == system->m_signature) {
-                system->m_entities.insert(entity);
-                system->onComponentInsert(entity);
+            if (m_component_arrays[component_index].type == ComponentArrayType::SPARSE) {
+                auto& component_array = static_cast<ComponentArray<T, ComponentArrayType::SPARSE>&>(*(m_component_arrays[component_index].component_array));
+                return &component_array.get(entity);
+            }
+            else {
+                auto& component_array = static_cast<ComponentArray<T, ComponentArrayType::DENSE>&>(*(m_component_arrays[component_index].component_array));
+                return &component_array.get(entity);
             }
         }
-
-        return array->getData(entity);
     }
 
-    template <typename T>
+    template <ValidDerivedSystem T>
     void registerSystem()
     {
-        size_t hash = typeid(T).hash_code();
-        m_ecs_systems.emplace_back(hash, std::make_unique<T>(this));
+        const uint32_t system_index = getSystemIndex<T>();
+        GC_ASSERT(system_index == m_systems.size());
+        m_systems.push_back(std::make_unique<T>(*this));
     }
 
-    /* Pushes old systems starting at 'index' along by 1 */
-    template <typename T>
-    void registerSystemAtIndex(size_t index)
+    template<ValidDerivedSystem T>
+    T& getSystem()
     {
-        size_t hash = typeid(T).hash_code();
-        m_ecs_systems.emplace(m_ecs_systems.begin() + index, hash, std::make_unique<T>(this));
+        const uint32_t system_index = getSystemIndex<T>();
+        GC_ASSERT(system_index < m_systems.size());
+        return static_cast<T&>(*m_systems[system_index]);
     }
-
-    template <typename T>
-    T* getSystem()
-    {
-        size_t hash = typeid(T).hash_code();
-        System* found_system = nullptr;
-        for (auto& [system_hash, system] : m_ecs_systems) {
-            if (hash == system_hash) found_system = system.get();
-        }
-        if (found_system == nullptr) {
-            abortGame("Unable to find system");
-        }
-        T* casted_ptr = dynamic_cast<T*>(found_system);
-        if (casted_ptr == nullptr) {
-            abortGame("Failed to cast system pointer!");
-        }
-        return casted_ptr;
-    }
-
-public:
-    Entity m_next_entity_id = 1; // 0 is not a valid entity
-private:
-
-    /* ecs stuff */
-
-    size_t m_next_signature_position = 0;
-    // maps component hashes to signature positions
-    std::unordered_map<size_t, size_t> m_component_signature_positions{};
-    // maps entity ids to their signatures. TODO: Make this a vector
-    std::unordered_map<Entity, std::bitset<MAX_COMPONENTS>> m_signatures{};
-    // maps component hashes to their arrays
-    std::unordered_map<size_t, std::unique_ptr<IComponentArray>> m_component_arrays{};
-
-    // hashes and associated systems
-    std::vector<std::pair<size_t, std::unique_ptr<System>>> m_ecs_systems{};
-
-    template <typename T>
-    ComponentArray<T>* getComponentArray()
-    {
-        size_t hash = typeid(T).hash_code();
-        auto it = m_component_arrays.find(hash);
-        if (it == m_component_arrays.end()) {
-            abortGame("Cannot find component array.");
-        }
-        auto ptr = it->second.get();
-        auto casted_ptr = dynamic_cast<ComponentArray<T>*>(ptr);
-        GC_ASSERT(casted_ptr != nullptr);
-        return casted_ptr;
-    }
-
 };
 
 } // namespace gc

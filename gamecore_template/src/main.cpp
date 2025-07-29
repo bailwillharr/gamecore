@@ -1,9 +1,11 @@
 #include <gamecore/gc_app.h>
 #include <gamecore/gc_window.h>
+#include <gamecore/gc_world.h>
+#include <gamecore/gc_core_components.h>
 
 #include <SDL3/SDL_main.h>
 
-#include <fstream>
+#include <atomic>
 
 struct CmdLineOptions {};
 
@@ -14,17 +16,8 @@ static CmdLineOptions parseCmdLine(int argc, char* argv[])
     return {};
 }
 
-struct X {
-    int i;
-    X() = default;
-};
-
 int main([[maybe_unused]] int argc, [[maybe_unused]] char* argv[])
 {
-
-    std::ifstream my_file("C:\\storage dump 2\\test.raw", std::ios::binary | std::ios::in);
-
-
     const CmdLineOptions cmd_line_options = parseCmdLine(argc, argv);
 
     gc::AppInitOptions init_options{};

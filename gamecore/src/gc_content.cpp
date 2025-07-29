@@ -9,7 +9,7 @@
 #include "gamecore/gc_disk_io.h"
 #include "gamecore/gc_logger.h"
 #include "gamecore/gc_gcpak.h"
-#include "gamecore/gc_asset_id.h"
+#include "gamecore/gc_name.h"
 #include "gamecore/gc_units.h"
 #include "gamecore/gc_assert.h"
 
@@ -95,7 +95,7 @@ Content::Content()
                             info.entry = asset_entry.value();
                             info.file_index = file_index;
                             m_asset_infos.emplace(info.entry.crc32_id, info); // crc32 is stored in both key and value here
-                            GC_DEBUG("    {} ({})", nameFromID(info.entry.crc32_id), bytesToHumanReadable(info.entry.size));
+                            GC_DEBUG("    {} ({})", assetIDToStr(info.entry.crc32_id), bytesToHumanReadable(info.entry.size));
                         }
                         else {
                             GC_ERROR("Failed to locate entry in {}, Skipping the rest of this file.", dir_entry.path().filename().string());
@@ -118,12 +118,12 @@ std::vector<uint8_t> Content::loadAsset(std::uint32_t id)
 
     // get asset info
     if (!m_asset_infos.contains(id)) {
-        GC_ERROR("Asset {} not found in any .gcpak file", nameFromID(id));
+        GC_ERROR("Asset {} not found in any .gcpak file", assetIDToStr(id));
         return {};
     }
     PackageAssetInfo asset_info = m_asset_infos[id];
     if (asset_info.entry.size_uncompressed != 0) {
-        GC_ERROR("Asset {} is compressed which is not supported yet", nameFromID(id));
+        GC_ERROR("Asset {} is compressed which is not supported yet", assetIDToStr(id));
         return {};
     }
 
@@ -138,7 +138,7 @@ std::vector<uint8_t> Content::loadAsset(std::uint32_t id)
         std::vector<uint8_t> data(asset_info.entry.size);
         file.read(reinterpret_cast<char*>(data.data()), asset_info.entry.size);
         if (file.gcount() != asset_info.entry.size) {
-            GC_ERROR("file.read() failed to read asset {} from file! {}/{} bytes read", nameFromID(id), file.gcount(), asset_info.entry.size);
+            GC_ERROR("file.read() failed to read asset {} from file! {}/{} bytes read", assetIDToStr(id), file.gcount(), asset_info.entry.size);
             return {};
         }
         else {

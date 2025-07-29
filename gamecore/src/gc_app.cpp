@@ -133,6 +133,18 @@ RenderBackend& App::renderBackend()
     return *m_render_backend;
 }
 
+DebugUI& App::debugUI()
+{
+    GC_ASSERT(m_debug_ui);
+    return *m_debug_ui;
+}
+
+World& App::world()
+{
+    GC_ASSERT(m_world);
+    return *m_world;
+}
+
 void App::run()
 {
     GC_TRACE("Starting game loop...");
@@ -158,6 +170,8 @@ void App::run()
                 }
             }
         }
+
+        m_world->update(1.0f);
 
         m_debug_ui->update();
 

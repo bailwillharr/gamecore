@@ -1,4 +1,4 @@
-#include "gamecore/gc_asset_id.h"
+#include "gamecore/gc_name.h"
 
 #include <format>
 #include <string>
@@ -9,7 +9,7 @@
 namespace gc {
 
 #ifdef GC_LOOKUP_ASSET_IDS
-static std::unordered_map<std::uint32_t, std::string> s_id_lut{};
+static std::unordered_map<Name, std::string> s_id_lut{};
 
 void loadAssetIDTable(const std::filesystem::path& file_path)
 {
@@ -35,7 +35,7 @@ void loadAssetIDTable(const std::filesystem::path& file_path)
 void loadAssetIDTable(const std::filesystem::path& file_path) { (void)file_path; }
 #endif
 
-std::string nameFromID(std::uint32_t id)
+std::string assetIDToStr(Name id)
 {
 #ifdef GC_LOOKUP_ASSET_IDS
     if (s_id_lut.contains(id)) {
