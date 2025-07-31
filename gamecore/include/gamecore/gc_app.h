@@ -46,6 +46,11 @@ class App {
     const std::thread::id m_main_thread_id{};
     std::filesystem::path m_save_directory{};
 
+    const uint64_t m_performance_counter_frequency{};
+    const uint64_t m_performance_counter_init{};
+
+    uint64_t m_last_frame_begin_stamp{};
+
 private:
     /* application lifetime is controlled by static variable 'instance' in instance() static method */
     explicit App(const AppInitOptions& options);
@@ -59,6 +64,8 @@ public:
     App& operator=(App&&) = delete;
 
     bool isMainThread() const;
+
+    uint64_t getNanos() const;
 
     /* Access global engine components with these methods: */
 

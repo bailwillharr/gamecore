@@ -30,40 +30,43 @@ Entity World::createEntity(Name name, Entity parent, const glm::vec3& position, 
 
     TransformComponent& t = addComponent<TransformComponent>(entity);
     t.name = name;
-    t.position = position;
-    t.rotation = rotation;
-    t.scale = scale;
+    t.setPosition(position);
+    t.setRotation(rotation);
+    t.setScale(scale);
 
     getSystem<TransformSystem>().setParent(entity, parent);
 
     return entity;
 }
 
-bool World::tryDeleteEntity(const Entity entity)
+void World::deleteEntity(const Entity entity)
 {
-    // TODO 1: Delete all the entity's components.
-    // TODO 2: Delete the entity's children recursively
     GC_ASSERT(entity < static_cast<uint32_t>(m_entity_signatures.size()));
     GC_ASSERT(m_entity_signatures[entity].hasTypes<TransformComponent>());
 
-    const uint32_t transform_component_index = getComponentIndex<TransformComponent>();
-
-    GC_ASSERT(transform_component_index < static_cast<uint32_t>(m_component_arrays.size()));
-    GC_ASSERT(m_component_arrays[transform_component_index].component_array);
-
-    if (m_entity_signatures[entity].componentCount() == 1) {
-        m_component_arrays[transform_component_index].component_array->removeComponent(entity);
-        return true;
+    // delete children:
+    TransformSystem& transform_system = getSystem<TransformSystem>();
+    if (auto it = transform_system.m_parent_children.find(entity); it != transform_system.m_parent_children.end()) {
+        for (Entity child : transform_system.m_parent_children[entity]) {
+            deleteEntity(child);
+        }
     }
-    else {
-        return false;
+
+    // delete all components
+    for (uint32_t i = 0; i < static_cast<uint32_t>(m_component_arrays.size()); ++i) {
+        if (m_entity_signatures[entity].hasComponentIndex(i)) {
+            m_component_arrays[i].component_array->removeComponent(entity);
+        }
     }
+
+    m_entity_signatures[entity] = Signature{}; // an empty signature in m_entity_signatures means no entity
+    m_free_entity_ids.push(entity);
 }
 
-void World::update(float ts)
+void World::update(double dt)
 {
     for (auto& system : m_systems) {
-         system->onUpdate(ts);
+        system->onUpdate(dt);
     }
 }
 

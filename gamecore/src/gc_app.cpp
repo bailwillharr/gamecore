@@ -5,6 +5,7 @@
 #include <string>
 
 #include <SDL3/SDL_init.h>
+#include <SDL3/SDL_timer.h>
 #include <SDL3/SDL_filesystem.h>
 
 #include <tracy/Tracy.hpp>
@@ -24,7 +25,10 @@ namespace gc {
 // empty ptr, it is initialised manually in application
 App* App::s_app = nullptr;
 
-App::App(const AppInitOptions& options) : m_main_thread_id(std::this_thread::get_id())
+App::App(const AppInitOptions& options)
+    : m_main_thread_id(std::this_thread::get_id()),
+      m_performance_counter_frequency(SDL_GetPerformanceFrequency()),
+      m_performance_counter_init(SDL_GetPerformanceCounter())
 {
     // Setup app metadata for SDL
     {
@@ -85,6 +89,10 @@ App::~App()
     }
 }
 
+bool App::isMainThread() const { return std::this_thread::get_id() == m_main_thread_id; }
+
+uint64_t App::getNanos() const { return (SDL_GetPerformanceCounter() - m_performance_counter_init) * 1'000'000'000 / m_performance_counter_frequency; }
+
 void App::initialise(const AppInitOptions& options)
 {
     if (s_app) {
@@ -106,8 +114,6 @@ void App::shutdown()
 }
 
 App& App::instance() { return *s_app; }
-
-bool App::isMainThread() const { return std::this_thread::get_id() == m_main_thread_id; }
 
 Jobs& App::jobs()
 {
@@ -148,7 +154,15 @@ World& App::world()
 void App::run()
 {
     GC_TRACE("Starting game loop...");
+
+    m_last_frame_begin_stamp = getNanos() - 16'666'667; // treat the first delta time as 16ms (1/60fps)
+
+    renderBackend().getSwapchain().setRequestedPresentMode(VK_PRESENT_MODE_FIFO_KHR, false);
+
     while (!window().shouldQuit()) {
+
+        const uint64_t frame_begin_stamp = getNanos();
+        const double dt = static_cast<double>(frame_begin_stamp - m_last_frame_begin_stamp) / 1'000'000'000.0;
 
         window().processEvents();
 
@@ -169,13 +183,18 @@ void App::run()
                     GC_ERROR("SDL_SetWindowRelativeMouseMode() error: {}", SDL_GetError());
                 }
             }
+            if (window().getKeyPress(SDL_SCANCODE_T)) {
+                m_world->getComponent<TransformComponent>(0)->setPosition({1.0f, 1.0f, 1.0f});
+            }
         }
 
-        m_world->update(1.0f);
+        m_world->update(dt);
 
         m_debug_ui->update();
 
         renderBackend().renderFrame(window().getResizedFlag());
+
+        m_last_frame_begin_stamp = frame_begin_stamp;
 
         FrameMark;
     }

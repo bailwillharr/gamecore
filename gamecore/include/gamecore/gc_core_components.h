@@ -9,17 +9,37 @@
 
 namespace gc {
 
-struct TransformComponent {
+class TransformComponent {
     friend class TransformSystem;
 
-    Name name;
-    glm::vec3 position;
-    glm::quat rotation;
-    glm::vec3 scale;
+    glm::vec3 m_position{0.0f, 0.0f, 0.0f};
+    glm::quat m_rotation{1.0f, 0.0f, 0.0f, 0.0f};
+    glm::vec3 m_scale{1.0f};
+    Entity m_parent = ENTITY_NONE; // set with TransformSystem::setParent()
+    glm::mat4 m_world_matrix{1.0f};
+    bool m_dirty = true;
 
-private:
-    Entity parent = ENTITY_NONE; // set with TransformSystem::setParent()
-    glm::mat4 world_matrix;
+public:
+    Name name;
+
+public:
+    void setPosition(const glm::vec3& position)
+    {
+        m_position = position;
+        m_dirty = true;
+    }
+
+    void setRotation(const glm::quat& rotation)
+    {
+        m_rotation = rotation;
+        m_dirty = true;
+    }
+
+    void setScale(const glm::vec3& scale)
+    {
+        m_scale = scale;
+        m_dirty = true;
+    }
 };
 
 } // namespace gc

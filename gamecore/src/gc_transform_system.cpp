@@ -9,30 +9,16 @@ namespace gc {
 
 TransformSystem::TransformSystem(gc::World& world) : gc::System(world, Signature::fromTypes<TransformComponent>()) {}
 
-void TransformSystem::onUpdate(float ts)
+void TransformSystem::onUpdate(double dt)
 {
-    (void)ts;
+    (void)dt;
 
-    /*
-    for (gc::Entity entity : m_entities) {
-        gc::TransformComponent* t = m_world.getComponent<gc::TransformComponent>(entity);
-        GC_ASSERT(t);
-
-        glm::mat4 transform = glm::mat4_cast(t->rotation);
-        transform[3][0] = t->position.x;
-        transform[3][1] = t->position.y;
-        transform[3][2] = t->position.z;
-        transform = glm::scale(transform, t->scale);
-
-        if (t->parent != gc::ENTITY_NONE) {
-            const gc::TransformComponent* parent_t = m_world.getComponent<gc::TransformComponent>(t->parent);
-            GC_ASSERT(parent_t);
-            transform = parent_t->world_matrix * transform;
+    m_world.forEach<TransformComponent>([&]([[maybe_unused]] Entity entity, TransformComponent& t) {
+        if (t.m_dirty) {
+            updateWorldMatricesRecursively(entity);
+            t.m_dirty = false;
         }
-
-        t->world_matrix = transform;
-    }
-    */
+    });
 }
 
 void TransformSystem::setParent(Entity entity, Entity parent)
@@ -40,24 +26,47 @@ void TransformSystem::setParent(Entity entity, Entity parent)
     TransformComponent* entity_transform = m_world.getComponent<TransformComponent>(entity);
     GC_ASSERT(entity_transform);
 
-    if (entity_transform->parent != ENTITY_NONE) {
-        GC_ASSERT(m_children.contains(entity_transform->parent));
-        std::vector<Entity>& previous_parents_children = m_children[entity_transform->parent];
+    if (entity_transform->m_parent != ENTITY_NONE) {
+        // remove entity from old parent's children array
+        GC_ASSERT(m_parent_children.contains(entity_transform->m_parent));
+        auto& previous_parents_children = m_parent_children[entity_transform->m_parent];
         auto it = std::find(previous_parents_children.cbegin(), previous_parents_children.cend(), entity);
         GC_ASSERT(it != previous_parents_children.cend());
         previous_parents_children.erase(it);
     }
 
-    if (parent) {
-        if (m_children.contains(parent)) {
-            m_children[parent].push_back(entity);
+    if (parent != ENTITY_NONE) {
+        // add entity to new parent's children array
+        if (auto it = m_parent_children.find(parent); it != m_parent_children.end()) {
+            it->second.push_back(entity);
         }
         else {
-            m_children.insert({parent, {entity}});
+            m_parent_children.insert({parent, {entity}});
         }
     }
 
-    entity_transform->parent = parent;
+    entity_transform->m_parent = parent;
+}
+
+void TransformSystem::updateWorldMatricesRecursively(const Entity entity, const glm::mat4& parent_matrix)
+{
+    GC_TRACE("Updating world matrix for {}", entity);
+
+    TransformComponent* t = m_world.getComponent<TransformComponent>(entity);
+    GC_ASSERT(t);
+
+    glm::mat4 local_matrix = glm::mat4_cast(t->m_rotation);
+    local_matrix[3][0] = t->m_position.x;
+    local_matrix[3][1] = t->m_position.y;
+    local_matrix[3][2] = t->m_position.z;
+    local_matrix = glm::scale(local_matrix, t->m_scale);
+    t->m_world_matrix = parent_matrix * local_matrix;
+
+    if (auto it = m_parent_children.find(entity); it != m_parent_children.end()) {
+        for (Entity child : it->second) {
+            updateWorldMatricesRecursively(child, t->m_world_matrix);
+        }
+    }
 }
 
 } // namespace gc

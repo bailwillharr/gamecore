@@ -28,8 +28,8 @@ int main([[maybe_unused]] int argc, [[maybe_unused]] char* argv[])
     gc::App::initialise(init_options);
 
     gc::App& app = gc::app();
-    gc::Window& win = app.window();
 
+    gc::Window& win = app.window();
     win.setTitle("Hello world!");
     win.setIsResizable(true);
     win.setWindowVisibility(true);

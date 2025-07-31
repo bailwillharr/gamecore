@@ -75,7 +75,7 @@ public:
     template <typename... Ts>
     bool hasTypes() const
     {
-        return (m_bits.test(getComponentIndex<Ts>()) && ...);
+        return (... && m_bits.test(getComponentIndex<Ts>()));
     }
 
     uint32_t componentCount() const { return static_cast<uint32_t>(m_bits.count()); }
@@ -198,7 +198,7 @@ public:
 
     System& operator=(const System&) = delete;
 
-    virtual void onUpdate(float ts) = 0;
+    virtual void onUpdate(double dt) = 0;
 };
 
 } // namespace gc

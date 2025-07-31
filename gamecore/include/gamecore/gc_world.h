@@ -39,13 +39,13 @@ public:
 
     World& operator=(const World&) = delete;
 
-    void update(float ts);
+    void update(double dt);
 
     Entity createEntity(Name name, Entity parent = ENTITY_NONE, const glm::vec3& position = glm::vec3{0.0f, 0.0f, 0.0f},
                         const glm::quat& rotation = glm::quat{1.0f, 0.0f, 0.0f, 0.0f}, const glm::vec3& scale = glm::vec3{1.0f, 1.0f, 1.0f});
 
     // This function will only succeed when the only remaining component is the TransformComponent
-    bool tryDeleteEntity(Entity entity);
+    void deleteEntity(Entity entity);
 
     // Create a ComponentArray for the given component
     template <typename T, ComponentArrayType ArrayType>
@@ -139,12 +139,26 @@ public:
         m_systems.push_back(std::make_unique<T>(*this));
     }
 
-    template<ValidDerivedSystem T>
+    template <ValidDerivedSystem T>
     T& getSystem()
     {
         const uint32_t system_index = getSystemIndex<T>();
         GC_ASSERT(system_index < m_systems.size());
         return static_cast<T&>(*m_systems[system_index]);
+    }
+
+    template <typename... Ts, typename Func>
+    void forEach(Func&& func)
+    {
+        (void)func;
+        for (Entity entity = 0; entity < m_entity_signatures.size(); ++entity) {
+            // erased entities will have an empty signature so will be skipped over here.
+            if (m_entity_signatures[entity].hasTypes<Ts...>()) {
+                auto components = std::make_tuple(getComponent<Ts>(entity)...);
+                GC_ASSERT((... && std::get<Ts*>(components)));
+                std::apply([&](Ts*... comps) { func(entity, *comps...); }, components);
+            }
+        }
     }
 };
 
