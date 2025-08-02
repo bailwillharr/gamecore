@@ -3,7 +3,6 @@
 #include <memory>
 #include <thread>
 #include <filesystem>
-#include <string>
 
 /*
 This is the root of the entire game.

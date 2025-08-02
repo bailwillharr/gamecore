@@ -3,7 +3,6 @@
 #include <cstdlib>
 
 #include <format>
-#include <string_view>
 
 #include <SDL3/SDL_messagebox.h>
 

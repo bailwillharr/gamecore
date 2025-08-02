@@ -5,8 +5,6 @@
 
 #include <SDL3/SDL_main.h>
 
-#include <atomic>
-
 struct CmdLineOptions {};
 
 static CmdLineOptions parseCmdLine(int argc, char* argv[])
