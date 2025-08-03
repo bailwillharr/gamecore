@@ -155,14 +155,14 @@ void App::run()
 {
     GC_TRACE("Starting game loop...");
 
-    m_last_frame_begin_stamp = getNanos() - 16'666'667; // treat the first delta time as 16ms (1/60fps)
+    m_last_frame_begin_stamp = getNanos() - 1'000'000; // treat the first delta time as 1 ms
 
     renderBackend().getSwapchain().setRequestedPresentMode(VK_PRESENT_MODE_FIFO_KHR, false);
 
     while (!window().shouldQuit()) {
 
-        const uint64_t frame_begin_stamp = getNanos();
-        const double dt = static_cast<double>(frame_begin_stamp - m_last_frame_begin_stamp) / 1'000'000'000.0;
+        const auto frame_begin_stamp = getNanos();
+        const auto dt = (frame_begin_stamp - m_last_frame_begin_stamp) / 1'000'000'000.0;
 
         window().processEvents();
 
