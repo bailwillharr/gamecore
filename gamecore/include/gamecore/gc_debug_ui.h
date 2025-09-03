@@ -8,7 +8,7 @@ struct SDL_Window;   // forward-dec
 
 namespace gc {
 
-class RenderBackend; // forward-dec
+struct RenderBackendInfo; // forward-dec
 
 class DebugUI {
     ImGuiContext* m_imgui_ctx{};
@@ -22,7 +22,7 @@ public:
     bool active{};
 
 public:
-    DebugUI(SDL_Window* window, RenderBackend& render_backend, const std::filesystem::path& config_file);
+    DebugUI(SDL_Window* window, const RenderBackendInfo& render_backend_info, const std::filesystem::path& config_file);
     DebugUI(const DebugUI&) = delete;
     DebugUI(DebugUI&&) = delete;
 

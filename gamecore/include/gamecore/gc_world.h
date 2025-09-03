@@ -17,9 +17,6 @@
 
 namespace gc {
 
-template <typename T>
-concept ValidDerivedSystem = requires(World& world) { T(world); };
-
 class World {
     struct ComponentArrayEntry {
         std::unique_ptr<IComponentArray> component_array;
@@ -48,7 +45,7 @@ public:
     void deleteEntity(Entity entity);
 
     // Create a ComponentArray for the given component
-    template <typename T, ComponentArrayType ArrayType>
+    template <ValidComponent T, ComponentArrayType ArrayType>
     void registerComponent()
     {
         const uint32_t component_index = getComponentIndex<T>();
@@ -57,7 +54,7 @@ public:
     }
 
     // The returned reference can be invalidated when addComponent() is called again for the same component type.
-    template <typename T>
+    template <ValidComponent T>
     T& addComponent(const Entity entity)
     {
         GC_ASSERT(entity != ENTITY_NONE);
@@ -84,7 +81,7 @@ public:
         }
     }
 
-    template <typename T>
+    template <ValidComponent T>
     void removeComponent(const Entity entity)
     {
         GC_ASSERT(entity != ENTITY_NONE);
@@ -104,7 +101,7 @@ public:
     }
 
     // returns nullptr if component does not exist in entity
-    template <typename T>
+    template <ValidComponent T>
     T* getComponent(const Entity entity)
     {
         GC_ASSERT(entity != ENTITY_NONE);
@@ -147,10 +144,9 @@ public:
         return static_cast<T&>(*m_systems[system_index]);
     }
 
-    template <typename... Ts, typename Func>
+    template <ValidComponent... Ts, typename Func>
     void forEach(Func&& func)
     {
-        (void)func;
         for (Entity entity = 0; entity < m_entity_signatures.size(); ++entity) {
             // erased entities will have an empty signature so will be skipped over here.
             if (m_entity_signatures[entity].hasTypes<Ts...>()) {

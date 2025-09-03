@@ -26,10 +26,25 @@
 #include "gamecore/gc_vulkan_device.h"
 #include "gamecore/gc_vulkan_allocator.h"
 #include "gamecore/gc_vulkan_swapchain.h"
+#include "gamecore/gc_world_draw_data.h"
 
 struct SDL_Window; // forward-dec
 
 namespace gc {
+
+class DrawData; // forward-dec
+
+// Handles and settings needed for setting up ImGui's Vulkan backend
+struct RenderBackendInfo {
+    VkInstance instance;
+    VkDevice device;
+    VkPhysicalDevice physical_device;
+    VkQueue main_queue;
+    uint32_t main_queue_family_index;
+    VkDescriptorPool main_descriptor_pool;
+    VkFormat framebuffer_format;
+    VkFormat depth_stencil_format;
+};
 
 class RenderBackend {
     VulkanDevice m_device;
@@ -37,7 +52,7 @@ class RenderBackend {
     VulkanSwapchain m_swapchain;
 
     // global descriptor pool
-    VkDescriptorPool m_desciptor_pool{};
+    VkDescriptorPool m_main_desciptor_pool{};
 
     VkImage m_framebuffer_image{};
     VmaAllocation m_framebuffer_image_allocation{};
@@ -71,17 +86,25 @@ public:
 
     RenderBackend operator=(const RenderBackend&) = delete;
 
+    /* methods for manipulating the draw data */
+
+
+    /* Renders to framebuffer and presents framebuffer to the screen */
     void renderFrame(bool window_resized);
 
-    VulkanDevice& getDevice() { return m_device; }
-    VulkanSwapchain& getSwapchain() { return m_swapchain; }
-    VmaAllocator getAllocator() const { return m_allocator.getHandle(); }
-
-    VkDescriptorPool getDescriptorPool() const { return m_desciptor_pool; }
-
-    VkFormat getDepthStencilFormat() const { return m_depth_stencil_format; }
-    VkImage getDepthStencilImage() const { return m_depth_stencil; }
-    VkImageView getDepthStencilImageView() const { return m_depth_stencil_view; }
+    RenderBackendInfo getInfo() const
+    {
+        RenderBackendInfo info{};
+        info.instance = m_device.getInstance();
+        info.device = m_device.getHandle();
+        info.physical_device = m_device.getPhysicalDevice();
+        info.main_queue = m_device.getMainQueue();
+        info.main_queue_family_index = m_device.getMainQueueFamilyIndex();
+        info.main_descriptor_pool = m_main_desciptor_pool;
+        info.framebuffer_format = m_swapchain.getSurfaceFormat().format;
+        info.depth_stencil_format = m_depth_stencil_format;
+        return info;
+    }
 
     void waitIdle();
 

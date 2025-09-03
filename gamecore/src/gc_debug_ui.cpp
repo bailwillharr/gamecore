@@ -15,7 +15,7 @@
 
 namespace gc {
 
-DebugUI::DebugUI(SDL_Window* window, RenderBackend& render_backend, const std::filesystem::path& config_file)
+DebugUI::DebugUI(SDL_Window* window, const RenderBackendInfo& render_backend_info, const std::filesystem::path& config_file)
 {
     m_imgui_ctx = ImGui::CreateContext();
 
@@ -31,7 +31,7 @@ DebugUI::DebugUI(SDL_Window* window, RenderBackend& render_backend, const std::f
         auto loader_func = [](const char* function_name, void* user_data) -> PFN_vkVoidFunction {
             return vkGetInstanceProcAddr(*reinterpret_cast<VkInstance*>(user_data), function_name);
         };
-        VkInstance instance = render_backend.getDevice().getInstance();
+        VkInstance instance = render_backend_info.instance;
         if (!ImGui_ImplVulkan_LoadFunctions(VK_API_VERSION_1_3, loader_func, &instance)) {
             gc::abortGame("ImGui_ImplVulkan_LoadFunctions() error");
         }
@@ -39,23 +39,22 @@ DebugUI::DebugUI(SDL_Window* window, RenderBackend& render_backend, const std::f
 
     /* Init ImGui Vulkan Backend */
     {
-        VkFormat color_attachment_format = render_backend.getSwapchain().getSurfaceFormat().format;
         VkPipelineRenderingCreateInfo rendering_info{};
         rendering_info.sType = VK_STRUCTURE_TYPE_PIPELINE_RENDERING_CREATE_INFO;
         rendering_info.pNext = nullptr;
         rendering_info.viewMask = 0;
         rendering_info.colorAttachmentCount = 1;
-        rendering_info.pColorAttachmentFormats = &color_attachment_format;
-        rendering_info.depthAttachmentFormat = render_backend.getDepthStencilFormat();
-        rendering_info.stencilAttachmentFormat = rendering_info.depthAttachmentFormat;
+        rendering_info.pColorAttachmentFormats = &render_backend_info.framebuffer_format;
+        rendering_info.depthAttachmentFormat = render_backend_info.depth_stencil_format;
+        rendering_info.stencilAttachmentFormat = render_backend_info.depth_stencil_format;
         ImGui_ImplVulkan_InitInfo info{};
         info.ApiVersion = VK_API_VERSION_1_3;
-        info.Instance = render_backend.getDevice().getInstance();
-        info.PhysicalDevice = render_backend.getDevice().getPhysicalDevice();
-        info.Device = render_backend.getDevice().getHandle();
-        info.QueueFamily = render_backend.getDevice().getMainQueueFamilyIndex();
-        info.Queue = render_backend.getDevice().getMainQueue();
-        info.DescriptorPool = render_backend.getDescriptorPool();
+        info.Instance = render_backend_info.instance;
+        info.PhysicalDevice = render_backend_info.physical_device;
+        info.Device = render_backend_info.device;
+        info.QueueFamily = render_backend_info.main_queue_family_index;
+        info.Queue = render_backend_info.main_queue;
+        info.DescriptorPool = render_backend_info.main_descriptor_pool;
         info.RenderPass = VK_NULL_HANDLE;
 
         // There is no reason why the ImGui Vulkan backend should need to know about the swapchain image count.

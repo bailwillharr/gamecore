@@ -1,3 +1,5 @@
+#if 0
+
 #include "gamecore/gc_vulkan_pipeline.h"
 
 #include <fstream>
@@ -237,3 +239,5 @@ void destroyPipeline(VkPipeline pipeline, VkPipelineLayout layout)
 }
 
 } // namespace gc
+
+#endif

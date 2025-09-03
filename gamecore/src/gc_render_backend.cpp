@@ -123,6 +123,7 @@ static void recreateFramebufferImage(VkDevice device, VmaAllocator allocator, Vk
 
 RenderBackend::RenderBackend(SDL_Window* window_handle) : m_device(), m_allocator(m_device), m_swapchain(m_device, window_handle)
 {
+    // create main descriptor pool for long-lasting static resources
     {
         std::array<VkDescriptorPoolSize, 1> pool_sizes = {
             {VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, 1},
@@ -136,7 +137,7 @@ RenderBackend::RenderBackend(SDL_Window* window_handle) : m_device(), m_allocato
         }
         pool_info.poolSizeCount = static_cast<uint32_t>(pool_sizes.size());
         pool_info.pPoolSizes = pool_sizes.data();
-        GC_CHECKVK(vkCreateDescriptorPool(m_device.getHandle(), &pool_info, nullptr, &m_desciptor_pool));
+        GC_CHECKVK(vkCreateDescriptorPool(m_device.getHandle(), &pool_info, nullptr, &m_main_desciptor_pool));
     }
 
     // find depth stencil format to use
@@ -186,7 +187,7 @@ RenderBackend::~RenderBackend()
     vkDestroyImageView(m_device.getHandle(), m_depth_stencil_view, nullptr);
     vmaDestroyImage(m_allocator.getHandle(), m_depth_stencil, m_depth_stencil_allocation);
 
-    vkDestroyDescriptorPool(m_device.getHandle(), m_desciptor_pool, nullptr);
+    vkDestroyDescriptorPool(m_device.getHandle(), m_main_desciptor_pool, nullptr);
 }
 
 void RenderBackend::renderFrame(bool window_resized)
@@ -197,7 +198,8 @@ void RenderBackend::renderFrame(bool window_resized)
 
     auto& stuff = m_fif[m_frame_count % m_fif.size()];
 
-    { // Wait for command buffer to be available
+    // Wait for command buffer to be available
+    {
         ZoneScopedN("Wait for semaphore to reach:");
         ZoneValue(stuff.command_buffer_available_value);
         VkSemaphoreWaitInfo info{};
@@ -318,6 +320,8 @@ void RenderBackend::renderFrame(bool window_resized)
     scissor.offset = {0, 0};
     scissor.extent = swapchain_extent;
     vkCmdSetScissor(stuff.cmd, 0, 1, &scissor);
+
+    // render provided draw_data here
 
     ImGui_ImplVulkan_RenderDrawData(ImGui::GetDrawData(), stuff.cmd);
 

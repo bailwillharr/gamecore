@@ -70,6 +70,7 @@ set(INCLUDE_FILES
 	"include/gamecore/gc_ecs.h"
 	"include/gamecore/gc_core_components.h"
 	"include/gamecore/gc_transform_system.h"
+	"include/gamecore/gc_world_draw_data.h"
 )
 
 # gamecore is a static library

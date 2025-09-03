@@ -68,7 +68,7 @@ App::App(const AppInitOptions& options)
 
     m_render_backend = std::make_unique<RenderBackend>(m_window->getHandle());
 
-    m_debug_ui = std::make_unique<DebugUI>(m_window->getHandle(), *m_render_backend, m_save_directory / "imgui.ini");
+    m_debug_ui = std::make_unique<DebugUI>(m_window->getHandle(), m_render_backend->getInfo(), m_save_directory / "imgui.ini");
 
     m_world = std::make_unique<World>();
 
@@ -156,8 +156,6 @@ void App::run()
     GC_TRACE("Starting game loop...");
 
     m_last_frame_begin_stamp = getNanos() - 1'000'000; // treat the first delta time as 1 ms
-
-    renderBackend().getSwapchain().setRequestedPresentMode(VK_PRESENT_MODE_FIFO_KHR, false);
 
     while (!window().shouldQuit()) {
 

@@ -103,16 +103,19 @@ public:
  * The methods in this class don't actually check if an entity should have a component.
  * This class is just a storage backend while the World actually manages components.
  */
-
 enum class ComponentArrayType { SPARSE, DENSE };
 
-template <typename T, ComponentArrayType ArrayType>
+/* This might seem limiting but it greatly simplifies component management and prevents components from making heap allocations. */
+template <typename T>
+concept ValidComponent = std::is_trivially_copyable_v<T>;
+
+template <ValidComponent T, ComponentArrayType ArrayType>
 class ComponentArray : public IComponentArray {
     static_assert(std::is_trivially_copyable_v<T>, "Component must be trivially copyable");
 
     std::vector<T> m_component_array{};
-    std::unordered_map<Entity, uint32_t> m_entity_component_indices{}; // empty and unused if dense
-    std::stack<uint32_t> m_free_indices{};                             // empty and unused if dense
+    std::unordered_map<Entity, uint32_t> m_entity_component_indices{}; // only used if sparse
+    std::stack<uint32_t> m_free_indices{};                             // only used if sparse
 
 public:
     void addComponent(const Entity entity) override
@@ -200,5 +203,8 @@ public:
 
     virtual void onUpdate(double dt) = 0;
 };
+
+template <typename T>
+concept ValidDerivedSystem = requires(World& world) { T(world); };
 
 } // namespace gc

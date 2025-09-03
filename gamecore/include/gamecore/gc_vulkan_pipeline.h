@@ -1,4 +1,5 @@
 #pragma once
+#if 0
 
 #include <tuple>
 
@@ -10,3 +11,5 @@ std::pair<VkPipeline, VkPipelineLayout> createPipeline(VkDescriptorSetLayout set
 void destroyPipeline(VkPipeline pipeline, VkPipelineLayout layout);
 
 } // namespace gc
+
+#endif

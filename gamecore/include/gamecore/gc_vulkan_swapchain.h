@@ -44,7 +44,7 @@ class VulkanSwapchain {
 	 * refresh rate. */
 	/* MAILBOX: Does not use exclusive fullscreen on Windows (composited). Latency may be slightly higher than IMMEDIATE. No tearing. */
 	/* IMMEDIATE: Will use exclusive fullscreen on Windows (not composited). Probably the lowest latency option. Has tearing. */
-	VkPresentModeKHR m_requested_present_mode = VK_PRESENT_MODE_IMMEDIATE_KHR;
+	VkPresentModeKHR m_requested_present_mode = VK_PRESENT_MODE_FIFO_KHR;
     bool m_fifo_triple_buffering = false;
 
     bool m_minimised = false;
