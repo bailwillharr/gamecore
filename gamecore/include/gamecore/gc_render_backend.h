@@ -26,13 +26,12 @@
 #include "gamecore/gc_vulkan_device.h"
 #include "gamecore/gc_vulkan_allocator.h"
 #include "gamecore/gc_vulkan_swapchain.h"
-#include "gamecore/gc_world_draw_data.h"
 
 struct SDL_Window; // forward-dec
 
 namespace gc {
 
-class DrawData; // forward-dec
+class WorldDrawData; // forward-dec
 
 // Handles and settings needed for setting up ImGui's Vulkan backend
 struct RenderBackendInfo {
@@ -44,6 +43,51 @@ struct RenderBackendInfo {
     VkDescriptorPool main_descriptor_pool;
     VkFormat framebuffer_format;
     VkFormat depth_stencil_format;
+};
+
+struct Pipeline {
+    VkPipeline pipeline;
+    VkPipelineLayout layout;
+};
+
+template <typename T>
+class GPUResourceDeleter {
+public:
+    struct DeletionEntry {
+        T resource;
+        VkQueue queue_using_resource;
+        uint64_t resource_free_signal_value;
+    };
+
+private:
+    std::vector<DeletionEntry> m_deletion_entries{};
+
+public:
+    void markForDeletion(DeletionEntry entry) { m_deletion_entries.push_back(entry); }
+
+    // and of course a method here for deleting objects that are not in use
+};
+
+template <typename T>
+class GPUResource : public T {
+    VkQueue m_queue_using_resource = VK_NULL_HANDLE;
+    uint64_t m_resource_free_signal_value = 0; // timeline semaphore associated with above queue
+    GPUResourceDeleter<T>* const m_deleter;
+
+protected:
+    GPUResource(GPUResourceDeleter* deleter) : m_deleter(deleter) {}
+    GPUResource(const GPUResource&) = delete;
+
+    GPUResource& operator=(const GPUResource&) = delete;
+
+    ~GPUResource() { m_deleter->markForDeletion({*static_cast<T>(this), m_queue_using_resource, m_resource_free_signal_value}); }
+
+public:
+    void useResource(VkQueue queue, uint64_t resource_free_signal_value)
+    {
+        m_queue_using_resource = queue;
+        m_resource_free_signal_value = resource_free_signal_value;
+    }
 };
 
 class RenderBackend {
@@ -86,11 +130,10 @@ public:
 
     RenderBackend operator=(const RenderBackend&) = delete;
 
-    /* methods for manipulating the draw data */
-
-
     /* Renders to framebuffer and presents framebuffer to the screen */
-    void renderFrame(bool window_resized);
+    void submitFrame(bool window_resized, const WorldDrawData& world_draw_data);
+
+    Pipeline createPipeline();
 
     RenderBackendInfo getInfo() const
     {

@@ -14,6 +14,7 @@
 #include "gamecore/gc_vulkan_allocator.h"
 #include "gamecore/gc_vulkan_swapchain.h"
 #include "gamecore/gc_logger.h"
+#include "gamecore/gc_world_draw_data.h"
 
 namespace gc {
 
@@ -162,7 +163,7 @@ RenderBackend::RenderBackend(SDL_Window* window_handle) : m_device(), m_allocato
 
     m_requested_frames_in_flight = 2;
 
-    // m_timeline_semaphore and the frame in flight command pools will be created when renderFrame() is called for the first time.
+    // m_timeline_semaphore and the frame in flight command pools will be created when submitFrame() is called for the first time.
 
     GC_TRACE("Initialised RenderBackend");
 }
@@ -190,7 +191,7 @@ RenderBackend::~RenderBackend()
     vkDestroyDescriptorPool(m_device.getHandle(), m_main_desciptor_pool, nullptr);
 }
 
-void RenderBackend::renderFrame(bool window_resized)
+void RenderBackend::submitFrame(bool window_resized, const WorldDrawData& world_draw_data)
 {
     if (m_requested_frames_in_flight != static_cast<int>(m_fif.size())) {
         recreateFramesInFlightResources();
@@ -322,6 +323,10 @@ void RenderBackend::renderFrame(bool window_resized)
     vkCmdSetScissor(stuff.cmd, 0, 1, &scissor);
 
     // render provided draw_data here
+    // for now just record into primary command buffer. Might change later.
+    for (const auto& pos : world_draw_data.getTrianglePositions()) {
+        (void)pos;
+    }
 
     ImGui_ImplVulkan_RenderDrawData(ImGui::GetDrawData(), stuff.cmd);
 

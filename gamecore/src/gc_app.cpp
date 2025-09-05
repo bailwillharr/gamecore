@@ -19,6 +19,7 @@
 #include "gamecore/gc_render_backend.h"
 #include "gamecore/gc_debug_ui.h"
 #include "gamecore/gc_world.h"
+#include "gamecore/gc_world_draw_data.h"
 
 namespace gc {
 
@@ -190,7 +191,7 @@ void App::run()
 
         m_debug_ui->update();
 
-        renderBackend().renderFrame(window().getResizedFlag());
+        renderBackend().submitFrame(window().getResizedFlag(), WorldDrawData{});
 
         m_last_frame_begin_stamp = frame_begin_stamp;
 

@@ -31,7 +31,7 @@ public:
     DebugUI& operator=(const DebugUI&) = delete;
     DebugUI& operator=(DebugUI&&) = delete;
 
-    // Call every frame after Window::processEvents() and before RenderBackend::renderFrame()
+    // Call every frame after Window::processEvents() and before RenderBackend::submitFrame()
     void update();
 };
 
