@@ -21,6 +21,7 @@
 #pragma once
 
 #include <vector>
+#include <functional>
 
 #include "gamecore/gc_vulkan_common.h"
 #include "gamecore/gc_vulkan_device.h"
@@ -45,18 +46,12 @@ struct RenderBackendInfo {
     VkFormat depth_stencil_format;
 };
 
-struct Pipeline {
-    VkPipeline pipeline;
-    VkPipelineLayout layout;
-};
-
-template <typename T>
-class GPUResourceDeleter {
+class GPUResourceDeleteQueue {
 public:
     struct DeletionEntry {
-        T resource;
-        VkQueue queue_using_resource;
+        VkSemaphore timeline_semaphore;
         uint64_t resource_free_signal_value;
+        std::function<void(VkDevice)> deleter;
     };
 
 private:
@@ -65,28 +60,64 @@ private:
 public:
     void markForDeletion(DeletionEntry entry) { m_deletion_entries.push_back(entry); }
 
-    // and of course a method here for deleting objects that are not in use
+    void deleteUnusedResources(VkDevice device, const std::vector<VkSemaphore>& semaphores)
+    {
+        if (!m_deletion_entries.empty()) { // very low cost function call if nothing to delete
+            std::vector<uint64_t> timeline_values(semaphores.size());
+            for (size_t i = 0; i < semaphores.size(); ++i) {
+                GC_CHECKVK(vkGetSemaphoreCounterValue(device, semaphores[i], &timeline_values[i]));
+                // iterate backwards:
+                for (size_t j = m_deletion_entries.size() - 1; j >= 0; --j) {
+                    if (m_deletion_entries[j].timeline_semaphore == semaphores[i] && timeline_values[i] >= m_deletion_entries[j].resource_free_signal_value) {
+                        m_deletion_entries[j].deleter(device);
+                        m_deletion_entries[j] = m_deletion_entries.back();
+                        m_deletion_entries.pop_back();
+                    }
+                }
+            }
+        }
+    }
 };
 
-template <typename T>
-class GPUResource : public T {
-    VkQueue m_queue_using_resource = VK_NULL_HANDLE;
-    uint64_t m_resource_free_signal_value = 0; // timeline semaphore associated with above queue
-    GPUResourceDeleter<T>* const m_deleter;
+// Ensure that derived classes using this class call m_delete_queue->markForDeletion()
+class GPUResource {
+    VkSemaphore m_timeline_semaphore = VK_NULL_HANDLE; // timeline semaphore associated with the queue this resource was last used with
+    uint64_t m_resource_free_signal_value = 0;
+    GPUResourceDeleteQueue& m_delete_queue;
 
 protected:
-    GPUResource(GPUResourceDeleter* deleter) : m_deleter(deleter) {}
+    GPUResource(GPUResourceDeleteQueue& delete_queue) : m_delete_queue(delete_queue) {}
     GPUResource(const GPUResource&) = delete;
 
     GPUResource& operator=(const GPUResource&) = delete;
 
-    ~GPUResource() { m_deleter->markForDeletion({*static_cast<T>(this), m_queue_using_resource, m_resource_free_signal_value}); }
+    void markForDeletion(const std::function<void(VkDevice)>& deleter)
+    {
+        m_delete_queue.markForDeletion({m_timeline_semaphore, m_resource_free_signal_value, deleter});
+    }
 
 public:
-    void useResource(VkQueue queue, uint64_t resource_free_signal_value)
+    void useResource(VkSemaphore timeline_semaphore, uint64_t resource_free_signal_value)
     {
-        m_queue_using_resource = queue;
+        m_timeline_semaphore = timeline_semaphore;
         m_resource_free_signal_value = resource_free_signal_value;
+    }
+};
+
+class Pipeline : public GPUResource {
+    VkPipeline m_pipeline;
+    VkPipelineLayout m_layout;
+
+public:
+    Pipeline(VkPipeline pipeline, VkPipelineLayout layout, GPUResourceDeleteQueue& delete_queue) : GPUResource(delete_queue) {}
+    ~Pipeline()
+    {
+        auto pipeline = m_pipeline;
+        auto layout = m_layout;
+        markForDeletion([pipeline, layout](VkDevice device) {
+            vkDestroyPipeline(device, pipeline, nullptr);
+            vkDestroyPipelineLayout(device, layout, nullptr);
+        });
     }
 };
 
@@ -121,6 +152,8 @@ class RenderBackend {
     VkSemaphore m_timeline_semaphore{};
     uint64_t m_timeline_value{};
     uint64_t m_present_finished_value{};
+
+    GPUResourceDeleteQueue m_delete_queue{};
 
 public:
     explicit RenderBackend(SDL_Window* window_handle);

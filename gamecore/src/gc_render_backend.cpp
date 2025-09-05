@@ -7,6 +7,7 @@
 #include <tracy/Tracy.hpp>
 
 #include <backends/imgui_impl_vulkan.h>
+#include <vulkan/vulkan_core.h>
 
 #include "gamecore/gc_vulkan_common.h"
 #include "gamecore/gc_abort.h"
@@ -404,6 +405,13 @@ void RenderBackend::submitFrame(bool window_resized, const WorldDrawData& world_
         recreateFramebufferImage(m_device.getHandle(), m_allocator.getHandle(), m_swapchain.getSurfaceFormat().format, m_swapchain.getExtent(),
                                  m_framebuffer_image, m_framebuffer_image_allocation, m_framebuffer_image_view);
     }
+}
+
+Pipeline RenderBackend::createPipeline()
+{
+    VkPipelineLayout layout = VK_NULL_HANDLE;
+    VkPipeline handle = VK_NULL_HANDLE;
+    return Pipeline(handle, layout, m_delete_queue);
 }
 
 void RenderBackend::waitIdle()
