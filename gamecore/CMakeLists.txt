@@ -35,7 +35,7 @@ set(SRC_FILES
 	"src/gc_importer_gltf.cpp"
 	"src/gc_ecs.cpp"
 	"src/gc_transform_system.cpp"
-)
+ "src/gc_cube_system.cpp")
 
 # Public API includes
 # Care must be taken to ensure these headers do not reference private headers from src/
@@ -68,10 +68,12 @@ set(INCLUDE_FILES
 	"include/gamecore/gc_world.h"
 	"include/gamecore/gc_importer_gltf.h"
 	"include/gamecore/gc_ecs.h"
-	"include/gamecore/gc_core_components.h"
+	"include/gamecore/gc_transform_component.h"
 	"include/gamecore/gc_transform_system.h"
 	"include/gamecore/gc_world_draw_data.h"
-)
+	"include/gamecore/gc_gpu_resources.h"
+	"include/gamecore/gc_vulkan_pipeline_layout_manager.h"
+ "include/gamecore/gc_cube_component.h" "include/gamecore/gc_cube_system.h")
 
 # gamecore is a static library
 add_library(${PROJECT_NAME} STATIC

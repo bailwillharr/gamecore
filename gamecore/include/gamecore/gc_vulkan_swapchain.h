@@ -45,7 +45,6 @@ class VulkanSwapchain {
 	/* MAILBOX: Does not use exclusive fullscreen on Windows (composited). Latency may be slightly higher than IMMEDIATE. No tearing. */
 	/* IMMEDIATE: Will use exclusive fullscreen on Windows (not composited). Probably the lowest latency option. Has tearing. */
 	VkPresentModeKHR m_requested_present_mode = VK_PRESENT_MODE_FIFO_KHR;
-    bool m_fifo_triple_buffering = false;
 
     bool m_minimised = false;
 
@@ -65,10 +64,9 @@ public:
 	inline int getImageCount() const { return static_cast<int>(m_images.size()); }
 
 	// Will be applied when the swapchain is next recreated
-    inline void setRequestedPresentMode(VkPresentModeKHR mode, bool fifo_triple_buffering = false)
+    inline void setRequestedPresentMode(VkPresentModeKHR mode)
     {
         m_requested_present_mode = mode;
-        m_fifo_triple_buffering = fifo_triple_buffering;
     }
 
     // Call to present given image to the window.

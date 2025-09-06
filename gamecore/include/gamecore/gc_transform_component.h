@@ -29,6 +29,8 @@ public:
 
     glm::vec3 getScale() const { return m_scale; }
 
+    glm::mat4 getWorldMatrix() const { return m_world_matrix; }
+
     void setPosition(const glm::vec3& position)
     {
         m_position = position;

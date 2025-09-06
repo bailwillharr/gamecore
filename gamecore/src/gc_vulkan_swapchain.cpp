@@ -381,7 +381,6 @@ void VulkanSwapchain::recreateSwapchain()
         res != VK_SUCCESS) {
         abortGame("vkGetPhysicalDeviceSurfacePresentModesKHR() error: {}", vulkanResToString(res));
     }
-    // for now, use Mailbox if available otherwise FIFO
     if (std::find(present_modes.cbegin(), present_modes.cend(), m_requested_present_mode) != present_modes.cend()) {
         m_present_mode = m_requested_present_mode;
     }
@@ -421,15 +420,13 @@ void VulkanSwapchain::recreateSwapchain()
 
     GC_TRACE("Min image count: {}", min_image_count);
 
-    // Use triple buffering
-    if (m_fifo_triple_buffering) {
-        if (m_present_mode == VK_PRESENT_MODE_FIFO_KHR && min_image_count == 2 && surface_caps.surfaceCapabilities.maxImageCount >= 3) {
-            min_image_count = 3;
-        }
+    // always use at least 3 swapchain images with MAILBOX
+    if (m_present_mode == VK_PRESENT_MODE_MAILBOX_KHR && min_image_count < 3 && surface_caps.surfaceCapabilities.maxImageCount >= 3) {
+        min_image_count = 3;
     }
 
-    // always use at least 3 swapchain images with MAILBOX
-    if (m_present_mode == VK_PRESENT_MODE_MAILBOX_KHR && min_image_count < 3) {
+    // always use at least 3 swapchain images with FIFO_RELAXED (triple buffering)
+    if (m_present_mode == VK_PRESENT_MODE_FIFO_RELAXED_KHR && min_image_count < 3 && surface_caps.surfaceCapabilities.maxImageCount >= 3) {
         min_image_count = 3;
     }
 

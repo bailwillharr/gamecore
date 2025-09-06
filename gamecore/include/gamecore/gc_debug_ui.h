@@ -32,7 +32,7 @@ public:
     DebugUI& operator=(DebugUI&&) = delete;
 
     // Call every frame after Window::processEvents() and before RenderBackend::submitFrame()
-    void update();
+    void update(double dt);
 };
 
 } // namespace gc

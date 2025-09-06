@@ -1,15 +1,21 @@
 #include "gamecore/gc_world.h"
 
+#include <tracy/Tracy.hpp>
+
 #include "gamecore/gc_logger.h"
-#include "gamecore/gc_core_components.h"
+#include "gamecore/gc_transform_component.h"
+#include "gamecore/gc_cube_component.h"
 #include "gamecore/gc_transform_system.h"
+#include "gamecore/gc_cube_system.h"
 
 namespace gc {
 
 World::World()
 {
     registerComponent<TransformComponent, ComponentArrayType::DENSE>();
+    registerComponent<CubeComponent, ComponentArrayType::DENSE>();
     registerSystem<TransformSystem>();
+    registerSystem<CubeSystem>();
     GC_TRACE("Initialised World");
 }
 
@@ -45,11 +51,9 @@ void World::deleteEntity(const Entity entity)
     GC_ASSERT(m_entity_signatures[entity].hasTypes<TransformComponent>());
 
     // delete children:
-    TransformSystem& transform_system = getSystem<TransformSystem>();
-    if (auto it = transform_system.m_parent_children.find(entity); it != transform_system.m_parent_children.end()) {
-        for (Entity child : transform_system.m_parent_children[entity]) {
-            deleteEntity(child);
-        }
+    auto children = getSystem<TransformSystem>().getChildren(entity);
+    for (Entity child : children) {
+        deleteEntity(child);
     }
 
     // delete all components
@@ -65,6 +69,7 @@ void World::deleteEntity(const Entity entity)
 
 void World::update(double dt)
 {
+    ZoneScoped;
     for (auto& system : m_systems) {
         system->onUpdate(dt);
     }

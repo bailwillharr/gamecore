@@ -9,6 +9,8 @@
 #include <SDL3/SDL_video.h>
 #include <SDL3/SDL_filesystem.h>
 
+#include <tracy/Tracy.hpp>
+
 #include "gamecore/gc_logger.h"
 #include "gamecore/gc_vulkan_common.h"
 #include "gamecore/gc_render_backend.h"
@@ -83,14 +85,17 @@ DebugUI::~DebugUI()
     ImGui::DestroyContext(m_imgui_ctx);
 }
 
-void DebugUI::update()
+void DebugUI::update(double dt)
 {
+    ZoneScoped;
+
     ImGui_ImplSDL3_NewFrame();
     ImGui_ImplVulkan_NewFrame();
     ImGui::NewFrame();
 
     if (this->active) {
         ImGui::Begin("Debug UI", &this->active);
+        ImGui::Text("Delta time: %.3f ms", dt * 1000.0);
         ImGui::Checkbox("Show ImGui Demo", &m_show_demo);
         ImGui::End();
 

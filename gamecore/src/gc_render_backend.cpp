@@ -7,7 +7,8 @@
 #include <tracy/Tracy.hpp>
 
 #include <backends/imgui_impl_vulkan.h>
-#include <vulkan/vulkan_core.h>
+
+#include <ext/matrix_clip_space.hpp>
 
 #include "gamecore/gc_vulkan_common.h"
 #include "gamecore/gc_abort.h"
@@ -142,6 +143,21 @@ RenderBackend::RenderBackend(SDL_Window* window_handle) : m_device(), m_allocato
         GC_CHECKVK(vkCreateDescriptorPool(m_device.getHandle(), &pool_info, nullptr, &m_main_desciptor_pool));
     }
 
+    // create a simple pipeline layout for all 3D stuff (for now)
+    {
+        VkPushConstantRange push_constant_range{};
+        push_constant_range.offset = 0;
+        push_constant_range.size = 128; // Guaranteed minimum size https://registry.khronos.org/vulkan/specs/latest/html/vkspec.html#limits-minmax
+        push_constant_range.stageFlags = VK_SHADER_STAGE_VERTEX_BIT;
+        VkPipelineLayoutCreateInfo info{};
+        info.sType = VK_STRUCTURE_TYPE_PIPELINE_LAYOUT_CREATE_INFO;
+        info.setLayoutCount = 0;
+        info.pSetLayouts = nullptr;
+        info.pushConstantRangeCount = 1;
+        info.pPushConstantRanges = &push_constant_range;
+        GC_CHECKVK(vkCreatePipelineLayout(m_device.getHandle(), &info, nullptr, &m_pipeline_layout));
+    }
+
     // find depth stencil format to use
     {
         VkFormatProperties depth_format_props{};
@@ -175,7 +191,11 @@ RenderBackend::~RenderBackend()
 
     waitIdle();
 
-    m_delete_queue.deleteUnusedResources(m_device.getHandle(), std::array{m_timeline_semaphore});
+    cleanupGPUResources();
+
+    if (!m_delete_queue.empty()) {
+        GC_WARN("One or more GPU resources are still in use at application shutdown!");
+    }
 
     // destroy frame in flight resources
     if (m_timeline_semaphore) {
@@ -191,11 +211,32 @@ RenderBackend::~RenderBackend()
     vkDestroyImageView(m_device.getHandle(), m_depth_stencil_view, nullptr);
     vmaDestroyImage(m_allocator.getHandle(), m_depth_stencil, m_depth_stencil_allocation);
 
+    vkDestroyPipelineLayout(m_device.getHandle(), m_pipeline_layout, nullptr);
+
     vkDestroyDescriptorPool(m_device.getHandle(), m_main_desciptor_pool, nullptr);
+}
+
+void RenderBackend::waitForFrameReady()
+{
+    ZoneScoped;
+
+    const auto& stuff = m_fif[m_frame_count % m_fif.size()];
+
+    ZoneValue(stuff.command_buffer_available_value);
+
+    VkSemaphoreWaitInfo info{};
+    info.sType = VK_STRUCTURE_TYPE_SEMAPHORE_WAIT_INFO;
+    info.semaphoreCount = 1;
+    info.pSemaphores = &m_timeline_semaphore;
+    info.pValues = &stuff.command_buffer_available_value;
+    GC_CHECKVK(vkWaitSemaphores(m_device.getHandle(), &info, UINT64_MAX));
+    m_command_buffer_ready = true;
 }
 
 void RenderBackend::submitFrame(bool window_resized, const WorldDrawData& world_draw_data)
 {
+    ZoneScoped;
+
     if (m_requested_frames_in_flight != static_cast<int>(m_fif.size())) {
         recreateFramesInFlightResources();
     }
@@ -203,15 +244,8 @@ void RenderBackend::submitFrame(bool window_resized, const WorldDrawData& world_
     auto& stuff = m_fif[m_frame_count % m_fif.size()];
 
     // Wait for command buffer to be available
-    {
-        ZoneScopedN("Wait for semaphore to reach:");
-        ZoneValue(stuff.command_buffer_available_value);
-        VkSemaphoreWaitInfo info{};
-        info.sType = VK_STRUCTURE_TYPE_SEMAPHORE_WAIT_INFO;
-        info.semaphoreCount = 1;
-        info.pSemaphores = &m_timeline_semaphore;
-        info.pValues = &stuff.command_buffer_available_value;
-        GC_CHECKVK(vkWaitSemaphores(m_device.getHandle(), &info, UINT64_MAX));
+    if (!m_command_buffer_ready) {
+        waitForFrameReady();
     }
 
     GC_CHECKVK(vkResetCommandPool(m_device.getHandle(), stuff.pool, 0));
@@ -327,8 +361,21 @@ void RenderBackend::submitFrame(bool window_resized, const WorldDrawData& world_
 
     // render provided draw_data here
     // for now just record into primary command buffer. Might change later.
-    for (const auto& pos : world_draw_data.getTrianglePositions()) {
-        (void)pos;
+    if (GPUPipeline* pipeline = world_draw_data.getPipeline()) {
+        pipeline->useResource(m_timeline_semaphore, m_timeline_value + 1);
+        vkCmdBindPipeline(stuff.cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, pipeline->handle);
+
+        const double aspect_ratio = static_cast<double>(m_swapchain.getExtent().width) / static_cast<double>(m_swapchain.getExtent().height);
+        glm::mat4 projection_matrix = glm::perspectiveLH_ZO(glm::radians(45.0), aspect_ratio, 0.1, 100.0);
+        vkCmdPushConstants(stuff.cmd, m_pipeline_layout, VK_SHADER_STAGE_VERTEX_BIT, 64, 64, &projection_matrix);
+
+        for (const auto& matrix : world_draw_data.getCubeMatrices()) {
+            vkCmdPushConstants(stuff.cmd, m_pipeline_layout, VK_SHADER_STAGE_VERTEX_BIT, 0, 64, &matrix);
+            vkCmdDraw(stuff.cmd, 36, 1, 0, 0);
+        }
+    }
+    else {
+        GC_ERROR("No pipeline set for world draw data");
     }
 
     ImGui_ImplVulkan_RenderDrawData(ImGui::GetDrawData(), stuff.cmd);
@@ -397,6 +444,8 @@ void RenderBackend::submitFrame(bool window_resized, const WorldDrawData& world_
         GC_CHECKVK(vkQueueSubmit2(m_device.getMainQueue(), 1, &submit, VK_NULL_HANDLE));
     }
 
+    m_command_buffer_ready = false;
+
     const bool swapchain_recreated = m_swapchain.acquireAndPresent(m_framebuffer_image, window_resized, m_timeline_semaphore, m_timeline_value);
 
     m_present_finished_value = m_timeline_value;
@@ -409,7 +458,12 @@ void RenderBackend::submitFrame(bool window_resized, const WorldDrawData& world_
     }
 }
 
-Pipeline RenderBackend::createPipeline(std::span<const uint8_t> vertex_spv, std::span<const uint8_t> fragment_spv)
+void RenderBackend::cleanupGPUResources()
+{
+    m_delete_queue.deleteUnusedResources(m_device.getHandle(), std::array{m_timeline_semaphore});
+}
+
+GPUPipeline RenderBackend::createPipeline(std::span<const uint8_t> vertex_spv, std::span<const uint8_t> fragment_spv)
 {
     VkShaderModuleCreateInfo module_info{};
     module_info.sType = VK_STRUCTURE_TYPE_SHADER_MODULE_CREATE_INFO;
@@ -468,7 +522,7 @@ Pipeline RenderBackend::createPipeline(std::span<const uint8_t> vertex_spv, std:
     rasterization_state.polygonMode = VK_POLYGON_MODE_FILL;
     rasterization_state.lineWidth = 1.0f;
     rasterization_state.cullMode = VK_CULL_MODE_BACK_BIT;
-    rasterization_state.frontFace = VK_FRONT_FACE_COUNTER_CLOCKWISE;
+    rasterization_state.frontFace = VK_FRONT_FACE_CLOCKWISE; // it is actually CCW but shader flips things
     rasterization_state.depthBiasEnable = VK_FALSE;
     rasterization_state.depthBiasConstantFactor = 0.0f; // ignored
     rasterization_state.depthBiasClamp = 0.0f;          // ignored
@@ -496,8 +550,8 @@ Pipeline RenderBackend::createPipeline(std::span<const uint8_t> vertex_spv, std:
 
     VkPipelineDepthStencilStateCreateInfo depth_stencil_state{};
     depth_stencil_state.sType = VK_STRUCTURE_TYPE_PIPELINE_DEPTH_STENCIL_STATE_CREATE_INFO;
-    depth_stencil_state.depthTestEnable = VK_FALSE;
-    depth_stencil_state.depthWriteEnable = VK_FALSE;
+    depth_stencil_state.depthTestEnable = VK_TRUE;
+    depth_stencil_state.depthWriteEnable = VK_TRUE;
     depth_stencil_state.depthCompareOp = VK_COMPARE_OP_LESS_OR_EQUAL;
     depth_stencil_state.depthBoundsTestEnable = VK_FALSE;
     depth_stencil_state.minDepthBounds = 0.0f;
@@ -529,20 +583,6 @@ Pipeline RenderBackend::createPipeline(std::span<const uint8_t> vertex_spv, std:
     dynamic_state.dynamicStateCount = static_cast<uint32_t>(dynamic_states.size());
     dynamic_state.pDynamicStates = dynamic_states.data();
 
-    // TODO move this out
-    VkPushConstantRange push_constant_range{};
-    push_constant_range.offset = 0;
-    push_constant_range.size = 128;
-    push_constant_range.stageFlags = VK_SHADER_STAGE_VERTEX_BIT;
-    VkPipelineLayoutCreateInfo layout_info{};
-    layout_info.sType = VK_STRUCTURE_TYPE_PIPELINE_LAYOUT_CREATE_INFO;
-    layout_info.setLayoutCount = 0;
-    layout_info.pSetLayouts = nullptr;
-    layout_info.pushConstantRangeCount = 1;
-    layout_info.pPushConstantRanges = &push_constant_range;
-    VkPipelineLayout layout{};
-    GC_CHECKVK(vkCreatePipelineLayout(m_device.getHandle(), &layout_info, nullptr, &layout));
-
     VkGraphicsPipelineCreateInfo info{};
     info.sType = VK_STRUCTURE_TYPE_GRAPHICS_PIPELINE_CREATE_INFO;
     info.pNext = &rendering_info;
@@ -558,7 +598,7 @@ Pipeline RenderBackend::createPipeline(std::span<const uint8_t> vertex_spv, std:
     info.pDepthStencilState = &depth_stencil_state;
     info.pColorBlendState = &color_blend_state;
     info.pDynamicState = &dynamic_state;
-    info.layout = layout;
+    info.layout = m_pipeline_layout;
     info.renderPass = VK_NULL_HANDLE;
     info.subpass = 0;
     info.basePipelineHandle = VK_NULL_HANDLE;
@@ -570,7 +610,7 @@ Pipeline RenderBackend::createPipeline(std::span<const uint8_t> vertex_spv, std:
     vkDestroyShaderModule(m_device.getHandle(), fragment_module, nullptr);
     vkDestroyShaderModule(m_device.getHandle(), vertex_module, nullptr);
 
-    return Pipeline(m_delete_queue, handle);
+    return GPUPipeline(m_delete_queue, handle);
 }
 
 void RenderBackend::waitIdle()

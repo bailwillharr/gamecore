@@ -4,7 +4,6 @@
 #include "gamecore/gc_abort.h"
 #include "gamecore/gc_assert.h"
 #include "gamecore/gc_name.h"
-#include "gamecore/gc_core_components.h"
 
 #include <vector>
 #include <memory>

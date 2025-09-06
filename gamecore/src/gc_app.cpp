@@ -21,6 +21,8 @@
 #include "gamecore/gc_debug_ui.h"
 #include "gamecore/gc_world.h"
 #include "gamecore/gc_world_draw_data.h"
+#include "gamecore/gc_transform_component.h"
+#include "gamecore/gc_cube_system.h"
 
 namespace gc {
 
@@ -159,12 +161,14 @@ void App::run()
 
     m_last_frame_begin_stamp = getNanos() - 1'000'000; // treat the first delta time as 1 ms
 
-    m_render_backend->createPipeline(m_content->loadAsset(strToName("vert_spv")), m_content->loadAsset(strToName("frag_spv")));
+    auto pipeline = renderBackend().createPipeline(content().loadAsset(strToName("vert_spv")), content().loadAsset(strToName("frag_spv")));
+    WorldDrawData world_draw_data;
+    world_draw_data.setPipeline(&pipeline);
 
     while (!window().shouldQuit()) {
 
         const auto frame_begin_stamp = getNanos();
-        const auto dt = (frame_begin_stamp - m_last_frame_begin_stamp) / 1'000'000'000.0;
+        const auto dt = (frame_begin_stamp - m_last_frame_begin_stamp) / 1e9;
 
         window().processEvents();
 
@@ -186,15 +190,26 @@ void App::run()
                 }
             }
             if (window().getKeyPress(SDL_SCANCODE_T)) {
-                m_world->getComponent<TransformComponent>(0)->setPosition({1.0f, 1.0f, 1.0f});
+                if (auto comp = m_world->getComponent<TransformComponent>(0)) {
+                    comp->setPosition({1.0f, 1.0f, 1.0f});
+                }
             }
         }
 
         m_world->update(dt);
 
-        m_debug_ui->update();
+        m_debug_ui->update(dt);
 
-        renderBackend().submitFrame(window().getResizedFlag(), WorldDrawData{});
+        world_draw_data.reset();
+        for (const auto& cube_matrix : world().getSystem<CubeSystem>().getCubeTransforms()) {
+            world_draw_data.drawCube(cube_matrix);
+        }
+
+        renderBackend().submitFrame(window().getResizedFlag(), world_draw_data);
+
+        renderBackend().cleanupGPUResources();
+
+        renderBackend().waitForFrameReady(); // reduces latency
 
         m_last_frame_begin_stamp = frame_begin_stamp;
 

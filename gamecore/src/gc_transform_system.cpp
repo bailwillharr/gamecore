@@ -2,7 +2,9 @@
 
 #include <algorithm>
 
-#include "gamecore/gc_core_components.h"
+#include <tracy/Tracy.hpp>
+
+#include "gamecore/gc_transform_component.h"
 #include "gamecore/gc_world.h"
 
 namespace gc {
@@ -11,6 +13,8 @@ TransformSystem::TransformSystem(gc::World& world) : gc::System(world, Signature
 
 void TransformSystem::onUpdate(double dt)
 {
+    ZoneScoped;
+
     (void)dt;
 
     m_world.forEach<TransformComponent>([&]([[maybe_unused]] Entity entity, TransformComponent& t) {
