@@ -125,6 +125,7 @@ VulkanDevice::VulkanDevice()
             abortGame("System Vulkan version is unsupported! Found: {}, Required: {}", vulkanVersionToString(instance_version),
                       vulkanVersionToString(REQUIRED_VULKAN_VERSION));
         }
+        GC_DEBUG("Vulkan instance version: {}", vulkanVersionToString(instance_version));
     }
 
     { // create instance
@@ -190,20 +191,16 @@ VulkanDevice::VulkanDevice()
 #endif
     }
 
-    { // Get suitable physical device
-        m_physical_device = choosePhysicalDevice(m_instance);
-        if (!m_physical_device) {
-            if (m_debug_messenger) {
-                vkDestroyDebugUtilsMessengerEXT(m_instance, m_debug_messenger, nullptr);
-            }
-            vkDestroyInstance(m_instance, nullptr);
-            abortGame("Failed to find a Vulkan physical device");
+    m_physical_device = choosePhysicalDevice(m_instance);
+    if (!m_physical_device) {
+        if (m_debug_messenger) {
+            vkDestroyDebugUtilsMessengerEXT(m_instance, m_debug_messenger, nullptr);
         }
+        vkDestroyInstance(m_instance, nullptr);
+        abortGame("Failed to find a Vulkan physical device");
     }
 
-    { // get physical device properties
-        vkGetPhysicalDeviceProperties2(m_physical_device, &m_properties.props);
-    }
+    vkGetPhysicalDeviceProperties2(m_physical_device, &m_properties.props);
 
     GC_DEBUG("Using Vulkan physical device: {}", m_properties.props.properties.deviceName);
 
@@ -293,7 +290,6 @@ VulkanDevice::VulkanDevice()
             // Get Queues
             vkGetDeviceQueue(m_device, m_main_queue_family_index, 0, &m_main_queue);
         }
-
     }
 
     GC_TRACE("Initialised VulkanDevice");

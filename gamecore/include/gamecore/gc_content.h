@@ -37,10 +37,10 @@ public:
     Content& operator=(const Content&) = delete;
     Content& operator=(Content&&) = delete;
 
-    /* use gc::assetID(std::string_view id) */
+    /* use gc::strToName(std::string_view str) */
     /* This function is thread-safe */
     /* Returns empty vector on failure */
-    std::vector<uint8_t> loadAsset(std::uint32_t id);
+    std::vector<uint8_t> loadAsset(std::uint32_t name);
 };
 
 } // namespace gc

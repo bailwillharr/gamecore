@@ -22,6 +22,7 @@
 
 #include <vector>
 #include <functional>
+#include <span>
 
 #include "gamecore/gc_vulkan_common.h"
 #include "gamecore/gc_vulkan_device.h"
@@ -60,15 +61,20 @@ private:
 public:
     void markForDeletion(DeletionEntry entry) { m_deletion_entries.push_back(entry); }
 
-    void deleteUnusedResources(VkDevice device, const std::vector<VkSemaphore>& semaphores)
+    void deleteUnusedResources(VkDevice device, std::span<const VkSemaphore> semaphores)
     {
         if (!m_deletion_entries.empty()) { // very low cost function call if nothing to delete
             std::vector<uint64_t> timeline_values(semaphores.size());
             for (size_t i = 0; i < semaphores.size(); ++i) {
                 GC_CHECKVK(vkGetSemaphoreCounterValue(device, semaphores[i], &timeline_values[i]));
-                // iterate backwards:
-                for (size_t j = m_deletion_entries.size() - 1; j >= 0; --j) {
-                    if (m_deletion_entries[j].timeline_semaphore == semaphores[i] && timeline_values[i] >= m_deletion_entries[j].resource_free_signal_value) {
+                // iterate backwards, using ptrdiff_t because j must go negative:
+                for (ptrdiff_t j = m_deletion_entries.size() - 1; j >= 0; --j) {
+                    if ((m_deletion_entries[j].timeline_semaphore == semaphores[i] && timeline_values[i] >= m_deletion_entries[j].resource_free_signal_value) ||
+                            m_deletion_entries[j].timeline_semaphore == VK_NULL_HANDLE) {
+                        // if corresponding timeline semaphore has reached value yet
+                        // OR
+                        // resource had no timeline semaphore in which case always delete it
+                        GC_TRACE("Deleting a GPU resource");
                         m_deletion_entries[j].deleter(device);
                         m_deletion_entries[j] = m_deletion_entries.back();
                         m_deletion_entries.pop_back();
@@ -105,19 +111,15 @@ public:
 };
 
 class Pipeline : public GPUResource {
-    VkPipeline m_pipeline;
-    VkPipelineLayout m_layout;
+public:
+    const VkPipeline handle;
 
 public:
-    Pipeline(VkPipeline pipeline, VkPipelineLayout layout, GPUResourceDeleteQueue& delete_queue) : GPUResource(delete_queue) {}
+    Pipeline(GPUResourceDeleteQueue& delete_queue, VkPipeline pipeline) : GPUResource(delete_queue), handle(pipeline) {}
     ~Pipeline()
     {
-        auto pipeline = m_pipeline;
-        auto layout = m_layout;
-        markForDeletion([pipeline, layout](VkDevice device) {
-            vkDestroyPipeline(device, pipeline, nullptr);
-            vkDestroyPipelineLayout(device, layout, nullptr);
-        });
+        auto pipeline = handle;
+        markForDeletion([pipeline](VkDevice device) { vkDestroyPipeline(device, pipeline, nullptr); });
     }
 };
 
@@ -166,7 +168,7 @@ public:
     /* Renders to framebuffer and presents framebuffer to the screen */
     void submitFrame(bool window_resized, const WorldDrawData& world_draw_data);
 
-    Pipeline createPipeline();
+    Pipeline createPipeline(std::span<const uint8_t> vertex_spv, std::span<const uint8_t> fragment_spv);
 
     RenderBackendInfo getInfo() const
     {

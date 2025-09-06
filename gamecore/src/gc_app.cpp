@@ -11,6 +11,7 @@
 #include <tracy/Tracy.hpp>
 
 #include "gamecore/gc_assert.h"
+#include "gamecore/gc_name.h"
 #include "gamecore/gc_abort.h"
 #include "gamecore/gc_logger.h"
 #include "gamecore/gc_jobs.h"
@@ -157,6 +158,8 @@ void App::run()
     GC_TRACE("Starting game loop...");
 
     m_last_frame_begin_stamp = getNanos() - 1'000'000; // treat the first delta time as 1 ms
+
+    m_render_backend->createPipeline(m_content->loadAsset(strToName("vert_spv")), m_content->loadAsset(strToName("frag_spv")));
 
     while (!window().shouldQuit()) {
 

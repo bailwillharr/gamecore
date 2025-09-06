@@ -49,7 +49,9 @@ public:
     void registerComponent()
     {
         const uint32_t component_index = getComponentIndex<T>();
-        GC_ASSERT(component_index == m_component_arrays.size());
+        if (component_index != m_component_arrays.size()) {
+            gc::abortGame("Attempt to register same component twice!");
+        }
         m_component_arrays.emplace_back(std::make_unique<ComponentArray<T, ArrayType>>(), ArrayType);
     }
 
@@ -132,7 +134,9 @@ public:
     void registerSystem()
     {
         const uint32_t system_index = getSystemIndex<T>();
-        GC_ASSERT(system_index == m_systems.size());
+        if (system_index != m_systems.size()) {
+            gc::abortGame("Attempt to register same system twice!");
+        }
         m_systems.push_back(std::make_unique<T>(*this));
     }
 

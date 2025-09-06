@@ -175,6 +175,8 @@ RenderBackend::~RenderBackend()
 
     waitIdle();
 
+    m_delete_queue.deleteUnusedResources(m_device.getHandle(), std::array{m_timeline_semaphore});
+
     // destroy frame in flight resources
     if (m_timeline_semaphore) {
         vkDestroySemaphore(m_device.getHandle(), m_timeline_semaphore, nullptr);
@@ -407,11 +409,168 @@ void RenderBackend::submitFrame(bool window_resized, const WorldDrawData& world_
     }
 }
 
-Pipeline RenderBackend::createPipeline()
+Pipeline RenderBackend::createPipeline(std::span<const uint8_t> vertex_spv, std::span<const uint8_t> fragment_spv)
 {
-    VkPipelineLayout layout = VK_NULL_HANDLE;
-    VkPipeline handle = VK_NULL_HANDLE;
-    return Pipeline(handle, layout, m_delete_queue);
+    VkShaderModuleCreateInfo module_info{};
+    module_info.sType = VK_STRUCTURE_TYPE_SHADER_MODULE_CREATE_INFO;
+    module_info.pNext = nullptr;
+    module_info.flags = 0;
+
+    module_info.codeSize = vertex_spv.size();
+    module_info.pCode = reinterpret_cast<const uint32_t*>(vertex_spv.data());
+    VkShaderModule vertex_module = VK_NULL_HANDLE;
+    GC_CHECKVK(vkCreateShaderModule(m_device.getHandle(), &module_info, nullptr, &vertex_module));
+
+    module_info.codeSize = fragment_spv.size();
+    module_info.pCode = reinterpret_cast<const uint32_t*>(fragment_spv.data());
+    VkShaderModule fragment_module = VK_NULL_HANDLE;
+    GC_CHECKVK(vkCreateShaderModule(m_device.getHandle(), &module_info, nullptr, &fragment_module));
+
+    std::array<VkPipelineShaderStageCreateInfo, 2> stage_infos{};
+    stage_infos[0].sType = VK_STRUCTURE_TYPE_PIPELINE_SHADER_STAGE_CREATE_INFO;
+    stage_infos[0].pNext = nullptr;
+    stage_infos[0].flags = 0;
+    stage_infos[0].pName = "main";
+    stage_infos[0].pSpecializationInfo = nullptr;
+    stage_infos[1] = stage_infos[0];
+    stage_infos[0].stage = VK_SHADER_STAGE_VERTEX_BIT;
+    stage_infos[0].module = vertex_module;
+    stage_infos[1].stage = VK_SHADER_STAGE_FRAGMENT_BIT;
+    stage_infos[1].module = fragment_module;
+
+    VkPipelineVertexInputStateCreateInfo vertex_input_state{};
+    vertex_input_state.sType = VK_STRUCTURE_TYPE_PIPELINE_VERTEX_INPUT_STATE_CREATE_INFO;
+    vertex_input_state.pNext = nullptr;
+    vertex_input_state.flags = 0;
+    vertex_input_state.vertexBindingDescriptionCount = 0;
+    vertex_input_state.pVertexBindingDescriptions = nullptr;
+    vertex_input_state.vertexAttributeDescriptionCount = 0;
+    vertex_input_state.pVertexAttributeDescriptions = nullptr;
+
+    VkPipelineInputAssemblyStateCreateInfo input_assembly_state{};
+    input_assembly_state.sType = VK_STRUCTURE_TYPE_PIPELINE_INPUT_ASSEMBLY_STATE_CREATE_INFO;
+    input_assembly_state.pNext = nullptr;
+    input_assembly_state.flags = 0;
+    input_assembly_state.topology = VK_PRIMITIVE_TOPOLOGY_TRIANGLE_LIST;
+    input_assembly_state.primitiveRestartEnable = VK_FALSE;
+
+    VkPipelineViewportStateCreateInfo viewport_state{};
+    viewport_state.sType = VK_STRUCTURE_TYPE_PIPELINE_VIEWPORT_STATE_CREATE_INFO;
+    viewport_state.viewportCount = 1;
+    viewport_state.pViewports = nullptr;
+    viewport_state.scissorCount = 1;
+    viewport_state.pScissors = nullptr;
+
+    VkPipelineRasterizationStateCreateInfo rasterization_state{};
+    rasterization_state.sType = VK_STRUCTURE_TYPE_PIPELINE_RASTERIZATION_STATE_CREATE_INFO;
+    rasterization_state.depthClampEnable = VK_FALSE;
+    rasterization_state.rasterizerDiscardEnable = VK_FALSE; // enabling this will not run the fragment shaders at all
+    rasterization_state.polygonMode = VK_POLYGON_MODE_FILL;
+    rasterization_state.lineWidth = 1.0f;
+    rasterization_state.cullMode = VK_CULL_MODE_BACK_BIT;
+    rasterization_state.frontFace = VK_FRONT_FACE_COUNTER_CLOCKWISE;
+    rasterization_state.depthBiasEnable = VK_FALSE;
+    rasterization_state.depthBiasConstantFactor = 0.0f; // ignored
+    rasterization_state.depthBiasClamp = 0.0f;          // ignored
+    rasterization_state.depthBiasSlopeFactor = 0.0f;    // ignored
+
+    const VkFormat color_attachment_format = m_swapchain.getSurfaceFormat().format;
+
+    VkPipelineRenderingCreateInfo rendering_info{};
+    rendering_info.sType = VK_STRUCTURE_TYPE_PIPELINE_RENDERING_CREATE_INFO;
+    rendering_info.pNext = nullptr;
+    rendering_info.viewMask = 0;
+    rendering_info.colorAttachmentCount = 1;
+    rendering_info.pColorAttachmentFormats = &color_attachment_format;
+    rendering_info.depthAttachmentFormat = m_depth_stencil_format;
+    rendering_info.stencilAttachmentFormat = m_depth_stencil_format;
+
+    VkPipelineMultisampleStateCreateInfo multisample_state{};
+    multisample_state.sType = VK_STRUCTURE_TYPE_PIPELINE_MULTISAMPLE_STATE_CREATE_INFO;
+    multisample_state.rasterizationSamples = VK_SAMPLE_COUNT_1_BIT;
+    multisample_state.sampleShadingEnable = VK_FALSE;
+    multisample_state.minSampleShading = 1.0f;          // ignored
+    multisample_state.pSampleMask = nullptr;            // ignored
+    multisample_state.alphaToCoverageEnable = VK_FALSE; // ignored
+    multisample_state.alphaToOneEnable = VK_FALSE;      // ignored
+
+    VkPipelineDepthStencilStateCreateInfo depth_stencil_state{};
+    depth_stencil_state.sType = VK_STRUCTURE_TYPE_PIPELINE_DEPTH_STENCIL_STATE_CREATE_INFO;
+    depth_stencil_state.depthTestEnable = VK_FALSE;
+    depth_stencil_state.depthWriteEnable = VK_FALSE;
+    depth_stencil_state.depthCompareOp = VK_COMPARE_OP_LESS_OR_EQUAL;
+    depth_stencil_state.depthBoundsTestEnable = VK_FALSE;
+    depth_stencil_state.minDepthBounds = 0.0f;
+    depth_stencil_state.maxDepthBounds = 1.0f;
+    depth_stencil_state.stencilTestEnable = VK_FALSE;
+    depth_stencil_state.front = {};
+    depth_stencil_state.back = {};
+
+    VkPipelineColorBlendAttachmentState color_blend_attachment{};
+    color_blend_attachment.colorWriteMask = VK_COLOR_COMPONENT_R_BIT | VK_COLOR_COMPONENT_G_BIT | VK_COLOR_COMPONENT_B_BIT | VK_COLOR_COMPONENT_A_BIT;
+    color_blend_attachment.blendEnable = VK_FALSE;
+
+    VkPipelineColorBlendStateCreateInfo color_blend_state{};
+    color_blend_state.sType = VK_STRUCTURE_TYPE_PIPELINE_COLOR_BLEND_STATE_CREATE_INFO;
+    color_blend_state.logicOpEnable = VK_FALSE;
+    color_blend_state.logicOp = VK_LOGIC_OP_COPY; // ignored
+    color_blend_state.attachmentCount = 1;
+    color_blend_state.pAttachments = &color_blend_attachment;
+    color_blend_state.blendConstants[0] = 0.0f; // ignored
+    color_blend_state.blendConstants[1] = 0.0f; // ignored
+    color_blend_state.blendConstants[2] = 0.0f; // ignored
+    color_blend_state.blendConstants[3] = 0.0f; // ignored
+
+    std::array dynamic_states{VK_DYNAMIC_STATE_VIEWPORT, VK_DYNAMIC_STATE_SCISSOR};
+
+    VkPipelineDynamicStateCreateInfo dynamic_state{};
+    dynamic_state.sType = VK_STRUCTURE_TYPE_PIPELINE_DYNAMIC_STATE_CREATE_INFO;
+    dynamic_state.pNext = nullptr;
+    dynamic_state.dynamicStateCount = static_cast<uint32_t>(dynamic_states.size());
+    dynamic_state.pDynamicStates = dynamic_states.data();
+
+    // TODO move this out
+    VkPushConstantRange push_constant_range{};
+    push_constant_range.offset = 0;
+    push_constant_range.size = 128;
+    push_constant_range.stageFlags = VK_SHADER_STAGE_VERTEX_BIT;
+    VkPipelineLayoutCreateInfo layout_info{};
+    layout_info.sType = VK_STRUCTURE_TYPE_PIPELINE_LAYOUT_CREATE_INFO;
+    layout_info.setLayoutCount = 0;
+    layout_info.pSetLayouts = nullptr;
+    layout_info.pushConstantRangeCount = 1;
+    layout_info.pPushConstantRanges = &push_constant_range;
+    VkPipelineLayout layout{};
+    GC_CHECKVK(vkCreatePipelineLayout(m_device.getHandle(), &layout_info, nullptr, &layout));
+
+    VkGraphicsPipelineCreateInfo info{};
+    info.sType = VK_STRUCTURE_TYPE_GRAPHICS_PIPELINE_CREATE_INFO;
+    info.pNext = &rendering_info;
+    info.flags = 0;
+    info.stageCount = static_cast<uint32_t>(stage_infos.size());
+    info.pStages = stage_infos.data();
+    info.pVertexInputState = &vertex_input_state;
+    info.pInputAssemblyState = &input_assembly_state;
+    info.pTessellationState = nullptr;
+    info.pViewportState = &viewport_state;
+    info.pRasterizationState = &rasterization_state;
+    info.pMultisampleState = &multisample_state;
+    info.pDepthStencilState = &depth_stencil_state;
+    info.pColorBlendState = &color_blend_state;
+    info.pDynamicState = &dynamic_state;
+    info.layout = layout;
+    info.renderPass = VK_NULL_HANDLE;
+    info.subpass = 0;
+    info.basePipelineHandle = VK_NULL_HANDLE;
+    info.basePipelineIndex = -1;
+
+    VkPipeline handle{};
+    GC_CHECKVK(vkCreateGraphicsPipelines(m_device.getHandle(), VK_NULL_HANDLE, 1, &info, nullptr, &handle));
+    
+    vkDestroyShaderModule(m_device.getHandle(), fragment_module, nullptr);
+    vkDestroyShaderModule(m_device.getHandle(), vertex_module, nullptr);
+
+    return Pipeline(m_delete_queue, handle);
 }
 
 void RenderBackend::waitIdle()
