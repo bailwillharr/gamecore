@@ -38,10 +38,9 @@ App::App(const AppInitOptions& options)
     {
         bool set_prop_success = true;
         // These functions copy the strings so they do not need to be saved
-        set_prop_success &= SDL_SetAppMetadataProperty(SDL_PROP_APP_METADATA_NAME_STRING, options.name);
-        set_prop_success &= SDL_SetAppMetadataProperty(SDL_PROP_APP_METADATA_VERSION_STRING, options.version);
-        const auto identifier(std::string(options.author) + std::string(".") + std::string(options.name));
-        set_prop_success &= SDL_SetAppMetadataProperty(SDL_PROP_APP_METADATA_IDENTIFIER_STRING, identifier.c_str());
+        set_prop_success &= SDL_SetAppMetadataProperty(SDL_PROP_APP_METADATA_NAME_STRING, options.name.c_str());
+        set_prop_success &= SDL_SetAppMetadataProperty(SDL_PROP_APP_METADATA_VERSION_STRING, options.version.c_str());
+        set_prop_success &= SDL_SetAppMetadataProperty(SDL_PROP_APP_METADATA_IDENTIFIER_STRING, std::format("{}.{}", options.author, options.name).c_str());
         set_prop_success &= SDL_SetAppMetadataProperty(SDL_PROP_APP_METADATA_TYPE_STRING, "game");
         if (!set_prop_success) {
             // not a big deal if these fail
@@ -50,9 +49,10 @@ App::App(const AppInitOptions& options)
     }
 
     // Get save directory (In $XDG_DATA_HOME on Linux and in %appdata% on Windows)
-    const char* user_dir = SDL_GetPrefPath(options.author, options.name);
+    const char* user_dir = SDL_GetPrefPath(options.author.c_str(), options.name.c_str());
     if (user_dir) {
         m_save_directory = std::filesystem::path(user_dir);
+        SDL_free(const_cast<char*>(user_dir));
         GC_INFO("Save directory: {}", m_save_directory.string());
     }
     else {

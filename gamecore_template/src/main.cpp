@@ -33,11 +33,18 @@ int main([[maybe_unused]] int argc, [[maybe_unused]] char* argv[])
     gc::Window& win = app.window();
     win.setTitle("Hello world!");
     win.setIsResizable(true);
-    win.setWindowVisibility(true);
 
     gc::World& world = app.world();
-    auto cube = world.createEntity(gc::strToName("cube"), gc::ENTITY_NONE, glm::vec3{0.0f, 0.0f, 10.f});
-    world.addComponent<gc::CubeComponent>(cube);
+    std::array<gc::Entity, 100> cubes{};
+    for (int x = 0; x < 10; ++x) {
+        for (int y = 0; y < 10; ++y) {
+            auto& cube = cubes[x * 10 + y];
+            cube = world.createEntity(gc::strToNameRuntime(std::format("cube{}.{}", x, y)), gc::ENTITY_NONE, glm::vec3{x * 3.0f - 15.0f, y * 3.0f - 15.0f, 50.0f});
+            world.addComponent<gc::CubeComponent>(cube);
+        }
+    }
+
+    win.setWindowVisibility(true);
 
     app.run();
 

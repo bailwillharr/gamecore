@@ -3,6 +3,7 @@
 #include <memory>
 #include <thread>
 #include <filesystem>
+#include <string>
 
 /*
 This is the root of the entire game.
@@ -23,9 +24,9 @@ class World;         // forward-dec
 struct AppInitOptions {
     // None of these strings should have spaces.
     // These strings are copied.
-    const char* name;
-    const char* author;
-    const char* version;
+    std::string name;
+    std::string author;
+    std::string version;
 };
 
 class App {

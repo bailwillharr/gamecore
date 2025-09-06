@@ -28,7 +28,7 @@ set(SRC_FILES
 	"src/gc_render_backend.cpp"
 	"src/gc_vulkan_swapchain.cpp"
 	"src/gc_compile_shader.cpp"
-	"src/gc_vulkan_pipeline.cpp"	
+		
 	"src/gc_configuration.cpp"
 	"src/gc_debug_ui.cpp"
 	"src/gc_world.cpp"
@@ -62,7 +62,7 @@ set(INCLUDE_FILES
 	"include/gamecore/gc_render_backend.h"
 	"include/gamecore/gc_vulkan_swapchain.h"
 	"include/gamecore/gc_compile_shader.h"
-	"include/gamecore/gc_vulkan_pipeline.h"
+	
 	"include/gamecore/gc_configuration.h"
 	"include/gamecore/gc_debug_ui.h"
 	"include/gamecore/gc_world.h"
