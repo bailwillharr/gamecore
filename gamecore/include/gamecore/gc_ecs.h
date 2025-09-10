@@ -29,7 +29,7 @@ uint32_t getComponentIndex() {
 
 namespace gc {
 
-class World; // forward-dec
+class World;  // forward-dec
 class System; // forward-dec
 
 using Entity = uint32_t;
@@ -47,6 +47,29 @@ constexpr size_t MAX_COMPONENTS = 32;
 extern std::atomic<uint32_t> g_next_component_index;
 extern std::atomic<uint32_t> g_next_system_index;
 extern std::atomic<uint32_t> g_next_frame_state_object_index;
+
+// Produces a unique integer for a given type that can be used as an array index.
+template <ValidComponent T>
+uint32_t getComponentIndex()
+{
+    static uint32_t index = g_next_component_index.fetch_add(1, std::memory_order_relaxed);
+    GC_ASSERT(index < MAX_COMPONENTS);
+    return index;
+}
+
+template <ValidDerivedSystem T>
+uint32_t getSystemIndex()
+{
+    static uint32_t index = g_next_system_index.fetch_add(1, std::memory_order_relaxed);
+    return index;
+}
+
+template <typename T>
+uint32_t getFrameStateObjectIndex()
+{
+    static uint32_t index = g_next_frame_state_object_index.fetch_add(1, std::memory_order_relaxed);
+    return index;
+}
 
 class Signature {
     std::bitset<MAX_COMPONENTS> m_bits{};
@@ -197,28 +220,5 @@ public:
 
     virtual void onUpdate(double dt) = 0;
 };
-
-// Produces a unique integer for a given type that can be used as an array index.
-template <ValidComponent T>
-uint32_t getComponentIndex()
-{
-    static uint32_t index = g_next_component_index.fetch_add(1, std::memory_order_relaxed);
-    GC_ASSERT(index < MAX_COMPONENTS);
-    return index;
-}
-
-template <ValidDerivedSystem T>
-uint32_t getSystemIndex()
-{
-    static uint32_t index = g_next_system_index.fetch_add(1, std::memory_order_relaxed);
-    return index;
-}
-
-template <typename T>
-uint32_t getFrameStateObjectIndex()
-{
-    static uint32_t index = g_next_frame_state_object_index.fetch_add(1, std::memory_order_relaxed);
-    return index;
-}
 
 } // namespace gc
