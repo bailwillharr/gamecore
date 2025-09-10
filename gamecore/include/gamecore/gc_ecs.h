@@ -30,39 +30,33 @@ uint32_t getComponentIndex() {
 namespace gc {
 
 class World; // forward-dec
+class System; // forward-dec
 
 using Entity = uint32_t;
 
-constexpr Entity ENTITY_NONE = std::numeric_limits<Entity>::max();
+/* This might seem limiting but it greatly simplifies component management and prevents components from making heap allocations. */
+template <typename T>
+concept ValidComponent = std::is_trivially_copyable_v<T>;
 
+template <typename T>
+concept ValidDerivedSystem = requires(World& world) { T(world); } && std::is_base_of_v<System, T> && !std::is_same_v<System, T>;
+
+constexpr Entity ENTITY_NONE = std::numeric_limits<Entity>::max();
 constexpr size_t MAX_COMPONENTS = 32;
 
 extern std::atomic<uint32_t> g_next_component_index;
 extern std::atomic<uint32_t> g_next_system_index;
-
-// Produces a unique integer for a given type that can be used as an array index.
-template <typename T>
-uint32_t getComponentIndex()
-{
-    static uint32_t index = g_next_component_index.fetch_add(1, std::memory_order_relaxed);
-    GC_ASSERT(index < MAX_COMPONENTS);
-    return index;
-}
-
-template <typename T>
-uint32_t getSystemIndex()
-{
-    static uint32_t index = g_next_system_index.fetch_add(1, std::memory_order_relaxed);
-    return index;
-}
+extern std::atomic<uint32_t> g_next_frame_state_object_index;
 
 class Signature {
     std::bitset<MAX_COMPONENTS> m_bits{};
 
 public:
-    Signature() = default;
-
-    void setWithIndex(const uint32_t component_index, bool value = true) { m_bits.set(component_index, value); }
+    void setWithIndex(const uint32_t component_index, bool value = true)
+    {
+        GC_ASSERT(component_index < MAX_COMPONENTS);
+        m_bits.set(component_index, value);
+    }
 
     template <typename T>
     void set(bool value = true)
@@ -70,7 +64,11 @@ public:
         setWithIndex(getComponentIndex<T>(), value);
     }
 
-    bool hasComponentIndex(const uint32_t component_index) const { return m_bits.test(component_index); }
+    bool hasComponentIndex(const uint32_t component_index) const
+    {
+        GC_ASSERT(component_index < MAX_COMPONENTS);
+        return m_bits.test(component_index);
+    }
 
     template <typename... Ts>
     bool hasTypes() const
@@ -104,10 +102,6 @@ public:
  * This class is just a storage backend while the World actually manages components.
  */
 enum class ComponentArrayType { SPARSE, DENSE };
-
-/* This might seem limiting but it greatly simplifies component management and prevents components from making heap allocations. */
-template <typename T>
-concept ValidComponent = std::is_trivially_copyable_v<T>;
 
 template <ValidComponent T, ComponentArrayType ArrayType>
 class ComponentArray : public IComponentArray {
@@ -204,7 +198,27 @@ public:
     virtual void onUpdate(double dt) = 0;
 };
 
+// Produces a unique integer for a given type that can be used as an array index.
+template <ValidComponent T>
+uint32_t getComponentIndex()
+{
+    static uint32_t index = g_next_component_index.fetch_add(1, std::memory_order_relaxed);
+    GC_ASSERT(index < MAX_COMPONENTS);
+    return index;
+}
+
+template <ValidDerivedSystem T>
+uint32_t getSystemIndex()
+{
+    static uint32_t index = g_next_system_index.fetch_add(1, std::memory_order_relaxed);
+    return index;
+}
+
 template <typename T>
-concept ValidDerivedSystem = requires(World& world) { T(world); };
+uint32_t getFrameStateObjectIndex()
+{
+    static uint32_t index = g_next_frame_state_object_index.fetch_add(1, std::memory_order_relaxed);
+    return index;
+}
 
 } // namespace gc

@@ -257,7 +257,7 @@ static std::filesystem::path openFileDialog([[maybe_unused]] const std::vector<s
 {
     /* linux requires an event loop to use SDL_ShowOpenFileDialog() */
 
-    if (!SDL_Init(SDL_INIT_EVENTS)) {
+    if (!SDL_InitSubSystem(SDL_INIT_EVENTS)) {
         std::cerr << "SDL_Init() error: " << SDL_GetError() << "\n";
         std::abort();
     }

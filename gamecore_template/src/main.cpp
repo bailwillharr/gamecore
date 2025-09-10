@@ -28,7 +28,7 @@ int main([[maybe_unused]] int argc, [[maybe_unused]] char* argv[])
 
     gc::App& app = gc::app();
 
-    app.renderBackend().setSyncMode(gc::RenderSyncMode::VSYNC_ON_DOUBLE_BUFFERED);
+    app.renderBackend().setSyncMode(gc::RenderSyncMode::VSYNC_OFF_NO_TEARING);
 
     gc::Window& win = app.window();
     win.setTitle("Hello world!");
@@ -36,10 +36,11 @@ int main([[maybe_unused]] int argc, [[maybe_unused]] char* argv[])
 
     gc::World& world = app.world();
     std::array<gc::Entity, 100> cubes{};
+    const gc::Entity parent = world.createEntity(gc::strToName("parent"), gc::ENTITY_NONE, glm::vec3{0.0f, 0.0f, 50.0f});
     for (int x = 0; x < 10; ++x) {
         for (int y = 0; y < 10; ++y) {
             auto& cube = cubes[x * 10 + y];
-            cube = world.createEntity(gc::strToNameRuntime(std::format("cube{}.{}", x, y)), gc::ENTITY_NONE, glm::vec3{x * 3.0f - 15.0f, y * 3.0f - 15.0f, 50.0f});
+            cube = world.createEntity(gc::strToNameRuntime(std::format("cube{}.{}", x, y)), parent, glm::vec3{x * 3.0f - 15.0f, y * 3.0f - 15.0f, 0.0f});
             world.addComponent<gc::CubeComponent>(cube);
         }
     }

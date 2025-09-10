@@ -17,10 +17,21 @@ void TransformSystem::onUpdate(double dt)
 
     (void)dt;
 
+    static double time{};
+    time += dt;
+
     m_world.forEach<TransformComponent>([&]([[maybe_unused]] Entity entity, TransformComponent& t) {
+        if (t.name == strToName("parent")) {
+            t.setRotation(glm::angleAxis(static_cast<float>(time), glm::vec3{0.0f, 1.0f, 0.0f}));
+        }
         if (t.m_dirty) {
-            updateWorldMatricesRecursively(entity);
-            t.m_dirty = false;
+            // t.m_dirty is reset by updateWorldMatricesRecursively()
+            if (t.m_parent == ENTITY_NONE) {
+                updateWorldMatricesRecursively(entity);
+            }
+            else {
+                updateWorldMatricesRecursively(entity, m_world.getComponent<TransformComponent>(t.m_parent)->m_world_matrix);
+            }
         }
     });
 }
@@ -49,12 +60,13 @@ void TransformSystem::setParent(Entity entity, Entity parent)
         }
     }
 
+    entity_transform->m_dirty = true;
     entity_transform->m_parent = parent;
 }
 
 void TransformSystem::updateWorldMatricesRecursively(const Entity entity, const glm::mat4& parent_matrix)
 {
-    GC_TRACE("Updating world matrix for {}", entity);
+    //GC_TRACE("Updating world matrix for {}", entity);
 
     TransformComponent* t = m_world.getComponent<TransformComponent>(entity);
     GC_ASSERT(t);
@@ -65,6 +77,8 @@ void TransformSystem::updateWorldMatricesRecursively(const Entity entity, const 
     local_matrix[3][2] = t->m_position.z;
     local_matrix = glm::scale(local_matrix, t->m_scale);
     t->m_world_matrix = parent_matrix * local_matrix;
+
+    t->m_dirty = false;
 
     if (auto it = m_parent_children.find(entity); it != m_parent_children.end()) {
         for (Entity child : it->second) {

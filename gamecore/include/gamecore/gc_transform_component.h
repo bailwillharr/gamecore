@@ -15,12 +15,12 @@ class TransformComponent {
     glm::vec3 m_position{0.0f, 0.0f, 0.0f};
     glm::quat m_rotation{1.0f, 0.0f, 0.0f, 0.0f};
     glm::vec3 m_scale{1.0f};
-    Entity m_parent = ENTITY_NONE; // set with TransformSystem::setParent()
+    Entity m_parent{ENTITY_NONE}; // set with TransformSystem::setParent()
     glm::mat4 m_world_matrix{1.0f};
-    bool m_dirty = true;
+    bool m_dirty{true};
 
 public:
-    Name name;
+    Name name{strToName("entity")};
 
 public:
     glm::vec3 getPosition() const { return m_position; }
