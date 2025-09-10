@@ -51,8 +51,8 @@ struct RenderBackendInfo {
 enum class RenderSyncMode {
     VSYNC_ON_DOUBLE_BUFFERED,
     VSYNC_ON_TRIPLE_BUFFERED,
-    VSYNC_OFF_TEARING,
-    VSYNC_OFF_NO_TEARING
+    VSYNC_ON_TRIPLE_BUFFERED_UNTHROTTLED,
+    VSYNC_OFF
 };
 
 class RenderBackend {
@@ -108,19 +108,19 @@ public:
         switch (mode) {
             case RenderSyncMode::VSYNC_ON_DOUBLE_BUFFERED:
                 m_requested_frames_in_flight = 1;
-                m_swapchain.setRequestedPresentMode(VK_PRESENT_MODE_FIFO_KHR);
+                m_swapchain.setRequestedPresentMode(VK_PRESENT_MODE_FIFO_RELAXED_KHR);
                 break;
             case RenderSyncMode::VSYNC_ON_TRIPLE_BUFFERED:
                 m_requested_frames_in_flight = 2;
-                m_swapchain.setRequestedPresentMode(VK_PRESENT_MODE_FIFO_RELAXED_KHR);
+                m_swapchain.setRequestedPresentMode(VK_PRESENT_MODE_FIFO_KHR);
                 break;
-            case RenderSyncMode::VSYNC_OFF_TEARING:
-                m_requested_frames_in_flight = 2;
-                m_swapchain.setRequestedPresentMode(VK_PRESENT_MODE_IMMEDIATE_KHR);
-                break;
-            case RenderSyncMode::VSYNC_OFF_NO_TEARING:
+            case RenderSyncMode::VSYNC_ON_TRIPLE_BUFFERED_UNTHROTTLED:
                 m_requested_frames_in_flight = 2;
                 m_swapchain.setRequestedPresentMode(VK_PRESENT_MODE_MAILBOX_KHR);
+                break;
+            case RenderSyncMode::VSYNC_OFF:
+                m_requested_frames_in_flight = 2;
+                m_swapchain.setRequestedPresentMode(VK_PRESENT_MODE_IMMEDIATE_KHR);
                 break;
         }
     }

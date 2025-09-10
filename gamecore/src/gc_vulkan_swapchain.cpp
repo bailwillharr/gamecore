@@ -420,15 +420,15 @@ void VulkanSwapchain::recreateSwapchain()
 
     GC_TRACE("Min image count: {}", min_image_count);
 
-    // always use at least 3 swapchain images with MAILBOX
     if (m_present_mode == VK_PRESENT_MODE_MAILBOX_KHR && min_image_count < 3 && surface_caps.surfaceCapabilities.maxImageCount >= 3) {
+        // always use at least 3 swapchain images with MAILBOX
         min_image_count = 3;
     }
-
-    // always use at least 3 swapchain images with FIFO_RELAXED (triple buffering)
-    if (m_present_mode == VK_PRESENT_MODE_FIFO_RELAXED_KHR && min_image_count < 3 && surface_caps.surfaceCapabilities.maxImageCount >= 3) {
+    else if (m_requested_present_mode == VK_PRESENT_MODE_FIFO_KHR && min_image_count < 3 && surface_caps.surfaceCapabilities.maxImageCount >= 3) {
+        // use triple buffering if FIFO was explicitly requested
         min_image_count = 3;
     }
+    // if requested present mode is FIFO_RELAXED, use lowest possible image count (double buffering with most drivers)
 
     // clamp extent to min and max
     if (m_extent.width > surface_caps.surfaceCapabilities.maxImageExtent.width) {

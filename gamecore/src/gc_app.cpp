@@ -173,17 +173,7 @@ void App::run()
     while (!window().shouldQuit()) {
 
         const auto frame_begin_stamp = getNanos();
-        // do not pass delta-times close to zero or weird things can happen
-        const auto dt = std::max((frame_begin_stamp - m_last_frame_begin_stamp) / 1e9, 1e-4); // min 0.1ms
-        if (dt > 10.0) {
-            GC_WARN("Abnormal delta time: {}", dt);
-            GC_WARN("  frame_begin_stamp: {}", frame_begin_stamp);
-            GC_WARN("  m_last_frame_begin_stamp: {}", m_last_frame_begin_stamp);
-            GC_WARN("  m_performance_counter_frequency: {}", m_performance_counter_frequency);
-            GC_WARN("  m_performance_counter_init: {}", m_performance_counter_init);
-            GC_WARN("  getNanos() now: {}", getNanos());
-            GC_WARN("  SDL_GetPerformanceCounter(): {}", SDL_GetPerformanceCounter());
-        }
+        const auto dt = static_cast<double>(frame_begin_stamp - m_last_frame_begin_stamp) * 1e-9;
 
         window().processEvents();
 

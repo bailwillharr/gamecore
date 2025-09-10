@@ -17,7 +17,7 @@ class WorldDrawData {
     GPUPipeline* m_pipeline{};
 
 public:
-    void drawCube(glm::mat4 model_matrix) { m_cube_matrices.push_back(model_matrix); }
+    void drawCube(const glm::mat4& model_matrix) { m_cube_matrices.push_back(model_matrix); }
     void setPipeline(GPUPipeline* pipeline) { m_pipeline = pipeline; }
 
     void reset() { m_cube_matrices.clear(); }
