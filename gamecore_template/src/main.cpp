@@ -28,7 +28,7 @@ int main([[maybe_unused]] int argc, [[maybe_unused]] char* argv[])
 
     gc::App& app = gc::app();
 
-    app.renderBackend().setSyncMode(gc::RenderSyncMode::VSYNC_OFF_NO_TEARING);
+    app.renderBackend().setSyncMode(gc::RenderSyncMode::VSYNC_ON_DOUBLE_BUFFERED);
 
     gc::Window& win = app.window();
     win.setTitle("Hello world!");

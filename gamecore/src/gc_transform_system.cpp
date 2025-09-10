@@ -66,7 +66,7 @@ void TransformSystem::setParent(Entity entity, Entity parent)
 
 void TransformSystem::updateWorldMatricesRecursively(const Entity entity, const glm::mat4& parent_matrix)
 {
-    //GC_TRACE("Updating world matrix for {}", entity);
+    // GC_TRACE("Updating world matrix for {}", entity);
 
     TransformComponent* t = m_world.getComponent<TransformComponent>(entity);
     GC_ASSERT(t);

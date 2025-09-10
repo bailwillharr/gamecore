@@ -95,7 +95,12 @@ App::~App()
 
 bool App::isMainThread() const { return std::this_thread::get_id() == m_main_thread_id; }
 
-uint64_t App::getNanos() const { return (SDL_GetPerformanceCounter() - m_performance_counter_init) * 1'000'000'000 / m_performance_counter_frequency; }
+uint64_t App::getNanos() const
+{
+    // billion / frequency must be in brackets to avoid overflow
+    uint64_t value = (SDL_GetPerformanceCounter() - m_performance_counter_init) * (static_cast<uint64_t>(1'000'000'000) / m_performance_counter_frequency);
+    return value;
+}
 
 void App::initialise(const AppInitOptions& options)
 {
@@ -168,7 +173,17 @@ void App::run()
     while (!window().shouldQuit()) {
 
         const auto frame_begin_stamp = getNanos();
-        const auto dt = (frame_begin_stamp - m_last_frame_begin_stamp) / 1e9;
+        // do not pass delta-times close to zero or weird things can happen
+        const auto dt = std::max((frame_begin_stamp - m_last_frame_begin_stamp) / 1e9, 1e-4); // min 0.1ms
+        if (dt > 10.0) {
+            GC_WARN("Abnormal delta time: {}", dt);
+            GC_WARN("  frame_begin_stamp: {}", frame_begin_stamp);
+            GC_WARN("  m_last_frame_begin_stamp: {}", m_last_frame_begin_stamp);
+            GC_WARN("  m_performance_counter_frequency: {}", m_performance_counter_frequency);
+            GC_WARN("  m_performance_counter_init: {}", m_performance_counter_init);
+            GC_WARN("  getNanos() now: {}", getNanos());
+            GC_WARN("  SDL_GetPerformanceCounter(): {}", SDL_GetPerformanceCounter());
+        }
 
         window().processEvents();
 
