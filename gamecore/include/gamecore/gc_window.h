@@ -5,10 +5,12 @@
 #include <vector>
 #include <string>
 #include <optional>
+#include <functional>
 
 #include <SDL3/SDL_video.h>
 #include <SDL3/SDL_scancode.h>
 #include <SDL3/SDL_mouse.h>
+#include <SDL3/SDL_events.h>
 
 struct SDL_Window; // forward-dec
 
@@ -60,7 +62,7 @@ public:
 
     SDL_Window* getHandle();
 
-    void processEvents();
+    void processEvents(const std::function<void(SDL_Event&)>& event_interceptor = {});
 
     // can be internally set by Alt+F4, X button, etc
     void setQuitFlag();
@@ -82,7 +84,6 @@ private:
 
 public:
     bool getIsFullscreen() const;
-    bool getIsMinimised() const;
 
     // Keybard and mouse input
     bool getKeyDown(SDL_Scancode key) const;

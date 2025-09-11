@@ -7,6 +7,7 @@
 #include <backends/imgui_impl_vulkan.h>
 
 #include <SDL3/SDL_video.h>
+#include <SDL3/SDL_events.h>
 #include <SDL3/SDL_filesystem.h>
 
 #include <tracy/Tracy.hpp>
@@ -105,6 +106,21 @@ void DebugUI::update(double dt)
     }
 
     ImGui::Render();
+}
+
+void DebugUI::windowEventInterceptor(SDL_Event& ev)
+{
+    ImGui_ImplSDL3_ProcessEvent(&ev);
+
+    // cancel inputs that ImGui wants to intercept by setting ev.type to zero
+    const ImGuiIO& io = ImGui::GetIO();
+    if (io.WantCaptureKeyboard && (ev.type == SDL_EVENT_KEY_DOWN || ev.type == SDL_EVENT_KEY_UP)) {
+        ev.type = 0;
+    }
+    if (io.WantCaptureMouse && (ev.type == SDL_EVENT_MOUSE_BUTTON_DOWN || ev.type == SDL_EVENT_MOUSE_BUTTON_UP || ev.type == SDL_EVENT_MOUSE_MOTION ||
+                                ev.type == SDL_EVENT_MOUSE_WHEEL)) {
+        ev.type = 0;
+    }
 }
 
 } // namespace gc

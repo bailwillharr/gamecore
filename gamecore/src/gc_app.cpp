@@ -175,7 +175,7 @@ void App::run()
         const auto frame_begin_stamp = getNanos();
         const auto dt = static_cast<double>(frame_begin_stamp - m_last_frame_begin_stamp) * 1e-9;
 
-        window().processEvents();
+        window().processEvents(DebugUI::windowEventInterceptor);
 
         {
             ZoneScopedN("UI Logic");
@@ -214,7 +214,7 @@ void App::run()
 
         renderBackend().cleanupGPUResources();
 
-        renderBackend().waitForFrameReady(); // reduces latency
+        //renderBackend().waitForFrameReady(); // reduces latency
 
         m_last_frame_begin_stamp = frame_begin_stamp;
 

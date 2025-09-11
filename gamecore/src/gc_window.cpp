@@ -85,7 +85,7 @@ void Window::setWindowVisibility(bool visible)
     }
 }
 
-void Window::processEvents()
+void Window::processEvents(const std::function<void(SDL_Event&)>& event_interceptor)
 {
     ZoneScoped;
 
@@ -96,16 +96,8 @@ void Window::processEvents()
     SDL_Event ev{};
     while (SDL_PollEvent(&ev)) {
 
-        ImGui_ImplSDL3_ProcessEvent(&ev);
-
-        // cancel inputs that ImGui wants to intercept by setting ev.type to zero
-        const ImGuiIO& io = ImGui::GetIO();
-        if (io.WantCaptureKeyboard && (ev.type == SDL_EVENT_KEY_DOWN || ev.type == SDL_EVENT_KEY_UP)) {
-            ev.type = 0;
-        }
-        if (io.WantCaptureMouse && (ev.type == SDL_EVENT_MOUSE_BUTTON_DOWN || ev.type == SDL_EVENT_MOUSE_BUTTON_UP || ev.type == SDL_EVENT_MOUSE_MOTION ||
-                                    ev.type == SDL_EVENT_MOUSE_WHEEL)) {
-            ev.type = 0;
+        if (event_interceptor) {
+            event_interceptor(ev);
         }
 
         switch (ev.type) {

@@ -5,6 +5,7 @@
 
 struct ImGuiContext; // forward-dec
 struct SDL_Window;   // forward-dec
+union SDL_Event; // forward-dec
 
 namespace gc {
 
@@ -33,6 +34,8 @@ public:
 
     // Call every frame after Window::processEvents() and before RenderBackend::submitFrame()
     void update(double dt);
+
+    static void windowEventInterceptor(SDL_Event& ev);
 };
 
 } // namespace gc
