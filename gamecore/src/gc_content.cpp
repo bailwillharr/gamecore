@@ -1,14 +1,14 @@
 #include "gamecore/gc_content.h"
 
+#include <cstring>
+
 #include <filesystem>
 #include <optional>
-#include <mutex>
 
 #include <SDL3/SDL_filesystem.h>
 
 #include <mio/mmap.hpp>
 
-#include "gamecore/gc_abort.h"
 #include "gamecore/gc_logger.h"
 #include "gamecore/gc_gcpak.h"
 #include "gamecore/gc_name.h"
