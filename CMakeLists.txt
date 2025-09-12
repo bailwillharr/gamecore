@@ -209,6 +209,14 @@ cpmaddpackage(
 # tinygltf has its own json.hpp and stb_image_ libraries
 target_compile_definitions(tinygltf PUBLIC TINYGLTF_NO_EXTERNAL_IMAGE)
 
+# mio
+cpmaddpackage(
+    NAME mio
+    URL https://github.com/vimpunk/mio/archive/8b6b7d878c89e81614d05edca7936de41ccdd2da.zip
+    EXCLUDE_FROM_ALL YES
+    SYSTEM YES
+)
+
 # shaderc_combined (from Vulkan SDK)
 find_package(Vulkan REQUIRED COMPONENTS shaderc_combined REQUIRED)
 

@@ -1,12 +1,14 @@
 #include "gamecore/gc_content.h"
 
 #include <filesystem>
-#include <fstream>
 #include <optional>
 #include <mutex>
 
+#include <SDL3/SDL_filesystem.h>
+
+#include <mio/mmap.hpp>
+
 #include "gamecore/gc_abort.h"
-#include "gamecore/gc_disk_io.h"
 #include "gamecore/gc_logger.h"
 #include "gamecore/gc_gcpak.h"
 #include "gamecore/gc_name.h"
@@ -20,21 +22,43 @@ struct PackageAssetInfo {
     GcpakAssetEntry entry;
 };
 
-// returns ifstream and number of entries in file
-static std::optional<std::pair<std::ifstream, std::uint32_t>> openAndValidateGcpak(const std::filesystem::path& file_path)
+static std::optional<std::filesystem::path> findContentDir()
 {
-    std::ifstream file(file_path, std::ios::in | std::ios::binary);
-    if (!file.is_open()) {
-        GC_ERROR("Failed to open file: {}", file_path.filename().string());
+    const char* const base_path = SDL_GetBasePath();
+    if (base_path) {
+        const std::filesystem::path content_dir = std::filesystem::path(base_path) / "content";
+        if (std::filesystem::is_directory(content_dir)) {
+            return content_dir;
+        }
+        else {
+            GC_ERROR("Failed to find content dir: {} is not a directory", content_dir.string());
+            return {};
+        }
+    }
+    else {
+        GC_ERROR("Failed to find content dir: SDL_GetBasePath() error: {}", SDL_GetError());
+        return {};
+    }
+}
+
+// returns mmap_source and number of entries in file
+static std::optional<std::pair<std::unique_ptr<mio::mmap_source>, std::uint32_t>> openAndValidateGcpak(const std::filesystem::path& file_path)
+{
+    std::error_code err;
+    auto file = std::make_unique<mio::mmap_source>();
+    file->map(file_path.string(), err);
+    if (err) {
+        GC_ERROR("Failed to map file: {}, code: {}", file_path.filename().string(), err.message());
         return {};
     }
 
-    GcpakHeader header{};
-    file.read(reinterpret_cast<char*>(&header), sizeof(GcpakHeader));
-    if (!file || file.gcount() != sizeof(GcpakHeader)) {
-        GC_ERROR("Failed to read gcpak header for file: {}, {}/{} bytes read", file_path.filename().string(), file.gcount(), sizeof(GcpakHeader));
+    if (file->size() < sizeof(GcpakHeader)) {
+        GC_ERROR("Gcpak file too small: {}", file_path.filename().string());
         return {};
     }
+
+    GcpakHeader header;
+    std::memcpy(&header, file->data(), sizeof(GcpakHeader));
 
     if (header.format_identifier != GCPAK_FORMAT_IDENTIFIER) {
         GC_ERROR("Gcpak file header invalid: {}, got '{}'", file_path.filename().string(),
@@ -51,21 +75,15 @@ static std::optional<std::pair<std::ifstream, std::uint32_t>> openAndValidateGcp
 }
 
 /* no bounds checking done, ensure index < header.num_entries */
-static std::optional<GcpakAssetEntry> getAssetEntry(std::ifstream& file, const uint32_t index)
+static GcpakAssetEntry getAssetEntry(const mio::mmap_source& map, const uint32_t index)
 {
-    GcpakAssetEntry entry{};
+    const std::ptrdiff_t entry_location_in_map = map.size() - ((static_cast<size_t>(index) + 1) * sizeof(GcpakAssetEntry));
+    GC_ASSERT(entry_location_in_map > 0);
 
-    const std::streamoff offset = -static_cast<std::streamoff>((index + 1) * sizeof(GcpakAssetEntry));
-    file.seekg(offset, std::ios::end);
+    GcpakAssetEntry entry;
+    std::memcpy(&entry, map.data() + entry_location_in_map, sizeof(GcpakAssetEntry));
 
-    file.read(reinterpret_cast<char*>(&entry), sizeof(GcpakAssetEntry));
-    if (file.gcount() != sizeof(GcpakAssetEntry)) {
-        GC_ERROR("file.read() failed to read gcpak asset entry! {}/{} bytes read", file.gcount(), sizeof(GcpakAssetEntry));
-        return {};
-    }
-    else {
-        return entry;
-    }
+    return entry;
 }
 
 Content::Content()
@@ -77,7 +95,7 @@ Content::Content()
             if (dir_entry.is_regular_file() && dir_entry.path().extension() == std::string{".gcpak"}) {
                 GC_DEBUG("Loading .gcpak file: {}:", dir_entry.path().filename().string());
 
-                auto opt = openAndValidateGcpak(dir_entry.path());
+                auto opt = openAndValidateGcpak(dir_entry.path()); // cannot be const as opt.get() has a unique_ptr which is moved from
                 if (opt) {
 
                     // first attempt to load hash LUT file (loadAssetIDTable() does nothing in release builds)
@@ -87,26 +105,19 @@ Content::Content()
 
                     // pair in optional might be OTT?
                     auto& [file, num_entries] = opt.value();
-                    const unsigned int file_index = static_cast<unsigned int>(m_package_files.size());
+                    const unsigned int file_index = static_cast<unsigned int>(m_package_file_maps.size());
                     for (uint32_t i = 0; i < num_entries; ++i) {
-                        const auto asset_entry = getAssetEntry(file, i);
-                        if (asset_entry) {
-                            PackageAssetInfo info{};
-                            info.entry = asset_entry.value();
-                            info.file_index = file_index;
-                            m_asset_infos.emplace(info.entry.crc32_id, info); // crc32 is stored in both key and value here
-                            GC_DEBUG("    {} ({})", assetIDToStr(info.entry.crc32_id), bytesToHumanReadable(info.entry.size));
-                        }
-                        else {
-                            GC_ERROR("Failed to locate entry in {}, Skipping the rest of this file.", dir_entry.path().filename().string());
-                            break;
-                        }
+                        const auto asset_entry = getAssetEntry(*file, i);
+                        PackageAssetInfo info{};
+                        info.entry = asset_entry;
+                        info.file_index = file_index;
+                        m_asset_infos.emplace(info.entry.crc32_id, info); // crc32 is stored in both key and value here
+                        GC_DEBUG("    {} ({})", assetIDToStr(info.entry.crc32_id), bytesToHumanReadable(info.entry.size));
                     }
-                    m_package_files.emplace_back(std::move(file)); // keep file handle
+                    m_package_file_maps.push_back(std::move(file)); // keep file handle
                 }
             }
         }
-        m_package_file_mutexes = std::vector<std::mutex>(m_package_files.size());
     }
     GC_TRACE("Initialised content manager");
 }
@@ -115,8 +126,6 @@ Content::~Content() { GC_TRACE("Destroying content manager..."); }
 
 std::vector<uint8_t> Content::loadAsset(std::uint32_t id)
 {
-
-    // get asset info
     if (!m_asset_infos.contains(id)) {
         GC_ERROR("Asset {} not found in any .gcpak file", assetIDToStr(id));
         return {};
@@ -127,24 +136,12 @@ std::vector<uint8_t> Content::loadAsset(std::uint32_t id)
         return {};
     }
 
-    // read file
-    {
-        GC_ASSERT(asset_info.file_index < m_package_file_mutexes.size());
-        GC_ASSERT(asset_info.file_index < m_package_files.size());
+    GC_ASSERT(asset_info.file_index < m_package_file_maps.size());
 
-        std::lock_guard<std::mutex> lock(m_package_file_mutexes[asset_info.file_index]);
-        auto& file = m_package_files[asset_info.file_index];
-        file.seekg(asset_info.entry.offset, std::ios::beg);
-        std::vector<uint8_t> data(asset_info.entry.size);
-        file.read(reinterpret_cast<char*>(data.data()), asset_info.entry.size);
-        if (file.gcount() != asset_info.entry.size) {
-            GC_ERROR("file.read() failed to read asset {} from file! {}/{} bytes read", assetIDToStr(id), file.gcount(), asset_info.entry.size);
-            return {};
-        }
-        else {
-            return data;
-        }
-    }
+    const auto& file = m_package_file_maps[asset_info.file_index];
+    std::vector<uint8_t> data(asset_info.entry.size);
+    std::memcpy(data.data(), file->data() + asset_info.entry.offset, asset_info.entry.size);
+    return data;
 }
 
 } // namespace gc

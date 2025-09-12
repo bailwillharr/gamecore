@@ -8,7 +8,10 @@
 #include <fstream>
 #include <unordered_map>
 #include <tuple>
+#include <memory>
 #include <mutex>
+
+#include <mio/mmap.hpp>
 
 #include "gamecore/gc_gcpak.h"
 
@@ -22,8 +25,9 @@ namespace gc {
 struct PackageAssetInfo; // forward-dec
 
 class Content {
-    std::vector<std::ifstream> m_package_files;
-    std::vector<std::mutex> m_package_file_mutexes;
+
+    // mmap_source objects are non-copyable and non-moveable so a vector cannot be used
+    std::vector<std::unique_ptr<mio::mmap_source>> m_package_file_maps;
 
     std::unordered_map<std::uint32_t, PackageAssetInfo> m_asset_infos;
 

@@ -17,7 +17,7 @@ set(SRC_FILES
 	"src/gc_logger_spdlog.cpp"
 	"src/gc_jobs.cpp"
 	"src/gc_content.cpp"
-	"src/gc_disk_io.cpp"
+	
 	"src/gc_name.cpp"
 	"src/gc_units.cpp"
 	"src/gc_window.cpp"
@@ -49,7 +49,7 @@ set(INCLUDE_FILES
 	"include/gamecore/gc_defines.h"
 	"include/gamecore/gc_content.h"
 	"include/gamecore/gc_abort.h"
-	"include/gamecore/gc_disk_io.h"
+	
 	"include/gamecore/gc_crc_table.h"
 	"include/gamecore/gc_name.h"
 	"include/gamecore/gc_gcpak.h"
@@ -136,6 +136,9 @@ target_link_libraries(${PROJECT_NAME} PUBLIC imgui)
 
 # tinygltf
 target_link_libraries(${PROJECT_NAME} PUBLIC tinygltf)
+
+# mio
+target_link_libraries(${PROJECT_NAME} PUBLIC mio::mio)
 
 # For some reason Vulkan::shaderc_combined doesn't link on linux even though FindVulkan.cmake finds the component??
 if (WIN32)
