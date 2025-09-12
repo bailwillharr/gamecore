@@ -124,7 +124,8 @@ static void recreateFramebufferImage(VkDevice device, VmaAllocator allocator, Vk
     GC_CHECKVK(vkCreateImageView(device, &view_info, nullptr, &view));
 }
 
-RenderBackend::RenderBackend(SDL_Window* window_handle) : m_device(), m_allocator(m_device), m_swapchain(m_device, window_handle)
+RenderBackend::RenderBackend(SDL_Window* window_handle)
+    : m_device(), m_allocator(m_device), m_swapchain(m_device, window_handle), m_delete_queue(m_device.getHandle())
 {
     // create main descriptor pool for long-lasting static resources
     {
@@ -214,23 +215,6 @@ RenderBackend::~RenderBackend()
     vkDestroyPipelineLayout(m_device.getHandle(), m_pipeline_layout, nullptr);
 
     vkDestroyDescriptorPool(m_device.getHandle(), m_main_desciptor_pool, nullptr);
-}
-
-void RenderBackend::waitForFrameReady()
-{
-    ZoneScoped;
-
-    const auto& stuff = m_fif[m_frame_count % m_fif.size()];
-
-    ZoneValue(stuff.command_buffer_available_value);
-
-    VkSemaphoreWaitInfo info{};
-    info.sType = VK_STRUCTURE_TYPE_SEMAPHORE_WAIT_INFO;
-    info.semaphoreCount = 1;
-    info.pSemaphores = &m_timeline_semaphore;
-    info.pValues = &stuff.command_buffer_available_value;
-    GC_CHECKVK(vkWaitSemaphores(m_device.getHandle(), &info, UINT64_MAX));
-    m_command_buffer_ready = true;
 }
 
 void RenderBackend::submitFrame(bool window_resized, const WorldDrawData& world_draw_data)
@@ -375,7 +359,7 @@ void RenderBackend::submitFrame(bool window_resized, const WorldDrawData& world_
         }
     }
     else {
-        GC_ERROR("No pipeline set for world draw data");
+        //GC_ERROR("No pipeline set for world draw data");
     }
 
     ImGui_ImplVulkan_RenderDrawData(ImGui::GetDrawData(), stuff.cmd);
@@ -456,11 +440,13 @@ void RenderBackend::submitFrame(bool window_resized, const WorldDrawData& world_
         recreateFramebufferImage(m_device.getHandle(), m_allocator.getHandle(), m_swapchain.getSurfaceFormat().format, m_swapchain.getExtent(),
                                  m_framebuffer_image, m_framebuffer_image_allocation, m_framebuffer_image_view);
     }
+
+    ++m_frame_count;
 }
 
 void RenderBackend::cleanupGPUResources()
 {
-    m_delete_queue.deleteUnusedResources(m_device.getHandle(), std::array{m_timeline_semaphore});
+    m_delete_queue.deleteUnusedResources(std::array{m_timeline_semaphore});
 }
 
 GPUPipeline RenderBackend::createPipeline(std::span<const uint8_t> vertex_spv, std::span<const uint8_t> fragment_spv)
@@ -667,6 +653,23 @@ void RenderBackend::recreateFramesInFlightResources()
         }
         stuff.command_buffer_available_value = 0;
     }
+}
+
+void RenderBackend::waitForFrameReady()
+{
+    ZoneScoped;
+
+    const auto& stuff = m_fif[m_frame_count % m_fif.size()];
+
+    ZoneValue(stuff.command_buffer_available_value);
+
+    VkSemaphoreWaitInfo info{};
+    info.sType = VK_STRUCTURE_TYPE_SEMAPHORE_WAIT_INFO;
+    info.semaphoreCount = 1;
+    info.pSemaphores = &m_timeline_semaphore;
+    info.pValues = &stuff.command_buffer_available_value;
+    GC_CHECKVK(vkWaitSemaphores(m_device.getHandle(), &info, UINT64_MAX));
+    m_command_buffer_ready = true;
 }
 
 } // namespace gc

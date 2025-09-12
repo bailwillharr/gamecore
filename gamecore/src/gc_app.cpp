@@ -23,6 +23,7 @@
 #include "gamecore/gc_world_draw_data.h"
 #include "gamecore/gc_transform_component.h"
 #include "gamecore/gc_cube_system.h"
+#include "gamecore/gc_stopwatch.h"
 
 namespace gc {
 
@@ -34,7 +35,8 @@ App::App(const AppInitOptions& options)
       m_performance_counter_frequency(SDL_GetPerformanceFrequency()),
       m_performance_counter_init(SDL_GetPerformanceCounter())
 {
-    // Setup app metadata for SDL
+
+    /* Register some information for the program */
     {
         bool set_prop_success = true;
         // These functions copy the strings so they do not need to be saved
@@ -48,7 +50,7 @@ App::App(const AppInitOptions& options)
         }
     }
 
-    // Get save directory (In $XDG_DATA_HOME on Linux and in %appdata% on Windows)
+    /* Get save directory(In $XDG_DATA_HOME on Linux and in % appdata % on Windows) */
     const char* user_dir = SDL_GetPrefPath(options.author.c_str(), options.name.c_str());
     if (user_dir) {
         m_save_directory = std::filesystem::path(user_dir);
@@ -61,20 +63,46 @@ App::App(const AppInitOptions& options)
         m_save_directory = std::filesystem::current_path();
     }
 
-    m_jobs = std::make_unique<Jobs>(std::thread::hardware_concurrency());
+    /* SUBSYSTEM INITIALISATION */
 
-    m_content = std::make_unique<Content>();
+    {
+        auto t = tick("Jobs subsystem init");
+        m_jobs = std::make_unique<Jobs>(std::thread::hardware_concurrency());
+        tock(t);
+    }
 
-    WindowInitInfo window_init_info{};
-    window_init_info.vulkan_support = true;
-    window_init_info.resizable = false;
-    m_window = std::make_unique<Window>(window_init_info);
+    {
+        auto t = tick("Content subsystem init");
+        m_content = std::make_unique<Content>();
+        tock(t);
+    }
 
-    m_render_backend = std::make_unique<RenderBackend>(m_window->getHandle());
+    {
+        auto t = tick("Window subsystenm init");
+        WindowInitInfo window_init_info{};
+        window_init_info.vulkan_support = true;
+        window_init_info.resizable = false;
+        m_window = std::make_unique<Window>(window_init_info);
+        tock(t);
+    }
 
-    m_debug_ui = std::make_unique<DebugUI>(m_window->getHandle(), m_render_backend->getInfo(), m_save_directory / "imgui.ini");
+    {
+        auto t = tick("RenderBackend subsystem init");
+        m_render_backend = std::make_unique<RenderBackend>(m_window->getHandle());
+        tock(t);
+    }
 
-    m_world = std::make_unique<World>();
+    {
+        auto t = tick("DebugUI subsystem init");
+        m_debug_ui = std::make_unique<DebugUI>(m_window->getHandle(), m_render_backend->getInfo(), m_save_directory / "imgui.ini");
+        tock(t);
+    }
+
+    {
+        auto t = tick("World subsystem init");
+        m_world = std::make_unique<World>();
+        tock(t);
+    }
 
     GC_TRACE("Initialised Application");
 }
@@ -166,9 +194,8 @@ void App::run()
 
     m_last_frame_begin_stamp = getNanos() - 1'000'000; // treat the first delta time as 1 ms
 
-    auto pipeline = renderBackend().createPipeline(content().loadAsset(strToName("vert_spv")), content().loadAsset(strToName("frag_spv")));
+    std::unique_ptr<GPUPipeline> pipeline{};
     WorldDrawData world_draw_data;
-    world_draw_data.setPipeline(&pipeline);
 
     while (!window().shouldQuit()) {
 
@@ -199,6 +226,17 @@ void App::run()
                     comp->setPosition({1.0f, 1.0f, 1.0f});
                 }
             }
+            else if (window().getKeyPress(SDL_SCANCODE_I)) {
+                if (pipeline) {
+                    world_draw_data.setPipeline(nullptr);
+                    pipeline = {};
+                }
+                else {
+                    pipeline = std::make_unique<GPUPipeline>(
+                        renderBackend().createPipeline(content().loadAsset(strToName("vert_spv")), content().loadAsset(strToName("frag_spv"))));
+                    world_draw_data.setPipeline(pipeline.get());
+                }
+            }
         }
 
         m_world->update(dt);
@@ -214,7 +252,7 @@ void App::run()
 
         renderBackend().cleanupGPUResources();
 
-        //renderBackend().waitForFrameReady(); // reduces latency
+        // renderBackend().waitForFrameReady(); // reduces latency
 
         m_last_frame_begin_stamp = frame_begin_stamp;
 

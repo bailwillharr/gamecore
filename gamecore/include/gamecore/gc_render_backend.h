@@ -48,17 +48,14 @@ struct RenderBackendInfo {
     VkFormat depth_stencil_format;
 };
 
-enum class RenderSyncMode {
-    VSYNC_ON_DOUBLE_BUFFERED,
-    VSYNC_ON_TRIPLE_BUFFERED,
-    VSYNC_ON_TRIPLE_BUFFERED_UNTHROTTLED,
-    VSYNC_OFF
-};
+enum class RenderSyncMode { VSYNC_ON_DOUBLE_BUFFERED, VSYNC_ON_TRIPLE_BUFFERED, VSYNC_ON_TRIPLE_BUFFERED_UNTHROTTLED, VSYNC_OFF };
 
 class RenderBackend {
     VulkanDevice m_device;
     VulkanAllocator m_allocator;
     VulkanSwapchain m_swapchain;
+
+    GPUResourceDeleteQueue m_delete_queue;
 
     // global descriptor pool
     VkDescriptorPool m_main_desciptor_pool{};
@@ -92,8 +89,6 @@ class RenderBackend {
     uint64_t m_timeline_value{};
     uint64_t m_present_finished_value{};
 
-    GPUResourceDeleteQueue m_delete_queue{};
-
 public:
     explicit RenderBackend(SDL_Window* window_handle);
     RenderBackend(const RenderBackend&) = delete;
@@ -125,9 +120,6 @@ public:
         }
     }
 
-    /* Call this before input polling and logic to reduce latency at the cost of stalling GPU */
-    void waitForFrameReady();
-
     /* Renders to framebuffer and presents framebuffer to the screen */
     void submitFrame(bool window_resized, const WorldDrawData& world_draw_data);
 
@@ -154,6 +146,9 @@ public:
 
 private:
     void recreateFramesInFlightResources();
+
+    /* Call this before input polling and logic to reduce latency at the cost of stalling GPU */
+    void waitForFrameReady();
 };
 
 } // namespace gc
