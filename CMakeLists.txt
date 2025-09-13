@@ -8,18 +8,18 @@ set(CMAKE_CONFIGURATION_TYPES "Debug;Release;RelWithDebInfo")
 # Compiler options such as compiler warnings, treating warnings as errors,
 # are defined per project/target
 if(MSVC)
-  set(CMAKE_CXX_FLAGS "/DWIN32 /D_WINDOWS /D_HAS_EXCEPTIONS=1 /EHsc")
-  set(CMAKE_CXX_FLAGS_DEBUG "/Ob0 /Od /RTC1")
-  set(CMAKE_CXX_FLAGS_RELEASE "/O2 /Ob2 /Oi /Ot /arch:AVX2 /DNDEBUG /GL")
-  set(CMAKE_CXX_FLAGS_REL_WITH_DEB_INFO "/O2 /Ob1 /DNDEBUG")
-  set(CMAKE_C_FLAGS "/DWIN32 /D_WINDOWS")
-  set(CMAKE_C_FLAGS_DEBUG "/Ob0 /Od /RTC1")
-  set(CMAKE_C_FLAGS_RELEASE "/O2 /Ob2 /DNDEBUG /GL")
-  set(CMAKE_C_FLAGS_REL_WITH_DEB_INFO "/O2 /Ob1 /DNDEBUG")
-  set(CMAKE_EXE_LINKER_FLAGS "/machine:x64")
-  set(CMAKE_EXE_LINKER_FLAGS_DEBUG "/debug /INCREMENTAL")
-  set(CMAKE_EXE_LINKER_FLAGS_RELEASE "/INCREMENTAL:NO /OPT:REF /LTCG:STATUS")
-  set(CMAKE_EXE_LINKER_FLAGS_REL_WITH_DEB_INFO "/debug /INCREMENTAL")
+    set(CMAKE_CXX_FLAGS "/DWIN32 /D_WINDOWS /D_HAS_EXCEPTIONS=1 /EHsc")
+    set(CMAKE_CXX_FLAGS_DEBUG "/Ob0 /Od /RTC1")
+    set(CMAKE_CXX_FLAGS_RELEASE "/O2 /Ob2 /Oi /Ot /arch:AVX2 /DNDEBUG /GL")
+    set(CMAKE_CXX_FLAGS_REL_WITH_DEB_INFO "/O2 /Ob1 /DNDEBUG")
+    set(CMAKE_C_FLAGS "/DWIN32 /D_WINDOWS")
+    set(CMAKE_C_FLAGS_DEBUG "/Ob0 /Od /RTC1")
+    set(CMAKE_C_FLAGS_RELEASE "/O2 /Ob2 /DNDEBUG /GL")
+    set(CMAKE_C_FLAGS_REL_WITH_DEB_INFO "/O2 /Ob1 /DNDEBUG")
+    set(CMAKE_EXE_LINKER_FLAGS "/machine:x64")
+    set(CMAKE_EXE_LINKER_FLAGS_DEBUG "/debug /INCREMENTAL")
+    set(CMAKE_EXE_LINKER_FLAGS_RELEASE "/INCREMENTAL:NO /OPT:REF /LTCG:STATUS")
+    set(CMAKE_EXE_LINKER_FLAGS_REL_WITH_DEB_INFO "/debug /INCREMENTAL")
 endif()
 
 set(CMAKE_EXPORT_COMPILE_COMMANDS ON)
@@ -79,14 +79,14 @@ cpmaddpackage(
 
 # Tracy
 if(GC_PROFILING)
-  set(GC_TRACY_ENABLE "TRACY_ENABLE ON")
+    set(GC_TRACY_ENABLE "TRACY_ENABLE ON")
 else()
-  set(GC_TRACY_ENABLE "TRACY_ENABLE OFF")
+    set(GC_TRACY_ENABLE "TRACY_ENABLE OFF")
 endif()
 cpmaddpackage(
   NAME tracy
-  VERSION 0.11.1
-  URL https://github.com/wolfpld/tracy/archive/refs/tags/v0.11.1.zip
+  VERSION 0.12.2
+  URL https://github.com/wolfpld/tracy/archive/refs/tags/v0.12.2.zip
   OPTIONS
     "${GC_TRACY_ENABLE}"
     "TRACY_ON_DEMAND OFF"
@@ -112,26 +112,26 @@ target_compile_definitions(asio INTERFACE
   ASIO_SEPARATE_COMPILATION
 )
 if(WIN32)
-  macro(get_win32_winnt version)
-    if(CMAKE_SYSTEM_VERSION)
-      set(ver ${CMAKE_SYSTEM_VERSION})
-      string(REGEX MATCH "^([0-9]+).([0-9])" ver ${ver})
-      string(REGEX MATCH "^([0-9]+)" verMajor ${ver})
-      # Check for Windows 10, b/c we'll need to convert to hex 'A'.
-      if("${verMajor}" MATCHES "10")
-        set(verMajor "A")
-        string(REGEX REPLACE "^([0-9]+)" ${verMajor} ver ${ver})
-      endif()
-      # Remove all remaining '.' characters.
-      string(REPLACE "." "" ver ${ver})
-      # Prepend each digit with a zero.
-      string(REGEX REPLACE "([0-9A-Z])" "0\\1" ver ${ver})
-      set(${version} "0x${ver}")
-    endif()
-  endmacro()
+    macro(get_win32_winnt version)
+        if(CMAKE_SYSTEM_VERSION)
+            set(ver ${CMAKE_SYSTEM_VERSION})
+            string(REGEX MATCH "^([0-9]+).([0-9])" ver ${ver})
+            string(REGEX MATCH "^([0-9]+)" verMajor ${ver})
+            # Check for Windows 10, b/c we'll need to convert to hex 'A'.
+            if("${verMajor}" MATCHES "10")
+                set(verMajor "A")
+                string(REGEX REPLACE "^([0-9]+)" ${verMajor} ver ${ver})
+            endif()
+            # Remove all remaining '.' characters.
+            string(REPLACE "." "" ver ${ver})
+            # Prepend each digit with a zero.
+            string(REGEX REPLACE "([0-9A-Z])" "0\\1" ver ${ver})
+            set(${version} "0x${ver}")
+        endif()
+    endmacro()
 
-  get_win32_winnt(ver)
-  target_compile_definitions(asio INTERFACE _WIN32_WINNT=${ver})
+    get_win32_winnt(ver)
+    target_compile_definitions(asio INTERFACE _WIN32_WINNT=${ver})
 endif()
 
 # json

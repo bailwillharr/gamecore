@@ -347,7 +347,7 @@ void RenderBackend::submitFrame(bool window_resized, const WorldDrawData& world_
     // for now just record into primary command buffer. Might change later.
     if (GPUPipeline* pipeline = world_draw_data.getPipeline()) {
         pipeline->useResource(m_timeline_semaphore, m_timeline_value + 1);
-        vkCmdBindPipeline(stuff.cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, pipeline->handle);
+        vkCmdBindPipeline(stuff.cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, pipeline->getHandle());
 
         const double aspect_ratio = static_cast<double>(m_swapchain.getExtent().width) / static_cast<double>(m_swapchain.getExtent().height);
         glm::mat4 projection_matrix = glm::perspectiveLH_ZO(glm::radians(45.0), aspect_ratio, 0.1, 1000.0);
@@ -359,7 +359,7 @@ void RenderBackend::submitFrame(bool window_resized, const WorldDrawData& world_
         }
     }
     else {
-        //GC_ERROR("No pipeline set for world draw data");
+        // GC_ERROR("No pipeline set for world draw data");
     }
 
     ImGui_ImplVulkan_RenderDrawData(ImGui::GetDrawData(), stuff.cmd);
@@ -444,10 +444,7 @@ void RenderBackend::submitFrame(bool window_resized, const WorldDrawData& world_
     ++m_frame_count;
 }
 
-void RenderBackend::cleanupGPUResources()
-{
-    m_delete_queue.deleteUnusedResources(std::array{m_timeline_semaphore});
-}
+void RenderBackend::cleanupGPUResources() { m_delete_queue.deleteUnusedResources(std::array{m_timeline_semaphore}); }
 
 GPUPipeline RenderBackend::createPipeline(std::span<const uint8_t> vertex_spv, std::span<const uint8_t> fragment_spv)
 {
@@ -592,7 +589,7 @@ GPUPipeline RenderBackend::createPipeline(std::span<const uint8_t> vertex_spv, s
 
     VkPipeline handle{};
     GC_CHECKVK(vkCreateGraphicsPipelines(m_device.getHandle(), VK_NULL_HANDLE, 1, &info, nullptr, &handle));
-    
+
     vkDestroyShaderModule(m_device.getHandle(), fragment_module, nullptr);
     vkDestroyShaderModule(m_device.getHandle(), vertex_module, nullptr);
 

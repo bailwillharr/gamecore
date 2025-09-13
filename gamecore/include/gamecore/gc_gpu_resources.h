@@ -63,8 +63,8 @@ public:
 // Ensure that derived classes using this class call m_delete_queue->markForDeletion()
 class GPUResource {
     VkSemaphore m_timeline_semaphore = VK_NULL_HANDLE; // timeline semaphore associated with the queue this resource was last used with
-    uint64_t m_resource_free_signal_value = 0; // when the resource is no longer in use
-    GPUResourceDeleteQueue& m_delete_queue; // points to the global GPUResource delete queue
+    uint64_t m_resource_free_signal_value = 0;         // when the resource is no longer in use
+    GPUResourceDeleteQueue& m_delete_queue;            // points to the global GPUResource delete queue
 
 protected:
     GPUResource(GPUResourceDeleteQueue& delete_queue) : m_delete_queue(delete_queue) {}
@@ -97,24 +97,25 @@ public:
 };
 
 class GPUPipeline : public GPUResource {
-public:
-    VkPipeline handle;
+    VkPipeline m_handle;
 
 public:
-    GPUPipeline(GPUResourceDeleteQueue& delete_queue, VkPipeline pipeline) : GPUResource(delete_queue), handle(pipeline) {}
+    GPUPipeline(GPUResourceDeleteQueue& delete_queue, VkPipeline pipeline) : GPUResource(delete_queue), m_handle(pipeline) {}
     GPUPipeline(const GPUPipeline&) = delete;
-    GPUPipeline(GPUPipeline&& other) noexcept : GPUResource(std::move(other)), handle(other.handle) { other.handle = VK_NULL_HANDLE; }
+    GPUPipeline(GPUPipeline&& other) noexcept : GPUResource(std::move(other)), m_handle(other.m_handle) { other.m_handle = VK_NULL_HANDLE; }
 
     GPUPipeline& operator=(const GPUPipeline&) = delete;
     GPUPipeline& operator=(GPUPipeline&&) = delete;
 
     ~GPUPipeline()
     {
-        if (handle != VK_NULL_HANDLE) {
-            auto pipeline = handle;
+        if (m_handle != VK_NULL_HANDLE) {
+            auto pipeline = m_handle;
             markForDeletion([pipeline](VkDevice device) { vkDestroyPipeline(device, pipeline, nullptr); });
         }
     }
+
+    VkPipeline getHandle() const { return m_handle; }
 };
 
 } // namespace gc
