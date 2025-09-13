@@ -114,7 +114,7 @@ public:
                 m_swapchain.setRequestedPresentMode(VK_PRESENT_MODE_MAILBOX_KHR);
                 break;
             case RenderSyncMode::VSYNC_OFF:
-                m_requested_frames_in_flight = 2;
+                m_requested_frames_in_flight = 1;
                 m_swapchain.setRequestedPresentMode(VK_PRESENT_MODE_IMMEDIATE_KHR);
                 break;
         }

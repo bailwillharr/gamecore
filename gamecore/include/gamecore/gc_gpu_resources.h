@@ -18,15 +18,16 @@ public:
     struct DeletionEntry {
         VkSemaphore timeline_semaphore;        // the timeline semaphore corresponding to the queue using the resource
         uint64_t resource_free_signal_value;   // when the resource can be safely destroyed
-        std::function<void(VkDevice)> deleter; // typically stores the resource handle as a lambda capture and calls vkDestroyXXX();
+        std::function<void(VkDevice, VmaAllocator)> deleter; // typically stores the resource handle as a lambda capture and calls vkDestroyXXX();
     };
 
 private:
     VkDevice m_device{};
+    VmaAllocator m_allocator{};
     std::vector<DeletionEntry> m_deletion_entries{};
 
 public:
-    GPUResourceDeleteQueue(VkDevice device) : m_device(device) {}
+    GPUResourceDeleteQueue(VkDevice device, VmaAllocator allocator) : m_device(device), m_allocator(allocator) {}
 
     /* Mark a GPU resource for deletion. Should be called in the destructor of the derived class. */
     void markForDeletion(const DeletionEntry& entry) { m_deletion_entries.push_back(entry); }
@@ -48,7 +49,7 @@ public:
                         // OR
                         // resource had no timeline semaphore in which case always delete it
                         GC_TRACE("Deleting a GPU resource");
-                        m_deletion_entries[j].deleter(m_device);
+                        m_deletion_entries[j].deleter(m_device, m_allocator);
                         m_deletion_entries[j] = m_deletion_entries.back();
                         m_deletion_entries.pop_back();
                     }
@@ -82,7 +83,7 @@ protected:
     GPUResource& operator=(const GPUResource&) = delete;
     GPUResource& operator=(GPUResource&&) = delete;
 
-    void markForDeletion(const std::function<void(VkDevice)>& deleter)
+    void markForDeletion(const std::function<void(VkDevice, VmaAllocator)>& deleter)
     {
         m_delete_queue.markForDeletion({m_timeline_semaphore, m_resource_free_signal_value, deleter});
     }
@@ -100,7 +101,7 @@ class GPUPipeline : public GPUResource {
     VkPipeline m_handle;
 
 public:
-    GPUPipeline(GPUResourceDeleteQueue& delete_queue, VkPipeline pipeline) : GPUResource(delete_queue), m_handle(pipeline) {}
+    GPUPipeline(GPUResourceDeleteQueue& delete_queue, VkPipeline handle) : GPUResource(delete_queue), m_handle(handle) {}
     GPUPipeline(const GPUPipeline&) = delete;
     GPUPipeline(GPUPipeline&& other) noexcept : GPUResource(std::move(other)), m_handle(other.m_handle) { other.m_handle = VK_NULL_HANDLE; }
 
@@ -111,11 +112,36 @@ public:
     {
         if (m_handle != VK_NULL_HANDLE) {
             auto pipeline = m_handle;
-            markForDeletion([pipeline](VkDevice device) { vkDestroyPipeline(device, pipeline, nullptr); });
+            markForDeletion([pipeline](VkDevice device, [[maybe_unused]] VmaAllocator allocator) { vkDestroyPipeline(device, pipeline, nullptr); });
         }
     }
 
     VkPipeline getHandle() const { return m_handle; }
+};
+
+/* A device-local GPU buffer. Intended for vertex buffers, index buffers, etc */
+class GPUBuffer : public GPUResource {
+    VkBuffer m_handle{};
+    VmaAllocation m_allocation{};
+
+public:
+    GPUBuffer(GPUResourceDeleteQueue& delete_queue, VkBuffer handle, VmaAllocation allocation) : GPUResource(delete_queue), m_handle(handle), m_allocation(allocation) {}
+    GPUBuffer(const GPUBuffer&) = delete;
+    GPUBuffer(GPUBuffer&& other) noexcept : GPUResource(std::move(other)), m_handle(other.m_handle) { other.m_handle = VK_NULL_HANDLE; }
+
+    GPUBuffer& operator=(const GPUBuffer&) = delete;
+    GPUBuffer& operator=(GPUBuffer&&) = delete;
+
+    ~GPUBuffer()
+    {
+        if (m_handle != VK_NULL_HANDLE) {
+            auto buffer = m_handle;
+            auto allocation = m_allocation;
+            markForDeletion([buffer, allocation]([[maybe_unused]] VkDevice device, VmaAllocator allocator) { vmaDestroyBuffer(allocator, buffer, allocation); });
+        }
+    }
+
+    VkBuffer getHandle() const { return m_handle; }
 };
 
 } // namespace gc

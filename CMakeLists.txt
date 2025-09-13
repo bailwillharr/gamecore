@@ -227,3 +227,4 @@ add_subdirectory(gamecore_template)
 #add_subdirectory(dedicated_server)
 
 add_subdirectory(tools/gcpak_editor)
+add_subdirectory(tools/compile_shaders)
