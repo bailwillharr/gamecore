@@ -220,11 +220,14 @@ cpmaddpackage(
 # shaderc_combined (from Vulkan SDK)
 find_package(Vulkan REQUIRED COMPONENTS shaderc_combined REQUIRED)
 
+# library for manipulating game asset files
+add_subdirectory(gcpak)
+
 add_subdirectory(gamecore)
 
 add_subdirectory(gamecore_template)
 
 #add_subdirectory(dedicated_server)
 
-add_subdirectory(tools/gcpak_editor)
+#add_subdirectory(tools/gcpak_editor) # broken
 add_subdirectory(tools/compile_shaders)

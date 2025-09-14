@@ -29,7 +29,7 @@ class Content {
     // mmap_source objects are non-copyable and non-moveable so a vector cannot be used
     std::vector<std::unique_ptr<mio::mmap_source>> m_package_file_maps;
 
-    std::unordered_map<std::uint32_t, PackageAssetInfo> m_asset_infos;
+    std::vector<PackageAssetInfo> m_asset_infos;
 
 public:
     Content();
@@ -44,7 +44,7 @@ public:
     /* use gc::strToName(std::string_view str) */
     /* This function is thread-safe */
     /* Returns empty vector on failure */
-    std::vector<uint8_t> loadAsset(std::uint32_t name);
+    std::vector<uint8_t> loadAsset(std::uint32_t name) const;
 };
 
 } // namespace gc

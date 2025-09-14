@@ -232,9 +232,12 @@ void App::run()
                     pipeline = {};
                 }
                 else {
-                    pipeline = std::make_unique<GPUPipeline>(
-                        renderBackend().createPipeline(content().loadAsset(strToName("vert_spv")), content().loadAsset(strToName("frag_spv"))));
-                    world_draw_data.setPipeline(pipeline.get());
+                    auto vert = content().loadAsset(strToName("cube.vert"));
+                    auto frag = content().loadAsset(strToName("cube.frag"));
+                    if (!vert.empty() && !frag.empty()) {
+                        pipeline = std::make_unique<GPUPipeline>(renderBackend().createPipeline(vert, frag));
+                        world_draw_data.setPipeline(pipeline.get());
+                    }
                 }
             }
         }

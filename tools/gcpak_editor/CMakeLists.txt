@@ -25,6 +25,8 @@ set_property(TARGET ${PROJECT_NAME} PROPERTY CXX_STANDARD 20)
 set_property(TARGET ${PROJECT_NAME} PROPERTY CXX_STANDARD_REQUIRED ON)
 set_property(TARGET ${PROJECT_NAME} PROPERTY CXX_EXTENSIONS OFF)
 
+target_link_libraries(${PROJECT_NAME} PRIVATE gcpak)
+
 # SDL3 for open file dialog
 target_link_libraries(${PROJECT_NAME} PRIVATE SDL3::SDL3)
 

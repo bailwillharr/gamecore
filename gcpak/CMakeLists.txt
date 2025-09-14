@@ -1,20 +1,21 @@
 cmake_minimum_required(VERSION 3.25)
 
-project(compile_shaders LANGUAGES CXX)
+project(gcpak LANGUAGES CXX)
 
 set(SRC_FILES
-	"src/main.cpp"
+	"src/gcpak.cpp"
 )
 
-add_executable(${PROJECT_NAME}
+set(INCLUDE_FILES
+    "include/gcpak/gcpak.h"
+)
+
+add_library(${PROJECT_NAME} STATIC
 	${SRC_FILES}
+    ${INCLUDE_FILES}
 )
-
-configure_file(compile_shaders.h.in compile_shaders.h @ONLY)
 
 # compiling options:
-
-target_include_directories(${PROJECT_NAME} PRIVATE ${PROJECT_BINARY_DIR})
 
 if (MSVC)
 	target_compile_options(${PROJECT_NAME} PRIVATE /W4 /WX) # warning level 4 and treat warnings as errors
@@ -24,9 +25,7 @@ if (WIN32)
 	target_compile_definitions(${PROJECT_NAME} PRIVATE NOMINMAX) # stop windows.h conflicting with 'std::max'
 endif()
 
-target_link_libraries(${PROJECT_NAME} PRIVATE gcpak)
-
-target_link_libraries(${PROJECT_NAME} PRIVATE Vulkan::shaderc_combined)
+target_include_directories(${PROJECT_NAME} PUBLIC include)
 
 # This project uses C++20
 set_property(TARGET ${PROJECT_NAME} PROPERTY CXX_STANDARD 20)

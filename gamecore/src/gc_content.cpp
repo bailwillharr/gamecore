@@ -4,6 +4,7 @@
 
 #include <filesystem>
 #include <optional>
+#include <algorithm>
 
 #include <SDL3/SDL_filesystem.h>
 
@@ -21,6 +22,8 @@ struct PackageAssetInfo {
     unsigned int file_index;
     GcpakAssetEntry entry;
 };
+
+static bool comparePackageAssetInfos(const PackageAssetInfo& a, const PackageAssetInfo& b) { return a.entry.crc32_id < b.entry.crc32_id; }
 
 static std::optional<std::filesystem::path> findContentDir()
 {
@@ -111,26 +114,28 @@ Content::Content()
                         PackageAssetInfo info{};
                         info.entry = asset_entry;
                         info.file_index = file_index;
-                        m_asset_infos.emplace(info.entry.crc32_id, info); // crc32 is stored in both key and value here
+                        m_asset_infos.push_back(info);
                         GC_DEBUG("    {} ({})", assetIDToStr(info.entry.crc32_id), bytesToHumanReadable(info.entry.size));
                     }
                     m_package_file_maps.push_back(std::move(file)); // keep file handle
                 }
             }
         }
+        std::sort(m_asset_infos.begin(), m_asset_infos.end(), comparePackageAssetInfos);
     }
     GC_TRACE("Initialised content manager");
 }
 
 Content::~Content() { GC_TRACE("Destroying content manager..."); }
 
-std::vector<uint8_t> Content::loadAsset(std::uint32_t id)
+std::vector<uint8_t> Content::loadAsset(std::uint32_t id) const
 {
-    if (!m_asset_infos.contains(id)) {
+    const auto it = m_asset_infos.find(id);
+    if (it == m_asset_infos.cend()) {
         GC_ERROR("Asset {} not found in any .gcpak file", assetIDToStr(id));
         return {};
     }
-    PackageAssetInfo asset_info = m_asset_infos[id];
+    const PackageAssetInfo& asset_info = it->second;
     if (asset_info.entry.size_uncompressed != 0) {
         GC_ERROR("Asset {} is compressed which is not supported yet", assetIDToStr(id));
         return {};

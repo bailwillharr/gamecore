@@ -233,8 +233,6 @@ void RenderBackend::submitFrame(bool window_resized, const WorldDrawData& world_
         waitForFrameReady();
     }
 
-    SDL_DelayPrecise(1'000'000LL);
-
     GC_CHECKVK(vkResetCommandPool(m_device.getHandle(), stuff.pool, 0));
 
     {

@@ -1,0 +1,1 @@
+Compiles all shaders in content/shader_src and saves the SPIRV binaries into content/shaders.gcpak

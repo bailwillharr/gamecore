@@ -1,0 +1,3 @@
+This is where all game assets go.
+Instead of saving every single small asset as its own file, the engine uses '.gcpak' files which each contain many assets.
+It doesn't matter what gcpak file a certain asset is in, it is only loaded by its name.
