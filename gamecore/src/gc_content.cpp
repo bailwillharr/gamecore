@@ -23,8 +23,6 @@ struct PackageAssetInfo {
     GcpakAssetEntry entry;
 };
 
-static bool comparePackageAssetInfos(const PackageAssetInfo& a, const PackageAssetInfo& b) { return a.entry.crc32_id < b.entry.crc32_id; }
-
 static std::optional<std::filesystem::path> findContentDir()
 {
     const char* const base_path = SDL_GetBasePath();
@@ -114,14 +112,13 @@ Content::Content()
                         PackageAssetInfo info{};
                         info.entry = asset_entry;
                         info.file_index = file_index;
-                        m_asset_infos.push_back(info);
+                        m_asset_infos.emplace(info.entry.crc32_id, info);
                         GC_DEBUG("    {} ({})", assetIDToStr(info.entry.crc32_id), bytesToHumanReadable(info.entry.size));
                     }
                     m_package_file_maps.push_back(std::move(file)); // keep file handle
                 }
             }
         }
-        std::sort(m_asset_infos.begin(), m_asset_infos.end(), comparePackageAssetInfos);
     }
     GC_TRACE("Initialised content manager");
 }

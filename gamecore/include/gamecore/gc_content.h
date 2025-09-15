@@ -29,7 +29,7 @@ class Content {
     // mmap_source objects are non-copyable and non-moveable so a vector cannot be used
     std::vector<std::unique_ptr<mio::mmap_source>> m_package_file_maps;
 
-    std::vector<PackageAssetInfo> m_asset_infos;
+    std::unordered_map<uint32_t, PackageAssetInfo> m_asset_infos;
 
 public:
     Content();
