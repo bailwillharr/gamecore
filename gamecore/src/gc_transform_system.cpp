@@ -6,24 +6,19 @@
 
 #include "gamecore/gc_transform_component.h"
 #include "gamecore/gc_world.h"
+#include "gamecore/gc_frame_state.h"
 
 namespace gc {
 
-TransformSystem::TransformSystem(gc::World& world) : gc::System(world, Signature::fromTypes<TransformComponent>()) {}
+TransformSystem::TransformSystem(gc::World& world) : gc::System(world) {}
 
-void TransformSystem::onUpdate(double dt)
+void TransformSystem::onUpdate(FrameState& frame_state)
 {
     ZoneScoped;
 
-    (void)dt;
-
-    static double time{};
-    time += dt;
+    (void)frame_state;
 
     m_world.forEach<TransformComponent>([&]([[maybe_unused]] Entity entity, TransformComponent& t) {
-        if (t.name == strToName("parent")) {
-            t.setRotation(glm::angleAxis(static_cast<float>(time), glm::vec3{0.0f, 1.0f, 0.0f}));
-        }
         if (t.m_dirty) {
             // t.m_dirty is reset by updateWorldMatricesRecursively()
             if (t.m_parent == ENTITY_NONE) {

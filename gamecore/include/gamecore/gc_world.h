@@ -4,6 +4,7 @@
 #include "gamecore/gc_abort.h"
 #include "gamecore/gc_assert.h"
 #include "gamecore/gc_name.h"
+#include "gamecore/gc_frame_state.h"
 
 #include <vector>
 #include <memory>
@@ -35,7 +36,7 @@ public:
 
     World& operator=(const World&) = delete;
 
-    void update(double dt);
+    void update(FrameState& frame_state);
 
     Entity createEntity(Name name, Entity parent = ENTITY_NONE, const glm::vec3& position = glm::vec3{0.0f, 0.0f, 0.0f},
                         const glm::quat& rotation = glm::quat{1.0f, 0.0f, 0.0f, 0.0f}, const glm::vec3& scale = glm::vec3{1.0f, 1.0f, 1.0f});

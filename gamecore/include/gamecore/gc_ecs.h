@@ -13,6 +13,7 @@
 #include <typeinfo>
 
 #include "gamecore/gc_assert.h"
+#include "gamecore/gc_frame_state.h"
 #include "gamecore/gc_logger.h"
 
 /*TODO : For signature generation. Do not tie it to World, do something like:
@@ -205,20 +206,19 @@ public:
 };
 
 class System {
-    const Signature m_signature;
 
 protected:
     World& m_world;
 
 public:
-    explicit System(World& world, Signature signature);
+    explicit System(World& world);
     System(const System&) = delete;
 
     virtual ~System() {}
 
     System& operator=(const System&) = delete;
 
-    virtual void onUpdate(double dt) = 0;
+    virtual void onUpdate(FrameState& frame_state) = 0;
 };
 
 } // namespace gc

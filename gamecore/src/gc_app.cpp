@@ -24,6 +24,8 @@
 #include "gamecore/gc_transform_component.h"
 #include "gamecore/gc_cube_system.h"
 #include "gamecore/gc_stopwatch.h"
+#include "gamecore/gc_frame_state.h"
+#include "gamecore/gc_format_specialisations.h"
 
 namespace gc {
 
@@ -192,41 +194,42 @@ void App::run()
 {
     GC_TRACE("Starting game loop...");
 
-    m_last_frame_begin_stamp = getNanos() - 1'000'000; // treat the first delta time as 1 ms
+    FrameState frame_state{};
 
     std::unique_ptr<GPUPipeline> pipeline{};
     WorldDrawData world_draw_data;
 
+    m_last_frame_begin_stamp = getNanos() - 1'000'000; // treat the first delta time as 1 ms
     while (!window().shouldQuit()) {
 
         const auto frame_begin_stamp = getNanos();
-        const auto dt = static_cast<double>(frame_begin_stamp - m_last_frame_begin_stamp) * 1e-9;
 
-        window().processEvents(DebugUI::windowEventInterceptor);
+        frame_state.window_state = &window().processEvents(DebugUI::windowEventInterceptor);
+        frame_state.delta_time = static_cast<double>(frame_begin_stamp - m_last_frame_begin_stamp) * 1e-9;
 
         {
             ZoneScopedN("UI Logic");
-            if (window().getKeyDown(SDL_SCANCODE_ESCAPE)) {
+            if (frame_state.window_state->getKeyDown(SDL_SCANCODE_ESCAPE)) {
                 window().setQuitFlag();
             }
-            if (window().getKeyPress(SDL_SCANCODE_F11)) {
-                window().setSize(0, 0, !window().getIsFullscreen());
+            if (frame_state.window_state->getKeyPress(SDL_SCANCODE_F11)) {
+                window().setSize(0, 0, !frame_state.window_state->getIsFullscreen());
             }
-            if (window().getKeyPress(SDL_SCANCODE_F10)) {
+            if (frame_state.window_state->getKeyPress(SDL_SCANCODE_F10)) {
                 m_debug_ui->active = !m_debug_ui->active;
             }
-            if (window().getButtonPress(gc::MouseButton::X1)) {
+            if (frame_state.window_state->getButtonPress(gc::MouseButton::X1)) {
                 // show/hide mouse
                 if (!SDL_SetWindowRelativeMouseMode(window().getHandle(), !SDL_GetWindowRelativeMouseMode(window().getHandle()))) {
                     GC_ERROR("SDL_SetWindowRelativeMouseMode() error: {}", SDL_GetError());
                 }
             }
-            if (window().getKeyPress(SDL_SCANCODE_T)) {
+            if (frame_state.window_state->getKeyPress(SDL_SCANCODE_T)) {
                 if (auto comp = m_world->getComponent<TransformComponent>(0)) {
                     comp->setPosition({1.0f, 1.0f, 1.0f});
                 }
             }
-            else if (window().getKeyPress(SDL_SCANCODE_I)) {
+            else if (frame_state.window_state->getKeyPress(SDL_SCANCODE_I)) {
                 if (pipeline) {
                     world_draw_data.setPipeline(nullptr);
                     pipeline = {};
@@ -242,16 +245,27 @@ void App::run()
             }
         }
 
-        m_world->update(dt);
+        static int motion_count = 0;
+        if (glm::length(frame_state.window_state->getMouseMotion())) {
+            ++motion_count;
+            GC_TRACE("Mouse motion: {}", frame_state.window_state->getMouseMotion());
+            GC_TRACE("Motion Count: {}", motion_count);
+        }
 
-        m_debug_ui->update(dt);
+        if (auto comp = m_world->getComponent<TransformComponent>(0)) {
+            comp->setPosition(comp->getPosition() + glm::vec3{frame_state.window_state->getMouseMotion() * 0.02f, 0.0f});
+        }
+
+        m_world->update(frame_state);
+
+        m_debug_ui->update(frame_state.delta_time);
 
         world_draw_data.reset();
-        for (const auto& cube_matrix : world().getSystem<CubeSystem>().getCubeTransforms()) {
+        for (const auto& cube_matrix : frame_state.cube_transforms) {
             world_draw_data.drawCube(cube_matrix);
         }
 
-        renderBackend().submitFrame(window().getResizedFlag(), world_draw_data);
+        renderBackend().submitFrame(frame_state.window_state->getResizedFlag(), world_draw_data);
 
         renderBackend().cleanupGPUResources();
 

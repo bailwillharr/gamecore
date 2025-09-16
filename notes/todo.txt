@@ -1,0 +1,14 @@
+Add FrameStates to the ecs to make systems self-contained
+	FrameStates would be immutable things like KeyboardInput, MouseInput, DeltaTime
+	and also mutable things like DrawData
+	(Should a mutable FrameState be allowed to be modified by multiple systems?
+	This would introduce dependencies between systems in addition to the component dependencies)
+
+Create a ResourceManager<T> that for any given resource type knows how to automatically construct it
+	I may need to create manifests for every resource showing how they are made and from what asset files
+	and from what other resources the Resource depends on. Manifests could be stored as assets too.
+	E.g., A ResourceManager<Material> would have the recipe for making a Material.
+	The manifest would contain the names of the shader RESOURCES and texture RESOURCES.
+	The ResourceManager<Material> recipe would then call ResourceManager<Shader>::getResource(manifest.shader_name)
+	which would create the shader resource.
+	A ResourceManager<Texture> manifest would contain the asset name for the texture asset, its size, and possibly also format.

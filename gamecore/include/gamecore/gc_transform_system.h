@@ -20,7 +20,7 @@ class TransformSystem : public System {
 public:
     TransformSystem(gc::World& world);
 
-    void onUpdate(double dt) override;
+    void onUpdate(FrameState& frame_state) override;
 
     /*
      * entity must be a valid entity.

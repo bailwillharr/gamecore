@@ -67,11 +67,11 @@ void World::deleteEntity(const Entity entity)
     m_free_entity_ids.push(entity);
 }
 
-void World::update(double dt)
+void World::update(FrameState& frame_state)
 {
     ZoneScoped;
     for (auto& system : m_systems) {
-        system->onUpdate(dt);
+        system->onUpdate(frame_state);
     }
 }
 

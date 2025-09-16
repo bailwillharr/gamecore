@@ -43,12 +43,71 @@ static void resetMouseButtonState(std::span<ButtonState, static_cast<size_t>(Mou
     }
 }
 
+bool WindowState::getKeyDown(SDL_Scancode key) const
+{
+    const ButtonState state = m_keyboard_state[key];
+    return (state == ButtonState::DOWN || state == ButtonState::JUST_PRESSED);
+}
+
+bool WindowState::getKeyUp(SDL_Scancode key) const
+{
+    const ButtonState state = m_keyboard_state[key];
+    return (state == ButtonState::UP || state == ButtonState::JUST_RELEASED);
+}
+
+bool WindowState::getKeyPress(SDL_Scancode key) const
+{
+    const ButtonState state = m_keyboard_state[key];
+    return (state == ButtonState::JUST_PRESSED);
+}
+
+bool WindowState::getKeyRelease(SDL_Scancode key) const
+{
+    const ButtonState state = m_keyboard_state[key];
+    return (state == ButtonState::JUST_RELEASED);
+}
+
+bool WindowState::getButtonDown(MouseButton button) const
+{
+    const ButtonState state = m_mouse_button_state[static_cast<uint32_t>(button)];
+    return (state == ButtonState::DOWN || state == ButtonState::JUST_PRESSED);
+}
+
+bool WindowState::getButtonUp(MouseButton button) const
+{
+    const ButtonState state = m_mouse_button_state[static_cast<uint32_t>(button)];
+    return (state == ButtonState::UP || state == ButtonState::JUST_RELEASED);
+}
+
+bool WindowState::getButtonPress(MouseButton button) const
+{
+    const ButtonState state = m_mouse_button_state[static_cast<uint32_t>(button)];
+    return (state == ButtonState::JUST_PRESSED);
+}
+
+bool WindowState::getButtonRelease(MouseButton button) const
+{
+    const ButtonState state = m_mouse_button_state[static_cast<uint32_t>(button)];
+    return (state == ButtonState::JUST_RELEASED);
+}
+
+const glm::vec2& WindowState::getMousePosition() const { return m_mouse_position; }
+
+const glm::vec2& WindowState::getMousePositionNorm() const { return m_mouse_position_norm; }
+
+const glm::vec2& WindowState::getMouseMotion() const { return m_mouse_motion; }
+
+bool WindowState::getIsFullscreen() const { return m_is_fullscreen; }
+
+bool WindowState::getResizedFlag() const { return m_resized_flag; }
+
 Window::Window(const WindowInitInfo& info)
 {
     if (!SDL_InitSubSystem(SDL_INIT_VIDEO)) {
         GC_ERROR("SDL_InitSubSystem() error: {}", SDL_GetError());
         abortGame("Failed to initialise SDL video subsystem.");
     }
+
     SDL_WindowFlags window_flags{};
     window_flags |= SDL_WINDOW_HIDDEN; // window is shown later
     // no resize:
@@ -59,8 +118,9 @@ Window::Window(const WindowInitInfo& info)
         GC_ERROR("SDL_CreateWindow() error: {}", SDL_GetError());
         abortGame("Failed to create window.");
     }
-    m_window_size[0] = INITIAL_WIDTH;
-    m_window_size[1] = INITIAL_HEIGHT;
+
+    m_state.m_window_size.x = INITIAL_WIDTH;
+    m_state.m_window_size.y = INITIAL_HEIGHT;
 }
 
 Window::~Window()
@@ -85,13 +145,14 @@ void Window::setWindowVisibility(bool visible)
     }
 }
 
-void Window::processEvents(const std::function<void(SDL_Event&)>& event_interceptor)
+const WindowState& Window::processEvents(const std::function<void(SDL_Event&)>& event_interceptor)
 {
     ZoneScoped;
 
-    resetKeyboardState(m_keyboard_state);
-    resetMouseButtonState(m_mouse_button_state);
-    m_resized_flag = false;
+    resetKeyboardState(m_state.m_keyboard_state);
+    resetMouseButtonState(m_state.m_mouse_button_state);
+    m_state.m_mouse_motion = {};
+    m_state.m_resized_flag = false;
 
     SDL_Event ev{};
     while (SDL_PollEvent(&ev)) {
@@ -105,43 +166,51 @@ void Window::processEvents(const std::function<void(SDL_Event&)>& event_intercep
                 setQuitFlag();
                 break;
             case SDL_EVENT_WINDOW_RESIZED:
-                m_window_size[0] = static_cast<uint32_t>(ev.window.data1);
-                m_window_size[1] = static_cast<uint32_t>(ev.window.data2);
+                m_state.m_window_size.x = static_cast<uint32_t>(ev.window.data1);
+                m_state.m_window_size.y = static_cast<uint32_t>(ev.window.data2);
+                m_state.m_mouse_position_norm.x = (2.0f * static_cast<float>(ev.motion.x) / static_cast<float>(m_state.m_window_size.x)) - 1.0f;
+                m_state.m_mouse_position_norm.y = (-2.0f * static_cast<float>(ev.motion.y) / static_cast<float>(m_state.m_window_size.y)) + 1.0f;
                 break;
             case SDL_EVENT_WINDOW_PIXEL_SIZE_CHANGED:
                 GC_TRACE("Window event: SDL_EVENT_WINDOW_PIXEL_SIZE_CHANGED");
-                m_resized_flag = true;
+                m_state.m_resized_flag = true;
                 break;
             case SDL_EVENT_WINDOW_ENTER_FULLSCREEN:
-                m_is_fullscreen = true;
+                m_state.m_is_fullscreen = true;
                 break;
             case SDL_EVENT_WINDOW_LEAVE_FULLSCREEN:
-                m_is_fullscreen = false;
+                m_state.m_is_fullscreen = false;
                 break;
             case SDL_EVENT_KEY_DOWN: {
-                ButtonState& state = m_keyboard_state[ev.key.scancode];
+                ButtonState& state = m_state.m_keyboard_state[ev.key.scancode];
                 if (state == ButtonState::UP) {
                     state = ButtonState::JUST_PRESSED;
                 }
             } break;
             case SDL_EVENT_KEY_UP: {
-                ButtonState& state = m_keyboard_state[ev.key.scancode];
+                ButtonState& state = m_state.m_keyboard_state[ev.key.scancode];
                 if (state == ButtonState::DOWN) {
                     state = ButtonState::JUST_RELEASED;
                 }
             } break;
             case SDL_EVENT_MOUSE_MOTION:
-                m_mouse_position[0] = ev.motion.x;
-                m_mouse_position[1] = ev.motion.y;
+                m_state.m_mouse_position.x = ev.motion.x;
+                m_state.m_mouse_position.y = ev.motion.y;
+                m_state.m_mouse_position_norm.x = (2.0f * static_cast<float>(ev.motion.x) / static_cast<float>(m_state.m_window_size.x)) - 1.0f;
+                m_state.m_mouse_position_norm.y = (-2.0f * static_cast<float>(ev.motion.y) / static_cast<float>(m_state.m_window_size.y)) + 1.0f;
+                if (SDL_GetWindowRelativeMouseMode(m_window_handle)) {
+                    m_state.m_mouse_motion.x = ev.motion.xrel;
+                    m_state.m_mouse_motion.y = -ev.motion.yrel;
+                }
                 break;
             case SDL_EVENT_MOUSE_BUTTON_DOWN: {
-                ButtonState& state = m_mouse_button_state[ev.button.button - 1];
+                ButtonState& state = m_state.m_mouse_button_state[ev.button.button - 1];
                 if (state == ButtonState::UP) {
                     state = ButtonState::JUST_PRESSED;
                 }
             } break;
             case SDL_EVENT_MOUSE_BUTTON_UP: {
-                ButtonState& state = m_mouse_button_state[ev.button.button - 1];
+                ButtonState& state = m_state.m_mouse_button_state[ev.button.button - 1];
                 if (state == ButtonState::DOWN) {
                     state = ButtonState::JUST_RELEASED;
                 }
@@ -155,6 +224,7 @@ void Window::processEvents(const std::function<void(SDL_Event&)>& event_intercep
                 // handle audio device here
         }
     }
+    return m_state;
 }
 
 void Window::setQuitFlag() { m_should_quit = true; }
@@ -231,68 +301,6 @@ void Window::setSize(uint32_t width, uint32_t height, bool fullscreen)
     }
 }
 
-std::array<uint32_t, 2> Window::getSize() const { return m_window_size; }
-
-bool Window::getIsFullscreen() const { return m_is_fullscreen; }
-
 void Window::setIsResizable(bool resizable) { SDL_SetWindowResizable(m_window_handle, resizable); }
-
-bool Window::getKeyDown(SDL_Scancode key) const
-{
-    const ButtonState state = m_keyboard_state[key];
-    return (state == ButtonState::DOWN || state == ButtonState::JUST_PRESSED);
-}
-
-bool Window::getKeyUp(SDL_Scancode key) const
-{
-    const ButtonState state = m_keyboard_state[key];
-    return (state == ButtonState::UP || state == ButtonState::JUST_RELEASED);
-}
-
-bool Window::getKeyPress(SDL_Scancode key) const
-{
-    const ButtonState state = m_keyboard_state[key];
-    return (state == ButtonState::JUST_PRESSED);
-}
-
-bool Window::getKeyRelease(SDL_Scancode key) const
-{
-    const ButtonState state = m_keyboard_state[key];
-    return (state == ButtonState::JUST_RELEASED);
-}
-
-bool Window::getButtonDown(MouseButton button) const
-{
-    const ButtonState state = m_mouse_button_state[static_cast<uint32_t>(button)];
-    return (state == ButtonState::DOWN || state == ButtonState::JUST_PRESSED);
-}
-
-bool Window::getButtonUp(MouseButton button) const
-{
-    const ButtonState state = m_mouse_button_state[static_cast<uint32_t>(button)];
-    return (state == ButtonState::UP || state == ButtonState::JUST_RELEASED);
-}
-
-bool Window::getButtonPress(MouseButton button) const
-{
-    const ButtonState state = m_mouse_button_state[static_cast<uint32_t>(button)];
-    return (state == ButtonState::JUST_PRESSED);
-}
-
-bool Window::getButtonRelease(MouseButton button) const
-{
-    const ButtonState state = m_mouse_button_state[static_cast<uint32_t>(button)];
-    return (state == ButtonState::JUST_RELEASED);
-}
-
-std::array<float, 2> Window::getMousePosition() const { return m_mouse_position; }
-
-std::array<double, 2> Window::getMousePositionNorm() const
-{
-    return {(2.0 * static_cast<double>(m_mouse_position[0]) / static_cast<double>(m_window_size[0])) - 1.0,
-            (-2.0 * static_cast<double>(m_mouse_position[1]) / static_cast<double>(m_window_size[1])) + 1.0};
-}
-
-bool Window::getResizedFlag() const { return m_resized_flag; }
 
 } // namespace gc

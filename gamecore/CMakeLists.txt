@@ -49,7 +49,6 @@ set(INCLUDE_FILES
 	"include/gamecore/gc_defines.h"
 	"include/gamecore/gc_content.h"
 	"include/gamecore/gc_abort.h"
-	
 	"include/gamecore/gc_crc_table.h"
 	"include/gamecore/gc_name.h"
 	"include/gamecore/gc_gcpak.h"
@@ -62,7 +61,6 @@ set(INCLUDE_FILES
 	"include/gamecore/gc_render_backend.h"
 	"include/gamecore/gc_vulkan_swapchain.h"
 	"include/gamecore/gc_compile_shader.h"
-	
 	"include/gamecore/gc_configuration.h"
 	"include/gamecore/gc_debug_ui.h"
 	"include/gamecore/gc_world.h"
@@ -73,7 +71,11 @@ set(INCLUDE_FILES
 	"include/gamecore/gc_world_draw_data.h"
 	"include/gamecore/gc_gpu_resources.h"
 	"include/gamecore/gc_vulkan_pipeline_layout_manager.h"
- "include/gamecore/gc_cube_component.h" "include/gamecore/gc_cube_system.h")
+	"include/gamecore/gc_cube_component.h"
+	"include/gamecore/gc_cube_system.h"
+	"include/gamecore/gc_frame_state.h"
+	"include/gamecore/gc_format_specialisations.h"
+)
 
 # gamecore is a static library
 add_library(${PROJECT_NAME} STATIC
