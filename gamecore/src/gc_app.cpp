@@ -245,13 +245,6 @@ void App::run()
             }
         }
 
-        static int motion_count = 0;
-        if (glm::length(frame_state.window_state->getMouseMotion())) {
-            ++motion_count;
-            GC_TRACE("Mouse motion: {}", frame_state.window_state->getMouseMotion());
-            GC_TRACE("Motion Count: {}", motion_count);
-        }
-
         if (auto comp = m_world->getComponent<TransformComponent>(0)) {
             comp->setPosition(comp->getPosition() + glm::vec3{frame_state.window_state->getMouseMotion() * 0.02f, 0.0f});
         }

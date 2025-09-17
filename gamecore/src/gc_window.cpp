@@ -199,8 +199,9 @@ const WindowState& Window::processEvents(const std::function<void(SDL_Event&)>& 
                 m_state.m_mouse_position_norm.x = (2.0f * static_cast<float>(ev.motion.x) / static_cast<float>(m_state.m_window_size.x)) - 1.0f;
                 m_state.m_mouse_position_norm.y = (-2.0f * static_cast<float>(ev.motion.y) / static_cast<float>(m_state.m_window_size.y)) + 1.0f;
                 if (SDL_GetWindowRelativeMouseMode(m_window_handle)) {
-                    m_state.m_mouse_motion.x = ev.motion.xrel;
-                    m_state.m_mouse_motion.y = -ev.motion.yrel;
+                    // Mouse motion events can occur multiple times per frame when FPS drops, these need to be accumulated.
+                    m_state.m_mouse_motion.x += ev.motion.xrel;
+                    m_state.m_mouse_motion.y += -ev.motion.yrel;
                 }
                 break;
             case SDL_EVENT_MOUSE_BUTTON_DOWN: {
