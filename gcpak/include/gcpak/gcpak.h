@@ -3,6 +3,7 @@
 #include <array>
 #include <filesystem>
 #include <bit>
+#include <vector>
 
 /* For manipulating gcpak files. Gamecore uses its own internal functions to read gcpak files efficiently */
 

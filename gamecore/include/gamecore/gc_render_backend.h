@@ -21,7 +21,6 @@
 #pragma once
 
 #include <vector>
-#include <functional>
 #include <span>
 
 #include "gamecore/gc_vulkan_common.h"
@@ -89,6 +88,9 @@ class RenderBackend {
     uint64_t m_timeline_value{};
     uint64_t m_present_finished_value{};
 
+    VkCommandPool m_transfer_cmd_pool{};
+    std::vector<VkCommandBuffer> m_transfer_cmds{};
+
 public:
     explicit RenderBackend(SDL_Window* window_handle);
     RenderBackend(const RenderBackend&) = delete;
@@ -127,6 +129,7 @@ public:
     void cleanupGPUResources();
 
     GPUPipeline createPipeline(std::span<const uint8_t> vertex_spv, std::span<const uint8_t> fragment_spv);
+    GPUImageView createImageView();
 
     RenderBackendInfo getInfo() const
     {
@@ -141,6 +144,8 @@ public:
         info.depth_stencil_format = m_depth_stencil_format;
         return info;
     }
+
+    VkDevice getDevice() const { return m_device.getHandle(); }
 
     void waitIdle();
 

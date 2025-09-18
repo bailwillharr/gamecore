@@ -5,9 +5,11 @@
 #include <SDL3/SDL_vulkan.h>
 #include <SDL3/SDL_timer.h>
 
+#include <filesystem>
 #include <tracy/Tracy.hpp>
 
 #include <backends/imgui_impl_vulkan.h>
+#include <vulkan/vulkan_core.h>
 
 #include <ext/matrix_clip_space.hpp>
 
@@ -182,6 +184,28 @@ RenderBackend::RenderBackend(SDL_Window* window_handle)
 
     m_requested_frames_in_flight = 2;
 
+    {
+        VkSemaphoreTypeCreateInfo type_info{};
+        type_info.sType = VK_STRUCTURE_TYPE_SEMAPHORE_TYPE_CREATE_INFO;
+        type_info.semaphoreType = VK_SEMAPHORE_TYPE_TIMELINE;
+        type_info.initialValue = 0;
+        VkSemaphoreCreateInfo info{};
+        info.sType = VK_STRUCTURE_TYPE_SEMAPHORE_CREATE_INFO;
+        info.pNext = &type_info;
+        GC_CHECKVK(vkCreateSemaphore(m_device.getHandle(), &info, nullptr, &m_timeline_semaphore));
+    }
+
+    m_timeline_value = 0;
+    m_present_finished_value = 0;
+
+    {
+        VkCommandPoolCreateInfo info{};
+        info.sType = VK_STRUCTURE_TYPE_COMMAND_POOL_CREATE_INFO;
+        info.queueFamilyIndex = m_device.getMainQueueFamilyIndex();
+        info.flags = VK_COMMAND_POOL_CREATE_TRANSIENT_BIT | VK_COMMAND_POOL_CREATE_RESET_COMMAND_BUFFER_BIT;
+        GC_CHECKVK(vkCreateCommandPool(m_device.getHandle(), &info, nullptr, &m_transfer_cmd_pool));
+    }
+
     // m_timeline_semaphore and the frame in flight command pools will be created when submitFrame() is called for the first time.
 
     GC_TRACE("Initialised RenderBackend");
@@ -194,18 +218,20 @@ RenderBackend::~RenderBackend()
     waitIdle();
 
     cleanupGPUResources();
-
     if (!m_delete_queue.empty()) {
         GC_WARN("One or more GPU resources are still in use at application shutdown!");
     }
 
-    // destroy frame in flight resources
     if (m_timeline_semaphore) {
         vkDestroySemaphore(m_device.getHandle(), m_timeline_semaphore, nullptr);
     }
+
+    // destroy frame in flight resources
     for (const auto& stuff : m_fif) {
         vkDestroyCommandPool(m_device.getHandle(), stuff.pool, nullptr);
     }
+
+    vkDestroyCommandPool(m_device.getHandle(), m_transfer_cmd_pool, nullptr);
 
     vkDestroyImageView(m_device.getHandle(), m_framebuffer_image_view, nullptr);
     vmaDestroyImage(m_allocator.getHandle(), m_framebuffer_image, m_framebuffer_image_allocation);
@@ -597,6 +623,156 @@ GPUPipeline RenderBackend::createPipeline(std::span<const uint8_t> vertex_spv, s
     return GPUPipeline(m_delete_queue, handle);
 }
 
+GPUImageView RenderBackend::createImageView()
+{
+    VkBufferCreateInfo buffer_info{};
+    buffer_info.sType = VK_STRUCTURE_TYPE_BUFFER_CREATE_INFO;
+    buffer_info.size = 16 * 16 * 3;
+    buffer_info.usage = VK_BUFFER_USAGE_TRANSFER_SRC_BIT;
+    buffer_info.sharingMode = VK_SHARING_MODE_EXCLUSIVE;
+    VmaAllocationCreateInfo buffer_alloc_info{};
+    buffer_alloc_info.usage = VMA_MEMORY_USAGE_AUTO;
+    buffer_alloc_info.flags = VMA_ALLOCATION_CREATE_HOST_ACCESS_SEQUENTIAL_WRITE_BIT;
+    buffer_alloc_info.requiredFlags = VK_MEMORY_PROPERTY_HOST_COHERENT_BIT;
+    VkBuffer buffer{};
+    VmaAllocation buffer_alloc{};
+    GC_CHECKVK(vmaCreateBuffer(m_allocator.getHandle(), &buffer_info, &buffer_alloc_info, &buffer, &buffer_alloc, nullptr));
+
+    uint8_t* data_dest{};
+    GC_CHECKVK(vmaMapMemory(m_allocator.getHandle(), buffer_alloc, reinterpret_cast<void**>(&data_dest)));
+    for (int y = 0; y < 16; ++y) {
+        for (int x = 0; x < 16; ++x) {
+            data_dest[3 * (y * 16 + x) + 0] = 255 / (1 + (x % 2));
+            data_dest[3 * (y * 16 + x) + 1] = 255 / (1 + (y % 2));
+            data_dest[3 * (y * 16 + x) + 2] = 0;
+        }
+    }
+    vmaUnmapMemory(m_allocator.getHandle(), buffer_alloc);
+
+    VkImageCreateInfo image_info{};
+    image_info.sType = VK_STRUCTURE_TYPE_IMAGE_CREATE_INFO;
+    image_info.flags = 0;
+    image_info.imageType = VK_IMAGE_TYPE_2D;
+    image_info.format = VK_FORMAT_R8G8B8_SRGB;
+    image_info.extent.width = 16;
+    image_info.extent.height = 16;
+    image_info.extent.depth = 1;
+    image_info.mipLevels = 1;
+    image_info.arrayLayers = 1;
+    image_info.samples = VK_SAMPLE_COUNT_1_BIT;
+    image_info.tiling = VK_IMAGE_TILING_OPTIMAL;
+    image_info.usage = VK_IMAGE_USAGE_TRANSFER_DST_BIT | VK_IMAGE_USAGE_SAMPLED_BIT;
+    image_info.sharingMode = VK_SHARING_MODE_EXCLUSIVE;
+    VmaAllocationCreateInfo alloc_info{};
+    alloc_info.flags = 0;
+    alloc_info.usage = VMA_MEMORY_USAGE_AUTO;
+    VkImage image{};
+    VmaAllocation allocation{};
+    GC_CHECKVK(vmaCreateImage(m_allocator.getHandle(), &image_info, &alloc_info, &image, &allocation, nullptr));
+
+    {
+        VkCommandBufferAllocateInfo cmd_info{};
+        cmd_info.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_ALLOCATE_INFO;
+        cmd_info.level = VK_COMMAND_BUFFER_LEVEL_PRIMARY;
+        cmd_info.commandPool = m_transfer_cmd_pool;
+        cmd_info.commandBufferCount = 1;
+        m_transfer_cmds.push_back(VK_NULL_HANDLE);
+        GC_CHECKVK(vkAllocateCommandBuffers(m_device.getHandle(), &cmd_info, &m_transfer_cmds.back()));
+        VkCommandBuffer cmd = m_transfer_cmds.back();
+
+        VkCommandBufferBeginInfo begin_info{};
+        begin_info.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO;
+        begin_info.flags = VK_COMMAND_BUFFER_USAGE_ONE_TIME_SUBMIT_BIT;
+        GC_CHECKVK(vkBeginCommandBuffer(cmd, &begin_info));
+
+        VkImageMemoryBarrier2 barrier{};
+        barrier.sType = VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER_2;
+        barrier.srcStageMask = VK_PIPELINE_STAGE_2_NONE;
+        barrier.srcAccessMask = VK_ACCESS_2_NONE;
+        barrier.dstStageMask = VK_PIPELINE_STAGE_2_COPY_BIT;
+        barrier.dstAccessMask = VK_ACCESS_2_TRANSFER_WRITE_BIT;
+        barrier.oldLayout = VK_IMAGE_LAYOUT_UNDEFINED;
+        barrier.newLayout = VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL;
+        barrier.srcQueueFamilyIndex = m_device.getMainQueueFamilyIndex();
+        barrier.dstQueueFamilyIndex = m_device.getMainQueueFamilyIndex();
+        barrier.image = image;
+        barrier.subresourceRange.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT;
+        barrier.subresourceRange.baseMipLevel = 0;
+        barrier.subresourceRange.levelCount = 1;
+        barrier.subresourceRange.baseArrayLayer = 0;
+        barrier.subresourceRange.layerCount = 1;
+        VkDependencyInfo dependency{};
+        dependency.sType = VK_STRUCTURE_TYPE_DEPENDENCY_INFO;
+        dependency.imageMemoryBarrierCount = 1;
+        dependency.pImageMemoryBarriers = &barrier;
+        vkCmdPipelineBarrier2(cmd, &dependency);
+
+        VkBufferImageCopy region{};
+        region.bufferOffset = 0;
+        region.bufferRowLength = 0;
+        region.bufferImageHeight = 0;
+        region.imageSubresource.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT;
+        region.imageSubresource.mipLevel = 0;
+        region.imageSubresource.baseArrayLayer = 0;
+        region.imageSubresource.layerCount = 1;
+        region.imageOffset.x = 0;
+        region.imageOffset.y = 0;
+        region.imageOffset.z = 0;
+        region.imageExtent = image_info.extent;
+        vkCmdCopyBufferToImage(cmd, buffer, image, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, 1, &region);
+
+        barrier.srcStageMask = VK_PIPELINE_STAGE_2_COPY_BIT;
+        barrier.srcAccessMask = VK_ACCESS_2_TRANSFER_WRITE_BIT;
+        barrier.dstStageMask = VK_PIPELINE_STAGE_2_FRAGMENT_SHADER_BIT;
+        barrier.dstAccessMask = VK_ACCESS_2_SHADER_SAMPLED_READ_BIT;
+        barrier.oldLayout = VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL;
+        barrier.newLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
+        vkCmdPipelineBarrier2(cmd, &dependency);
+
+        GC_CHECKVK(vkEndCommandBuffer(cmd));
+
+        VkCommandBufferSubmitInfo cmd_submit_info{};
+        cmd_submit_info.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_SUBMIT_INFO;
+        cmd_submit_info.commandBuffer = cmd;
+        VkSemaphoreSubmitInfo signal_info{};
+        signal_info.sType = VK_STRUCTURE_TYPE_SEMAPHORE_SUBMIT_INFO;
+        signal_info.semaphore = m_timeline_semaphore;
+        signal_info.value = ++m_timeline_value;
+        signal_info.stageMask = VK_PIPELINE_STAGE_2_COPY_BIT;
+        VkSubmitInfo2 submit_info{};
+        submit_info.sType = VK_STRUCTURE_TYPE_SUBMIT_INFO_2;
+        submit_info.waitSemaphoreInfoCount = 0;
+        submit_info.commandBufferInfoCount = 1;
+        submit_info.pCommandBufferInfos = &cmd_submit_info;
+        submit_info.signalSemaphoreInfoCount = 1;
+        submit_info.pSignalSemaphoreInfos = &signal_info;
+        GC_CHECKVK(vkQueueSubmit2(m_device.getMainQueue(), 1, &submit_info, VK_NULL_HANDLE));
+    }
+
+    auto gpu_image = std::make_shared<GPUImage>(m_delete_queue, image, allocation);
+
+    gpu_image->useResource(m_timeline_semaphore, m_timeline_value);
+
+    VkImageViewCreateInfo view_info{};
+    view_info.sType = VK_STRUCTURE_TYPE_IMAGE_VIEW_CREATE_INFO;
+    view_info.image = image;
+    view_info.viewType = VK_IMAGE_VIEW_TYPE_2D;
+    view_info.format = image_info.format;
+    view_info.components.r = VK_COMPONENT_SWIZZLE_IDENTITY;
+    view_info.components.g = VK_COMPONENT_SWIZZLE_IDENTITY;
+    view_info.components.b = VK_COMPONENT_SWIZZLE_IDENTITY;
+    view_info.components.a = VK_COMPONENT_SWIZZLE_IDENTITY;
+    view_info.subresourceRange.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT;
+    view_info.subresourceRange.baseMipLevel = 0;
+    view_info.subresourceRange.levelCount = 1;
+    view_info.subresourceRange.baseArrayLayer = 0;
+    view_info.subresourceRange.layerCount = 1;
+    VkImageView image_view{};
+    GC_CHECKVK(vkCreateImageView(m_device.getHandle(), &view_info, nullptr, &image_view));
+
+    return GPUImageView(m_delete_queue, image_view, gpu_image);
+};
+
 void RenderBackend::waitIdle()
 {
     /* ensure GPU is not using any command buffers etc. */
@@ -607,24 +783,6 @@ void RenderBackend::recreateFramesInFlightResources()
 {
     // wait for any work on the queue used for rendering and presentation is finished.
     GC_CHECKVK(vkQueueWaitIdle(m_device.getMainQueue()));
-
-    if (m_timeline_semaphore != VK_NULL_HANDLE) {
-        vkDestroySemaphore(m_device.getHandle(), m_timeline_semaphore, nullptr);
-    }
-
-    {
-        VkSemaphoreTypeCreateInfo type_info{};
-        type_info.sType = VK_STRUCTURE_TYPE_SEMAPHORE_TYPE_CREATE_INFO;
-        type_info.semaphoreType = VK_SEMAPHORE_TYPE_TIMELINE;
-        type_info.initialValue = 0;
-        VkSemaphoreCreateInfo info{};
-        info.sType = VK_STRUCTURE_TYPE_SEMAPHORE_CREATE_INFO;
-        info.pNext = &type_info;
-        GC_CHECKVK(vkCreateSemaphore(m_device.getHandle(), &info, nullptr, &m_timeline_semaphore));
-    }
-
-    m_timeline_value = 0;
-    m_present_finished_value = 0;
 
     for (const auto& stuff : m_fif) {
         vkDestroyCommandPool(m_device.getHandle(), stuff.pool, nullptr);

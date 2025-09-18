@@ -1,7 +1,8 @@
 #include "compile_shaders.h"
 
+#include <cstring>
+
 #include <iostream>
-#include <span>
 #include <vector>
 #include <filesystem>
 #include <fstream>

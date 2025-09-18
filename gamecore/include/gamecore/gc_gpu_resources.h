@@ -2,9 +2,11 @@
 
 #include <vector>
 #include <span>
+#include <memory>
 #include <functional>
 
 #include "gamecore/gc_vulkan_common.h"
+#include "gamecore/gc_assert.h"
 
 /*
  * Defines the GPUResource base class to be used for all resources that must
@@ -16,8 +18,8 @@ namespace gc {
 class GPUResourceDeleteQueue {
 public:
     struct DeletionEntry {
-        VkSemaphore timeline_semaphore;        // the timeline semaphore corresponding to the queue using the resource
-        uint64_t resource_free_signal_value;   // when the resource can be safely destroyed
+        VkSemaphore timeline_semaphore;                      // the timeline semaphore corresponding to the queue using the resource
+        uint64_t resource_free_signal_value;                 // when the resource can be safely destroyed
         std::function<void(VkDevice, VmaAllocator)> deleter; // typically stores the resource handle as a lambda capture and calls vkDestroyXXX();
     };
 
@@ -63,9 +65,10 @@ public:
 
 // Ensure that derived classes using this class call m_delete_queue->markForDeletion()
 class GPUResource {
+    GPUResourceDeleteQueue& m_delete_queue; // points to the global GPUResource delete queue
+protected:
     VkSemaphore m_timeline_semaphore = VK_NULL_HANDLE; // timeline semaphore associated with the queue this resource was last used with
     uint64_t m_resource_free_signal_value = 0;         // when the resource is no longer in use
-    GPUResourceDeleteQueue& m_delete_queue;            // points to the global GPUResource delete queue
 
 protected:
     GPUResource(GPUResourceDeleteQueue& delete_queue) : m_delete_queue(delete_queue) {}
@@ -101,7 +104,7 @@ class GPUPipeline : public GPUResource {
     VkPipeline m_handle;
 
 public:
-    GPUPipeline(GPUResourceDeleteQueue& delete_queue, VkPipeline handle) : GPUResource(delete_queue), m_handle(handle) {}
+    GPUPipeline(GPUResourceDeleteQueue& delete_queue, VkPipeline handle) : GPUResource(delete_queue), m_handle(handle) { GC_ASSERT(m_handle); }
     GPUPipeline(const GPUPipeline&) = delete;
     GPUPipeline(GPUPipeline&& other) noexcept : GPUResource(std::move(other)), m_handle(other.m_handle) { other.m_handle = VK_NULL_HANDLE; }
 
@@ -110,6 +113,7 @@ public:
 
     ~GPUPipeline()
     {
+        GC_TRACE("~GPUPipeline()");
         if (m_handle != VK_NULL_HANDLE) {
             auto pipeline = m_handle;
             markForDeletion([pipeline](VkDevice device, [[maybe_unused]] VmaAllocator allocator) { vkDestroyPipeline(device, pipeline, nullptr); });
@@ -119,29 +123,102 @@ public:
     VkPipeline getHandle() const { return m_handle; }
 };
 
-/* A device-local GPU buffer. Intended for vertex buffers, index buffers, etc */
-class GPUBuffer : public GPUResource {
-    VkBuffer m_handle{};
+/* A device-local GPU Image. Not owned by textures but usually owned by one or more GPUImageViews. */
+/* Call useResource() when uploading the image otherwise isUploaded() won't work */
+class GPUImage : public GPUResource {
+    VkImage m_handle{};
     VmaAllocation m_allocation{};
+    bool m_uploaded{};
 
 public:
-    GPUBuffer(GPUResourceDeleteQueue& delete_queue, VkBuffer handle, VmaAllocation allocation) : GPUResource(delete_queue), m_handle(handle), m_allocation(allocation) {}
-    GPUBuffer(const GPUBuffer&) = delete;
-    GPUBuffer(GPUBuffer&& other) noexcept : GPUResource(std::move(other)), m_handle(other.m_handle) { other.m_handle = VK_NULL_HANDLE; }
-
-    GPUBuffer& operator=(const GPUBuffer&) = delete;
-    GPUBuffer& operator=(GPUBuffer&&) = delete;
-
-    ~GPUBuffer()
+    GPUImage(GPUResourceDeleteQueue& delete_queue, VkImage handle, VmaAllocation allocation)
+        : GPUResource(delete_queue), m_handle(handle), m_allocation(allocation)
     {
+        GC_ASSERT(m_handle);
+        GC_ASSERT(m_allocation);
+    }
+    GPUImage(const GPUImage&) = delete;
+    GPUImage(GPUImage&& other) noexcept : GPUResource(std::move(other)), m_handle(other.m_handle), m_allocation(other.m_allocation)
+    {
+        other.m_handle = VK_NULL_HANDLE;
+        other.m_allocation = {};
+    }
+
+    GPUImage& operator=(const GPUImage&) = delete;
+    GPUImage& operator=(GPUImage&&) = delete;
+
+    ~GPUImage()
+    {
+        GC_TRACE("~GPUImage()");
         if (m_handle != VK_NULL_HANDLE) {
-            auto buffer = m_handle;
+            auto image = m_handle;
             auto allocation = m_allocation;
-            markForDeletion([buffer, allocation]([[maybe_unused]] VkDevice device, VmaAllocator allocator) { vmaDestroyBuffer(allocator, buffer, allocation); });
+            markForDeletion([image, allocation]([[maybe_unused]] VkDevice device, VmaAllocator allocator) { vmaDestroyImage(allocator, image, allocation); });
         }
     }
 
-    VkBuffer getHandle() const { return m_handle; }
+    /* Checks if the image has finished being uploaded to the GPU and is ready to use */
+    bool isUploaded(VkDevice device)
+    {
+        if (m_uploaded) {
+            return true;
+        }
+        else {
+            uint64_t value{};
+            GC_CHECKVK(vkGetSemaphoreCounterValue(device, m_timeline_semaphore, &value));
+            if (value >= m_resource_free_signal_value) {
+                m_uploaded = true;
+                return true;
+            }
+            else {
+                return false;
+            }
+        }
+    }
+
+    VkImage getHandle() const { return m_handle; }
+};
+
+/* Ensure that image_view.getImage()->isUploaded() == true before using */
+class GPUImageView : public GPUResource {
+    VkImageView m_handle{};
+    std::shared_ptr<GPUImage> m_image{};
+
+public:
+    GPUImageView(GPUResourceDeleteQueue& delete_queue, VkImageView handle, const std::shared_ptr<GPUImage>& image)
+        : GPUResource(delete_queue), m_handle(handle), m_image(image)
+    {
+        GC_ASSERT(m_handle);
+        GC_ASSERT(m_image);
+    }
+    GPUImageView(const GPUImageView&) = delete;
+    GPUImageView(GPUImageView&& other) noexcept : GPUResource(std::move(other)), m_handle(other.m_handle) { other.m_handle = VK_NULL_HANDLE; }
+
+    GPUImageView& operator=(const GPUImageView&) = delete;
+    GPUImageView& operator=(GPUImageView&&) = delete;
+
+    ~GPUImageView()
+    {
+        GC_TRACE("~GPUImageView()");
+        if (m_handle != VK_NULL_HANDLE) {
+            auto image_view = m_handle;
+            markForDeletion([image_view](VkDevice device, [[maybe_unused]] VmaAllocator allocator) { vkDestroyImageView(device, image_view, nullptr); });
+        }
+    }
+
+    /* Also calls useResource() on the image */
+    void useResource(VkSemaphore timeline_semaphore, uint64_t resource_free_signal_value)
+    {
+        GC_ASSERT(m_image);
+        m_image->useResource(timeline_semaphore, resource_free_signal_value);
+        GPUResource::useResource(timeline_semaphore, resource_free_signal_value);
+    }
+
+    const std::shared_ptr<GPUImage>& getImage() const
+    {
+        GC_ASSERT(m_image);
+        return m_image;
+    }
 };
 
 } // namespace gc

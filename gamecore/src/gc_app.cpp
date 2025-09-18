@@ -199,6 +199,14 @@ void App::run()
     std::unique_ptr<GPUPipeline> pipeline{};
     WorldDrawData world_draw_data;
 
+    GPUImageView myview = m_render_backend->createImageView();
+    if (myview.getImage()->isUploaded(renderBackend().getDevice())) {
+        GC_TRACE("Uploaded: YES!");
+    }
+    else {
+        GC_TRACE("Uploaded: NO!");
+    }
+
     m_last_frame_begin_stamp = getNanos() - 1'000'000; // treat the first delta time as 1 ms
     while (!window().shouldQuit()) {
 
@@ -218,7 +226,7 @@ void App::run()
             if (frame_state.window_state->getKeyPress(SDL_SCANCODE_F10)) {
                 m_debug_ui->active = !m_debug_ui->active;
             }
-            if (frame_state.window_state->getButtonPress(gc::MouseButton::X1)) {
+            if (frame_state.window_state->getKeyPress(SDL_SCANCODE_X)) {
                 // show/hide mouse
                 if (!SDL_SetWindowRelativeMouseMode(window().getHandle(), !SDL_GetWindowRelativeMouseMode(window().getHandle()))) {
                     GC_ERROR("SDL_SetWindowRelativeMouseMode() error: {}", SDL_GetError());
@@ -256,6 +264,13 @@ void App::run()
         world_draw_data.reset();
         for (const auto& cube_matrix : frame_state.cube_transforms) {
             world_draw_data.drawCube(cube_matrix);
+        }
+
+        if (myview.getImage()->isUploaded(renderBackend().getDevice())) {
+            GC_TRACE("Uploaded: YES!");
+        }
+        else {
+            GC_TRACE("Uploaded: NO!");
         }
 
         renderBackend().submitFrame(frame_state.window_state->getResizedFlag(), world_draw_data);
