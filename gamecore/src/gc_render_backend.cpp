@@ -484,10 +484,16 @@ void RenderBackend::submitFrame(bool window_resized, const WorldDrawData& world_
     waitForFrameReady();
 }
 
-void RenderBackend::cleanupGPUResources() { m_delete_queue.deleteUnusedResources(std::array{m_timeline_semaphore}); }
+void RenderBackend::cleanupGPUResources()
+{
+    ZoneScoped;
+    m_delete_queue.deleteUnusedResources(std::array{m_timeline_semaphore});
+}
 
 GPUPipeline RenderBackend::createPipeline(std::span<const uint8_t> vertex_spv, std::span<const uint8_t> fragment_spv)
 {
+    ZoneScoped;
+
     VkShaderModuleCreateInfo module_info{};
     module_info.sType = VK_STRUCTURE_TYPE_SHADER_MODULE_CREATE_INFO;
     module_info.pNext = nullptr;
@@ -638,6 +644,8 @@ GPUPipeline RenderBackend::createPipeline(std::span<const uint8_t> vertex_spv, s
 
 GPUImageView RenderBackend::createImageView()
 {
+    ZoneScoped;
+
     VkBufferCreateInfo buffer_info{};
     buffer_info.sType = VK_STRUCTURE_TYPE_BUFFER_CREATE_INFO;
     buffer_info.size = 16ULL * 16ULL * 4ULL;
@@ -764,6 +772,16 @@ GPUImageView RenderBackend::createImageView()
         submit_info.signalSemaphoreInfoCount = 1;
         submit_info.pSignalSemaphoreInfos = &signal_info;
         GC_CHECKVK(vkQueueSubmit2(m_device.getMainQueue(), 1, &submit_info, VK_NULL_HANDLE));
+
+        GPUResourceDeleteQueue::DeletionEntry command_buffer_deletion_entry{};
+        command_buffer_deletion_entry.timeline_semaphore = m_timeline_semaphore;
+        command_buffer_deletion_entry.resource_free_signal_value = m_timeline_value;
+        const VkCommandPool transfer_cmd_pool = m_transfer_cmd_pool;
+        command_buffer_deletion_entry.deleter = [transfer_cmd_pool, cmd](VkDevice device, [[maybe_unused]] VmaAllocator allocator) {
+            GC_TRACE("freeing command buffer: {}", reinterpret_cast<void*>(cmd));
+            vkFreeCommandBuffers(device, transfer_cmd_pool, 1, &cmd);
+        };
+        m_delete_queue.markForDeletion(command_buffer_deletion_entry);
     }
 
     auto gpu_image = std::make_shared<GPUImage>(m_delete_queue, image, allocation);

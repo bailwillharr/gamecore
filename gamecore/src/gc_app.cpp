@@ -11,6 +11,7 @@
 #include <tracy/Tracy.hpp>
 
 #include "gamecore/gc_assert.h"
+#include "gamecore/gc_gpu_resources.h"
 #include "gamecore/gc_name.h"
 #include "gamecore/gc_abort.h"
 #include "gamecore/gc_logger.h"
@@ -199,8 +200,6 @@ void App::run()
     std::unique_ptr<GPUPipeline> pipeline{};
     WorldDrawData world_draw_data;
 
-    GPUImageView myview = m_render_backend->createImageView();
-
     m_last_frame_begin_stamp = getNanos() - 1'000'000; // treat the first delta time as 1 ms
     while (!window().shouldQuit()) {
 
@@ -262,6 +261,17 @@ void App::run()
 
         renderBackend().submitFrame(frame_state.window_state->getResizedFlag(), world_draw_data);
 
+        {
+            constexpr size_t TEST_SIZE = 100;
+            std::vector<GPUImageView> tings{};
+            tings.reserve(TEST_SIZE);
+            for (int i = 0; i < TEST_SIZE; ++i) {
+                tings.push_back(renderBackend().createImageView());
+            }
+            for (int i = 0; i < TEST_SIZE; ++i) {
+                GC_ASSERT(tings[i].getImage());
+            }
+        }
         renderBackend().cleanupGPUResources();
 
         // renderBackend().waitForFrameReady(); // reduces latency
