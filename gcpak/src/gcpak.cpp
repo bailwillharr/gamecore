@@ -54,7 +54,7 @@ bool GcpakCreator::saveFile(const std::filesystem::path& path)
         header.format_identifier = GCPAK_VALID_IDENTIFIER;
         header.format_version = GCPAK_CURRENT_VERSION;
         header.num_entries = static_cast<uint32_t>(m_assets.size());
-        file.write(reinterpret_cast<const char*>(&header), sizeof(header));
+        header.serialize(file);
         if (!file) {
             return false;
         }
@@ -78,7 +78,7 @@ bool GcpakCreator::saveFile(const std::filesystem::path& path)
             entry.asset_type = GcpakAssetType::RAW;
             entry.size_uncompressed = 0;
             entry.size = static_cast<uint32_t>(m_assets[i].data.size());
-            file.write(reinterpret_cast<const char*>(&entry), sizeof(entry));
+            entry.serialize(file);
             if (!file) {
                 return false;
             }

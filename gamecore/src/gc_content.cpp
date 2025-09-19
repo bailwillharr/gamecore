@@ -4,14 +4,15 @@
 
 #include <filesystem>
 #include <optional>
-#include <algorithm>
+#include <sstream>
+
+#include <gcpak/gcpak.h>
 
 #include <SDL3/SDL_filesystem.h>
 
 #include <mio/mmap.hpp>
 
 #include "gamecore/gc_logger.h"
-#include "gamecore/gc_gcpak.h"
 #include "gamecore/gc_name.h"
 #include "gamecore/gc_units.h"
 #include "gamecore/gc_assert.h"
@@ -20,7 +21,7 @@ namespace gc {
 
 struct PackageAssetInfo {
     unsigned int file_index;
-    GcpakAssetEntry entry;
+    gcpak::GcpakAssetEntry entry;
 };
 
 static std::optional<std::filesystem::path> findContentDir()
@@ -53,21 +54,27 @@ static std::optional<std::pair<std::unique_ptr<mio::mmap_source>, std::uint32_t>
         return {};
     }
 
-    if (file->size() < sizeof(GcpakHeader)) {
+    if (file->size() < sizeof(gcpak::GcpakHeader)) {
         GC_ERROR("Gcpak file too small: {}", file_path.filename().string());
         return {};
     }
 
-    GcpakHeader header;
-    std::memcpy(&header, file->data(), sizeof(GcpakHeader));
+    std::stringstream ss{};
+    ss.write(reinterpret_cast<const char*>(file->data()), sizeof(gcpak::GcpakHeader));
+    if (!ss) {
+        GC_ERROR("Failed to write to stringstream");
+        return {};
+    }
+    ss.seekg(0);
+    auto header = gcpak::GcpakHeader::deserialize(ss);
 
-    if (header.format_identifier != GCPAK_FORMAT_IDENTIFIER) {
+    if (header.format_identifier != gcpak::GCPAK_VALID_IDENTIFIER) {
         GC_ERROR("Gcpak file header invalid: {}, got '{}'", file_path.filename().string(),
                  std::string_view(reinterpret_cast<const char*>(header.format_identifier.data()), header.format_identifier.size()));
         return {};
     }
 
-    if (header.format_version != GCPAK_FORMAT_VERSION) {
+    if (header.format_version != gcpak::GCPAK_CURRENT_VERSION) {
         GC_ERROR("Gcpak file version unsupported: {}", file_path.filename().string());
         return {};
     }
@@ -76,7 +83,7 @@ static std::optional<std::pair<std::unique_ptr<mio::mmap_source>, std::uint32_t>
 }
 
 /* no bounds checking done, ensure index < header.num_entries */
-static GcpakAssetEntry getAssetEntry(const mio::mmap_source& map, const uint32_t index)
+static gcpak::GcpakAssetEntry getAssetEntry(const mio::mmap_source& map, const uint32_t index)
 {
     const std::ptrdiff_t entry_location_in_map = map.size() - ((static_cast<size_t>(index) + 1) * sizeof(GcpakAssetEntry));
     GC_ASSERT(entry_location_in_map > 0);

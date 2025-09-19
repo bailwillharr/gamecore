@@ -5,7 +5,6 @@
 #include <SDL3/SDL_vulkan.h>
 #include <SDL3/SDL_timer.h>
 
-#include <filesystem>
 #include <tracy/Tracy.hpp>
 
 #include <backends/imgui_impl_vulkan.h>
@@ -13,6 +12,7 @@
 
 #include <ext/matrix_clip_space.hpp>
 
+#include "gamecore/gc_gpu_resources.h"
 #include "gamecore/gc_vulkan_common.h"
 #include "gamecore/gc_abort.h"
 #include "gamecore/gc_vulkan_device.h"
@@ -649,6 +649,8 @@ GPUImageView RenderBackend::createImageView()
     }
     vmaUnmapMemory(m_allocator.getHandle(), buffer_alloc);
 
+    GPUStagingBuffer gpu_staging_buffer(m_delete_queue, buffer, buffer_alloc);
+
     VkImageCreateInfo image_info{};
     image_info.sType = VK_STRUCTURE_TYPE_IMAGE_CREATE_INFO;
     image_info.flags = 0;
@@ -719,7 +721,7 @@ GPUImageView RenderBackend::createImageView()
         region.imageOffset.y = 0;
         region.imageOffset.z = 0;
         region.imageExtent = image_info.extent;
-        vkCmdCopyBufferToImage(cmd, buffer, image, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, 1, &region);
+        vkCmdCopyBufferToImage(cmd, gpu_staging_buffer.getHandle(), image, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, 1, &region);
 
         barrier.srcStageMask = VK_PIPELINE_STAGE_2_COPY_BIT;
         barrier.srcAccessMask = VK_ACCESS_2_TRANSFER_WRITE_BIT;
@@ -751,6 +753,9 @@ GPUImageView RenderBackend::createImageView()
 
     auto gpu_image = std::make_shared<GPUImage>(m_delete_queue, image, allocation);
 
+    // The destructor for GPUStagingBuffer will be called when this function returns.
+    // It will be actually destroyed only after the image has been uploaded.
+    gpu_staging_buffer.useResource(m_timeline_semaphore, m_timeline_value);
     gpu_image->useResource(m_timeline_semaphore, m_timeline_value);
 
     VkImageViewCreateInfo view_info{};

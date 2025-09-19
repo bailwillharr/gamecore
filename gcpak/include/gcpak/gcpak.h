@@ -2,6 +2,8 @@
 
 #include <array>
 #include <filesystem>
+#include <istream>
+#include <ostream>
 #include <bit>
 #include <vector>
 
@@ -37,6 +39,22 @@ struct GcpakHeader {
     std::array<std::uint8_t, 6> format_identifier; // null-terminated "GCPAK"
     uint16_t format_version;                       // currently 1
     uint32_t num_entries;
+
+    void serialize(std::ostream& s) const
+    {
+        s.write(reinterpret_cast<const char*>(format_identifier.data()), format_identifier.size());
+        s.write(reinterpret_cast<const char*>(&format_version), sizeof(uint16_t));
+        s.write(reinterpret_cast<const char*>(&num_entries), sizeof(uint32_t));
+    }
+
+    static GcpakHeader deserialize(std::istream& s)
+    {
+        GcpakHeader header{};
+        s.read(reinterpret_cast<char*>(header.format_identifier.data()), header.format_identifier.size());
+        s.read(reinterpret_cast<char*>(&header.format_version), sizeof(uint16_t));
+        s.read(reinterpret_cast<char*>(&header.num_entries), sizeof(uint32_t));
+        return header;
+    }
 };
 
 enum class GcpakAssetType : std::uint32_t {
@@ -49,6 +67,26 @@ struct GcpakAssetEntry {
     GcpakAssetType asset_type;
     uint32_t size_uncompressed; // set to zero for no compression
     uint32_t size;              // size of data in file (compressed size if compression enabled)
+
+    void serialize(std::ostream& s) const
+    {
+        s.write(reinterpret_cast<const char*>(&offset), sizeof(size_t));
+        s.write(reinterpret_cast<const char*>(&crc32_id), sizeof(uint32_t));
+        s.write(reinterpret_cast<const char*>(&asset_type), sizeof(GcpakAssetType));
+        s.write(reinterpret_cast<const char*>(&size_uncompressed), sizeof(uint32_t));
+        s.write(reinterpret_cast<const char*>(&size), sizeof(uint32_t));
+    }
+
+    static GcpakAssetEntry deserialize(std::istream& s)
+    {
+        GcpakAssetEntry header{};
+        s.read(reinterpret_cast<char*>(&header.offset), sizeof(size_t));
+        s.read(reinterpret_cast<char*>(&header.crc32_id), sizeof(uint32_t));
+        s.read(reinterpret_cast<char*>(&header.asset_type), sizeof(GcpakAssetType));
+        s.read(reinterpret_cast<char*>(&header.size_uncompressed), sizeof(uint32_t));
+        s.read(reinterpret_cast<char*>(&header.size), sizeof(uint32_t));
+        return header;
+    }
 };
 
 constexpr std::array<uint8_t, 6> GCPAK_VALID_IDENTIFIER = {'G', 'C', 'P', 'A', 'K', '\0'};

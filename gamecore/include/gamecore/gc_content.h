@@ -2,18 +2,11 @@
 
 #include <cstdint>
 
-#include <filesystem>
-#include <string_view>
 #include <vector>
-#include <fstream>
 #include <unordered_map>
-#include <tuple>
 #include <memory>
-#include <mutex>
 
 #include <mio/mmap.hpp>
-
-#include "gamecore/gc_gcpak.h"
 
 // A wrapper around access to game engine assets:
 // - Ensures the correct content directory is used and finds all .gcpak files

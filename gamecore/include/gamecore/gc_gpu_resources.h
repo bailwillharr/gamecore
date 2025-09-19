@@ -221,4 +221,40 @@ public:
     }
 };
 
+/* A (usually host-local) buffer. Mainly used to ensure staging buffers are destroyed after being used for uploading to a GPUImage or GPUBuffer */
+class GPUStagingBuffer : public GPUResource {
+    VkBuffer m_handle{};
+    VmaAllocation m_allocation{};
+
+public:
+    GPUStagingBuffer(GPUResourceDeleteQueue& delete_queue, VkBuffer handle, VmaAllocation allocation)
+        : GPUResource(delete_queue), m_handle(handle), m_allocation(allocation)
+    {
+        GC_ASSERT(m_handle);
+        GC_ASSERT(m_allocation);
+    }
+    GPUStagingBuffer(const GPUStagingBuffer&) = delete;
+    GPUStagingBuffer(GPUStagingBuffer&& other) noexcept : GPUResource(std::move(other)), m_handle(other.m_handle), m_allocation(other.m_allocation)
+    {
+        other.m_handle = VK_NULL_HANDLE;
+        other.m_allocation = {};
+    }
+
+    GPUStagingBuffer& operator=(const GPUStagingBuffer&) = delete;
+    GPUStagingBuffer& operator=(GPUStagingBuffer&&) = delete;
+
+    ~GPUStagingBuffer()
+    {
+        GC_TRACE("~GPUStagingBuffer()");
+        if (m_handle != VK_NULL_HANDLE) {
+            auto buffer = m_handle;
+            auto allocation = m_allocation;
+            markForDeletion(
+                [buffer, allocation]([[maybe_unused]] VkDevice device, VmaAllocator allocator) { vmaDestroyBuffer(allocator, buffer, allocation); });
+        }
+    }
+
+    VkBuffer getHandle() const { return m_handle; }
+};
+
 } // namespace gc
