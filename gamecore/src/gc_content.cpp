@@ -60,7 +60,7 @@ static std::optional<std::pair<std::unique_ptr<mio::mmap_source>, std::uint32_t>
     }
 
     std::stringstream ss{};
-    ss.write(reinterpret_cast<const char*>(file->data()), sizeof(gcpak::GcpakHeader));
+    ss.write(reinterpret_cast<const char*>(file->data()), gcpak::GcpakHeader::getSerializedSize());
     if (!ss) {
         GC_ERROR("Failed to write to stringstream");
         return {};
@@ -85,13 +85,12 @@ static std::optional<std::pair<std::unique_ptr<mio::mmap_source>, std::uint32_t>
 /* no bounds checking done, ensure index < header.num_entries */
 static gcpak::GcpakAssetEntry getAssetEntry(const mio::mmap_source& map, const uint32_t index)
 {
-    const std::ptrdiff_t entry_location_in_map = map.size() - ((static_cast<size_t>(index) + 1) * sizeof(GcpakAssetEntry));
+    const std::ptrdiff_t entry_location_in_map = map.size() - ((static_cast<size_t>(index) + 1) * gcpak::GcpakAssetEntry::getSerializedSize());
     GC_ASSERT(entry_location_in_map > 0);
 
-    GcpakAssetEntry entry;
-    std::memcpy(&entry, map.data() + entry_location_in_map, sizeof(GcpakAssetEntry));
-
-    return entry;
+    std::stringstream ss{};
+    ss.write(reinterpret_cast<const char*>(map.data() + entry_location_in_map), gcpak::GcpakAssetEntry::getSerializedSize());
+    return gcpak::GcpakAssetEntry::deserialize(ss);
 }
 
 Content::Content()

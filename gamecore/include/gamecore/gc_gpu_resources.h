@@ -50,7 +50,6 @@ public:
                         // if corresponding timeline semaphore has reached value yet
                         // OR
                         // resource had no timeline semaphore in which case always delete it
-                        GC_TRACE("Deleting a GPU resource");
                         m_deletion_entries[j].deleter(m_device, m_allocator);
                         m_deletion_entries[j] = m_deletion_entries.back();
                         m_deletion_entries.pop_back();
@@ -65,7 +64,7 @@ public:
 
 // Ensure that derived classes using this class call m_delete_queue->markForDeletion()
 class GPUResource {
-    GPUResourceDeleteQueue& m_delete_queue; // points to the global GPUResource delete queue
+    GPUResourceDeleteQueue& m_delete_queue;            // points to the global GPUResource delete queue
 protected:
     VkSemaphore m_timeline_semaphore = VK_NULL_HANDLE; // timeline semaphore associated with the queue this resource was last used with
     uint64_t m_resource_free_signal_value = 0;         // when the resource is no longer in use
@@ -113,10 +112,13 @@ public:
 
     ~GPUPipeline()
     {
-        GC_TRACE("~GPUPipeline()");
+        GC_TRACE("~GPUPipeline() {:x}", reinterpret_cast<uintptr_t>(m_handle));
         if (m_handle != VK_NULL_HANDLE) {
             auto pipeline = m_handle;
-            markForDeletion([pipeline](VkDevice device, [[maybe_unused]] VmaAllocator allocator) { vkDestroyPipeline(device, pipeline, nullptr); });
+            markForDeletion([pipeline](VkDevice device, [[maybe_unused]] VmaAllocator allocator) {
+                GC_TRACE("Deleting GPUPipeline {:x}", reinterpret_cast<uintptr_t>(pipeline));
+                vkDestroyPipeline(device, pipeline, nullptr);
+            });
         }
     }
 
@@ -149,11 +151,14 @@ public:
 
     ~GPUImage()
     {
-        GC_TRACE("~GPUImage()");
+        GC_TRACE("~GPUImage() {:x}", reinterpret_cast<uintptr_t>(m_handle));
         if (m_handle != VK_NULL_HANDLE) {
             auto image = m_handle;
             auto allocation = m_allocation;
-            markForDeletion([image, allocation]([[maybe_unused]] VkDevice device, VmaAllocator allocator) { vmaDestroyImage(allocator, image, allocation); });
+            markForDeletion([image, allocation]([[maybe_unused]] VkDevice device, VmaAllocator allocator) {
+                GC_TRACE("Deleting GPUImage {:x}", reinterpret_cast<uintptr_t>(image));
+                vmaDestroyImage(allocator, image, allocation);
+            });
         }
     }
 
@@ -199,10 +204,13 @@ public:
 
     ~GPUImageView()
     {
-        GC_TRACE("~GPUImageView()");
+        GC_TRACE("~GPUImageView() {:x}", reinterpret_cast<uintptr_t>(m_handle));
         if (m_handle != VK_NULL_HANDLE) {
             auto image_view = m_handle;
-            markForDeletion([image_view](VkDevice device, [[maybe_unused]] VmaAllocator allocator) { vkDestroyImageView(device, image_view, nullptr); });
+            markForDeletion([image_view](VkDevice device, [[maybe_unused]] VmaAllocator allocator) {
+                GC_TRACE("Deleting GPUImageView: {:x}", reinterpret_cast<uintptr_t>(image_view));
+                vkDestroyImageView(device, image_view, nullptr);
+            });
         }
     }
 
@@ -245,12 +253,14 @@ public:
 
     ~GPUStagingBuffer()
     {
-        GC_TRACE("~GPUStagingBuffer()");
+        GC_TRACE("~GPUStagingBuffer() {:x}", reinterpret_cast<uintptr_t>(m_handle));
         if (m_handle != VK_NULL_HANDLE) {
             auto buffer = m_handle;
             auto allocation = m_allocation;
-            markForDeletion(
-                [buffer, allocation]([[maybe_unused]] VkDevice device, VmaAllocator allocator) { vmaDestroyBuffer(allocator, buffer, allocation); });
+            markForDeletion([buffer, allocation]([[maybe_unused]] VkDevice device, VmaAllocator allocator) {
+                GC_TRACE("Deleting GPUStagingBuffer {:x}", reinterpret_cast<uintptr_t>(buffer));
+                vmaDestroyBuffer(allocator, buffer, allocation);
+            });
         }
     }
 

@@ -53,7 +53,7 @@ static void recreateDepthStencil(VkDevice device, VmaAllocator allocator, VkForm
     image_info.initialLayout = VK_IMAGE_LAYOUT_UNDEFINED;
     VmaAllocationCreateInfo alloc_create_info{};
     alloc_create_info.flags = VMA_ALLOCATION_CREATE_DEDICATED_MEMORY_BIT;
-    alloc_create_info.usage = VMA_MEMORY_USAGE_AUTO_PREFER_DEVICE;
+    alloc_create_info.usage = VMA_MEMORY_USAGE_AUTO;
     alloc_create_info.priority = 1.0f;
     GC_CHECKVK(vmaCreateImage(allocator, &image_info, &alloc_create_info, &depth_stencil, &depth_stencil_allocation, nullptr));
 
@@ -127,6 +127,16 @@ static void recreateFramebufferImage(VkDevice device, VmaAllocator allocator, Vk
     GC_CHECKVK(vkCreateImageView(device, &view_info, nullptr, &view));
 }
 
+static uint32_t getAppropriateFramesInFlight(uint32_t swapchain_image_count)
+{
+    if (swapchain_image_count > 2) {
+        return 2;
+    }
+    else {
+        return 1;
+    }
+}
+
 RenderBackend::RenderBackend(SDL_Window* window_handle)
     : m_device(), m_allocator(m_device), m_swapchain(m_device, window_handle), m_delete_queue(m_device.getHandle(), m_allocator.getHandle())
 {
@@ -182,7 +192,7 @@ RenderBackend::RenderBackend(SDL_Window* window_handle)
                                  m_framebuffer_image, m_framebuffer_image_allocation, m_framebuffer_image_view);
     }
 
-    m_requested_frames_in_flight = 2;
+    m_requested_frames_in_flight = getAppropriateFramesInFlight(m_swapchain.getImageCount());
 
     {
         VkSemaphoreTypeCreateInfo type_info{};
@@ -466,9 +476,12 @@ void RenderBackend::submitFrame(bool window_resized, const WorldDrawData& world_
                              m_depth_stencil_allocation, m_depth_stencil_view);
         recreateFramebufferImage(m_device.getHandle(), m_allocator.getHandle(), m_swapchain.getSurfaceFormat().format, m_swapchain.getExtent(),
                                  m_framebuffer_image, m_framebuffer_image_allocation, m_framebuffer_image_view);
+        m_requested_frames_in_flight = getAppropriateFramesInFlight(m_swapchain.getImageCount());
     }
 
     ++m_frame_count;
+
+    waitForFrameReady();
 }
 
 void RenderBackend::cleanupGPUResources() { m_delete_queue.deleteUnusedResources(std::array{m_timeline_semaphore}); }
@@ -627,7 +640,7 @@ GPUImageView RenderBackend::createImageView()
 {
     VkBufferCreateInfo buffer_info{};
     buffer_info.sType = VK_STRUCTURE_TYPE_BUFFER_CREATE_INFO;
-    buffer_info.size = 16 * 16 * 3;
+    buffer_info.size = 16ULL * 16ULL * 4ULL;
     buffer_info.usage = VK_BUFFER_USAGE_TRANSFER_SRC_BIT;
     buffer_info.sharingMode = VK_SHARING_MODE_EXCLUSIVE;
     VmaAllocationCreateInfo buffer_alloc_info{};
@@ -642,9 +655,10 @@ GPUImageView RenderBackend::createImageView()
     GC_CHECKVK(vmaMapMemory(m_allocator.getHandle(), buffer_alloc, reinterpret_cast<void**>(&data_dest)));
     for (int y = 0; y < 16; ++y) {
         for (int x = 0; x < 16; ++x) {
-            data_dest[3 * (y * 16 + x) + 0] = 255 / (1 + (x % 2));
-            data_dest[3 * (y * 16 + x) + 1] = 255 / (1 + (y % 2));
-            data_dest[3 * (y * 16 + x) + 2] = 0;
+            data_dest[4 * (y * 16 + x) + 0] = 255 / (1 + (x % 2));
+            data_dest[4 * (y * 16 + x) + 1] = 255 / (1 + (y % 2));
+            data_dest[4 * (y * 16 + x) + 2] = 0;
+            data_dest[4 * (y * 16 + x) + 3] = 255;
         }
     }
     vmaUnmapMemory(m_allocator.getHandle(), buffer_alloc);
@@ -655,7 +669,7 @@ GPUImageView RenderBackend::createImageView()
     image_info.sType = VK_STRUCTURE_TYPE_IMAGE_CREATE_INFO;
     image_info.flags = 0;
     image_info.imageType = VK_IMAGE_TYPE_2D;
-    image_info.format = VK_FORMAT_R8G8B8_SRGB;
+    image_info.format = VK_FORMAT_R8G8B8A8_SRGB; // supported by all conforming drivers
     image_info.extent.width = 16;
     image_info.extent.height = 16;
     image_info.extent.depth = 1;
@@ -668,6 +682,7 @@ GPUImageView RenderBackend::createImageView()
     VmaAllocationCreateInfo alloc_info{};
     alloc_info.flags = 0;
     alloc_info.usage = VMA_MEMORY_USAGE_AUTO;
+    alloc_info.priority = 0.5f;
     VkImage image{};
     VmaAllocation allocation{};
     GC_CHECKVK(vmaCreateImage(m_allocator.getHandle(), &image_info, &alloc_info, &image, &allocation, nullptr));
@@ -786,6 +801,8 @@ void RenderBackend::waitIdle()
 
 void RenderBackend::recreateFramesInFlightResources()
 {
+    GC_TRACE("Recreating frames in flight resources. FIF count {}", m_requested_frames_in_flight);
+
     // wait for any work on the queue used for rendering and presentation is finished.
     GC_CHECKVK(vkQueueWaitIdle(m_device.getMainQueue()));
 

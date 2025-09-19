@@ -7,8 +7,6 @@
 #include <bit>
 #include <vector>
 
-/* For manipulating gcpak files. Gamecore uses its own internal functions to read gcpak files efficiently */
-
 /*
  * The gcpak file format contains many game assets each of which can either be compressed or decompressed.
  *
@@ -35,6 +33,9 @@ namespace gcpak {
 /* The file format uses little-endian data so the native endianness must match as no conversion is done */
 static_assert(std::endian::native == std::endian::little);
 
+constexpr std::array<uint8_t, 6> GCPAK_VALID_IDENTIFIER = {'G', 'C', 'P', 'A', 'K', '\0'};
+constexpr uint16_t GCPAK_CURRENT_VERSION = 1;
+
 struct GcpakHeader {
     std::array<std::uint8_t, 6> format_identifier; // null-terminated "GCPAK"
     uint16_t format_version;                       // currently 1
@@ -55,6 +56,8 @@ struct GcpakHeader {
         s.read(reinterpret_cast<char*>(&header.num_entries), sizeof(uint32_t));
         return header;
     }
+
+    static size_t getSerializedSize() { return sizeof(format_identifier) + sizeof(format_version) + sizeof(num_entries); }
 };
 
 enum class GcpakAssetType : std::uint32_t {
@@ -62,7 +65,7 @@ enum class GcpakAssetType : std::uint32_t {
 };
 
 struct GcpakAssetEntry {
-    size_t offset; // absolute positition of start of asset data in the file
+    uint64_t offset; // absolute positition of start of asset data in the file
     uint32_t crc32_id;
     GcpakAssetType asset_type;
     uint32_t size_uncompressed; // set to zero for no compression
@@ -70,7 +73,7 @@ struct GcpakAssetEntry {
 
     void serialize(std::ostream& s) const
     {
-        s.write(reinterpret_cast<const char*>(&offset), sizeof(size_t));
+        s.write(reinterpret_cast<const char*>(&offset), sizeof(uint64_t));
         s.write(reinterpret_cast<const char*>(&crc32_id), sizeof(uint32_t));
         s.write(reinterpret_cast<const char*>(&asset_type), sizeof(GcpakAssetType));
         s.write(reinterpret_cast<const char*>(&size_uncompressed), sizeof(uint32_t));
@@ -80,17 +83,16 @@ struct GcpakAssetEntry {
     static GcpakAssetEntry deserialize(std::istream& s)
     {
         GcpakAssetEntry header{};
-        s.read(reinterpret_cast<char*>(&header.offset), sizeof(size_t));
+        s.read(reinterpret_cast<char*>(&header.offset), sizeof(uint64_t));
         s.read(reinterpret_cast<char*>(&header.crc32_id), sizeof(uint32_t));
         s.read(reinterpret_cast<char*>(&header.asset_type), sizeof(GcpakAssetType));
         s.read(reinterpret_cast<char*>(&header.size_uncompressed), sizeof(uint32_t));
         s.read(reinterpret_cast<char*>(&header.size), sizeof(uint32_t));
         return header;
     }
-};
 
-constexpr std::array<uint8_t, 6> GCPAK_VALID_IDENTIFIER = {'G', 'C', 'P', 'A', 'K', '\0'};
-constexpr uint16_t GCPAK_CURRENT_VERSION = 1;
+    static size_t getSerializedSize() { return sizeof(offset) + sizeof(crc32_id) + sizeof(asset_type) + sizeof(size_uncompressed) + sizeof(size); }
+};
 
 class GcpakCreator {
 public:

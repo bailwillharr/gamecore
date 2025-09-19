@@ -60,7 +60,7 @@ public:
     inline VkSurfaceFormatKHR getSurfaceFormat() const { return m_surface_format; }
 	inline VkPresentModeKHR getCurrentPresentMode() const { return m_present_mode; }
 
-	// Do not use this value to duplicate resources etc.
+	// This is used for the renderer to determine the optimal number of frames in flight
 	inline int getImageCount() const { return static_cast<int>(m_images.size()); }
 
 	// Will be applied when the swapchain is next recreated

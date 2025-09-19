@@ -104,19 +104,15 @@ public:
     {
         switch (mode) {
             case RenderSyncMode::VSYNC_ON_DOUBLE_BUFFERED:
-                m_requested_frames_in_flight = 1;
                 m_swapchain.setRequestedPresentMode(VK_PRESENT_MODE_FIFO_RELAXED_KHR);
                 break;
             case RenderSyncMode::VSYNC_ON_TRIPLE_BUFFERED:
-                m_requested_frames_in_flight = 2;
                 m_swapchain.setRequestedPresentMode(VK_PRESENT_MODE_FIFO_KHR);
                 break;
             case RenderSyncMode::VSYNC_ON_TRIPLE_BUFFERED_UNTHROTTLED:
-                m_requested_frames_in_flight = 2;
                 m_swapchain.setRequestedPresentMode(VK_PRESENT_MODE_MAILBOX_KHR);
                 break;
             case RenderSyncMode::VSYNC_OFF:
-                m_requested_frames_in_flight = 1;
                 m_swapchain.setRequestedPresentMode(VK_PRESENT_MODE_IMMEDIATE_KHR);
                 break;
         }
