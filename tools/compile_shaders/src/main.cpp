@@ -6,20 +6,42 @@
 #include <vector>
 #include <filesystem>
 #include <fstream>
+#include <optional>
 
 #include <shaderc/shaderc.hpp>
 
 #include <gcpak/gcpak.h>
 
-static void fooyou()
+static std::optional<shaderc_shader_kind> determineShaderKind(const std::filesystem::path& path)
 {
-    std::vector<int> myvec(10, 55);
-    std::vector<int> myvec2{10, 55};
+    auto ext = path.extension().string();
+    std::transform(ext.cbegin(), ext.cend(), ext.begin(), tolower);
+    if (ext == std::string(".vert")) {
+        return shaderc_vertex_shader;
+    }
+    else if (ext == std::string(".frag")) {
+        return shaderc_fragment_shader;
+    }
+    else if (ext == std::string(".comp")) {
+        return shaderc_compute_shader;
+    }
+    else {
+        return {};
+    }
 }
 
 static std::vector<uint8_t> compileShader(const shaderc::Compiler& compiler, const std::filesystem::path& path)
 {
     const auto filename = path.filename().string();
+
+    shaderc_shader_kind kind{};
+    if (auto kind_opt = determineShaderKind(path); kind_opt) {
+        kind = kind_opt.value();
+    }
+    else {
+        std::cerr << "Shader source has invalid extension: " << filename << "\n";
+        return {};
+    }
 
     std::ifstream source_file{path};
     if (!source_file) {
@@ -30,18 +52,6 @@ static std::vector<uint8_t> compileShader(const shaderc::Compiler& compiler, con
     source << source_file.rdbuf();
     if (!source_file) {
         std::cerr << "Failed to read shader source: " << filename << "\n";
-    }
-
-    shaderc_shader_kind kind{};
-    if (path.extension() == std::string(".vert")) {
-        kind = shaderc_vertex_shader;
-    }
-    else if (path.extension() == std::string(".frag")) {
-        kind = shaderc_fragment_shader;
-    }
-    else {
-        std::cerr << "Shader source has invalid extension: " << filename << "\n";
-        return {};
     }
 
     shaderc::CompileOptions options{};
@@ -60,25 +70,23 @@ static std::vector<uint8_t> compileShader(const shaderc::Compiler& compiler, con
         return {};
     }
 
-    const size_t binary_size = (compiledShader.cend() - compiledShader.cbegin()) * sizeof(shaderc::SpvCompilationResult::element_type);
-    auto binary = std::vector<uint8_t>(binary_size);
-    std::memcpy(binary.data(), compiledShader.cbegin(), binary_size);
-    return binary;
+    return std::vector<uint8_t>(reinterpret_cast<const uint8_t*>(compiledShader.cbegin()), reinterpret_cast<const uint8_t*>(compiledShader.cend()));
 }
 
 int main([[maybe_unused]] int argc, [[maybe_unused]] char* argv[])
 {
     std::error_code ec{};
 
-    fooyou();
-
     const auto shader_dir = std::filesystem::path(COMPILE_SHADERS_SOURCE_DIRECTORY).parent_path().parent_path() / "content" / "shader_src";
     if (!std::filesystem::exists(shader_dir, ec) || !std::filesystem::is_directory(shader_dir, ec)) {
-        std::cerr << "Failed to find content directory! error: " << ec.message() << "\n";
+        std::cerr << "Failed to find shader_src directory! error: " << ec.message() << "\n";
         return EXIT_FAILURE;
     }
 
-    // find all .vert and .frag files and compile them
+    const auto gcpak_path = shader_dir.parent_path() / "shaders.gcpak";
+    const auto gcpak_date_modified = std::filesystem::last_write_time(gcpak_path);
+
+    // find all regular files in the directory and compile them
     const shaderc::Compiler compiler{};
     if (!compiler.IsValid()) {
         std::cerr << "Failed to initialise shaderc compiler!\n";
@@ -86,19 +94,23 @@ int main([[maybe_unused]] int argc, [[maybe_unused]] char* argv[])
     }
     gcpak::GcpakCreator gcpak_creator{};
     for (const auto& dir_entry : std::filesystem::directory_iterator(shader_dir)) {
-        const auto extension = dir_entry.path().extension();
-        if (dir_entry.is_regular_file() && (extension == std::string{".vert"} || extension == std::string{".frag"})) {
-            auto binary = compileShader(compiler, dir_entry);
-            if (binary.empty()) {
-                std::cerr << "Failed to compile shader: " << dir_entry.path().filename() << "\n";
-                return EXIT_FAILURE;
+        if (dir_entry.is_regular_file() && determineShaderKind(dir_entry.path()).has_value()) {
+            if (std::filesystem::last_write_time(dir_entry.path()) > gcpak_date_modified) {
+                auto binary = compileShader(compiler, dir_entry);
+                if (!binary.empty()) {
+                    std::cout << "Compiled shader: " << dir_entry.path().filename() << "\n";
+                    gcpak_creator.addAsset(gcpak::GcpakCreator::Asset{dir_entry.path().filename().string(), binary});
+                }
+                else {
+                    std::cerr << "Failed to compile shader: " << dir_entry.path().filename() << "\n";
+                }
             }
-            std::cout << "Compiled shader: " << dir_entry.path().filename() << "\n";
-            gcpak_creator.addAsset(gcpak::GcpakCreator::Asset{dir_entry.path().filename().string(), binary});
+            else {
+                std::cout << "Shader up to date: " << dir_entry.path().filename() << "\n";
+            }
         }
     }
 
-    auto gcpak_path = shader_dir.parent_path() / "shaders.gcpak";
     if (!gcpak_creator.saveFile(gcpak_path)) {
         std::cerr << "Failed to save gcpak file shaders.gcpak!\n";
         return EXIT_FAILURE;

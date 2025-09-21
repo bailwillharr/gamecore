@@ -98,7 +98,7 @@ endif()
 # These are public as linking executable must also have these defined for some include files
 if (GC_DEV_BUILD)
     target_compile_definitions(${PROJECT_NAME} PUBLIC GC_DO_ASSERTS)
-    target_compile_definitions(${PROJECT_NAME} PUBLIC GC_LOG_TRACE_DEBUG)
+    target_compile_definitions(${PROJECT_NAME} PUBLIC GC_LOG_DEBUG)
     target_compile_definitions(${PROJECT_NAME} PUBLIC GC_LOOKUP_ASSET_IDS)
     #target_compile_definitions(${PROJECT_NAME} PUBLIC GC_VULKAN_VALIDATION) # Vulkan Configurator can do this
 endif()

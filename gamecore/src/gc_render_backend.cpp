@@ -20,6 +20,7 @@
 #include "gamecore/gc_vulkan_swapchain.h"
 #include "gamecore/gc_logger.h"
 #include "gamecore/gc_world_draw_data.h"
+#include "gamecore/gc_units.h"
 
 namespace gc {
 
@@ -137,13 +138,59 @@ static uint32_t getAppropriateFramesInFlight(uint32_t swapchain_image_count)
     }
 }
 
+static void printGPUMemoryStats(VmaAllocator allocator, VkPhysicalDevice physical_device)
+{
+    VkPhysicalDeviceMemoryProperties2 mem_props{};
+    mem_props.sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_MEMORY_PROPERTIES_2;
+    vkGetPhysicalDeviceMemoryProperties2(physical_device, &mem_props);
+
+    std::vector<VmaBudget> heap_budgets(mem_props.memoryProperties.memoryHeapCount);
+    vmaGetHeapBudgets(allocator, heap_budgets.data());
+
+    GC_DEBUG("GPU memory heap budgets:");
+    for (uint32_t i = 0; i < heap_budgets.size(); i++) {
+        [[maybe_unused]] const VmaBudget& budget = heap_budgets[i];
+        [[maybe_unused]] const VkMemoryHeap& heap = mem_props.memoryProperties.memoryHeaps[i];
+        GC_DEBUG("  Memory heap {}", i);
+        if (heap.flags & VK_MEMORY_HEAP_DEVICE_LOCAL_BIT) {
+            GC_DEBUG("    GPU VRAM");
+        }
+        else {
+            GC_DEBUG("    OTHER MEMORY");
+        }
+        GC_DEBUG("    Used {} ({} free)", bytesToHumanReadable(budget.usage), bytesToHumanReadable(budget.budget));
+        GC_DEBUG("    Memory blocks allocated: {}", budget.statistics.blockCount);
+        GC_DEBUG("    Number of allocations: {}", budget.statistics.allocationCount);
+    }
+}
+
 RenderBackend::RenderBackend(SDL_Window* window_handle)
     : m_device(), m_allocator(m_device), m_swapchain(m_device, window_handle), m_delete_queue(m_device.getHandle(), m_allocator.getHandle())
 {
+    // create sampler
+    {
+        VkSamplerCreateInfo info{};
+        info.sType = VK_STRUCTURE_TYPE_SAMPLER_CREATE_INFO;
+        info.magFilter = VK_FILTER_NEAREST;
+        info.minFilter = VK_FILTER_LINEAR;
+        info.mipmapMode = VK_SAMPLER_MIPMAP_MODE_LINEAR;
+        info.addressModeU = VK_SAMPLER_ADDRESS_MODE_REPEAT;
+        info.addressModeV = VK_SAMPLER_ADDRESS_MODE_REPEAT;
+        info.addressModeW = VK_SAMPLER_ADDRESS_MODE_REPEAT;
+        info.mipLodBias = 0.0f;
+        info.anisotropyEnable = VK_FALSE;
+        info.compareEnable = VK_FALSE;
+        info.minLod = 0.0f;
+        info.maxLod = VK_LOD_CLAMP_NONE;
+        info.borderColor = VK_BORDER_COLOR_FLOAT_OPAQUE_WHITE;
+        info.unnormalizedCoordinates = VK_FALSE;
+        GC_CHECKVK(vkCreateSampler(m_device.getHandle(), &info, nullptr, &m_sampler));
+    }
+
     // create main descriptor pool for long-lasting static resources
     {
         std::array<VkDescriptorPoolSize, 1> pool_sizes = {
-            {VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, 1},
+            {VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, 2},
         };
         VkDescriptorPoolCreateInfo pool_info = {};
         pool_info.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_POOL_CREATE_INFO;
@@ -157,6 +204,31 @@ RenderBackend::RenderBackend(SDL_Window* window_handle)
         GC_CHECKVK(vkCreateDescriptorPool(m_device.getHandle(), &pool_info, nullptr, &m_main_desciptor_pool));
     }
 
+    // create descriptor set layout
+    {
+        VkDescriptorSetLayoutBinding binding{};
+        binding.binding = 0;
+        binding.descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
+        binding.descriptorCount = 1;
+        binding.stageFlags = VK_SHADER_STAGE_FRAGMENT_BIT;
+        binding.pImmutableSamplers = &m_sampler;
+        VkDescriptorSetLayoutCreateInfo info{};
+        info.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_LAYOUT_CREATE_INFO;
+        info.bindingCount = 1;
+        info.pBindings = &binding;
+        GC_CHECKVK(vkCreateDescriptorSetLayout(m_device.getHandle(), &info, nullptr, &m_descriptor_set_layout));
+    }
+
+    // create descriptor set, combined image sampler
+    {
+        VkDescriptorSetAllocateInfo info{};
+        info.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_ALLOCATE_INFO;
+        info.descriptorPool = m_main_desciptor_pool;
+        info.descriptorSetCount = 1;
+        info.pSetLayouts = &m_descriptor_set_layout;
+        GC_CHECKVK(vkAllocateDescriptorSets(m_device.getHandle(), &info, &m_descriptor_set));
+    }
+
     // create a simple pipeline layout for all 3D stuff (for now)
     {
         VkPushConstantRange push_constant_range{};
@@ -165,8 +237,8 @@ RenderBackend::RenderBackend(SDL_Window* window_handle)
         push_constant_range.stageFlags = VK_SHADER_STAGE_VERTEX_BIT;
         VkPipelineLayoutCreateInfo info{};
         info.sType = VK_STRUCTURE_TYPE_PIPELINE_LAYOUT_CREATE_INFO;
-        info.setLayoutCount = 0;
-        info.pSetLayouts = nullptr;
+        info.setLayoutCount = 1;
+        info.pSetLayouts = &m_descriptor_set_layout;
         info.pushConstantRangeCount = 1;
         info.pPushConstantRanges = &push_constant_range;
         GC_CHECKVK(vkCreatePipelineLayout(m_device.getHandle(), &info, nullptr, &m_pipeline_layout));
@@ -240,7 +312,6 @@ RenderBackend::~RenderBackend()
     for (const auto& stuff : m_fif) {
         vkDestroyCommandPool(m_device.getHandle(), stuff.pool, nullptr);
     }
-
     vkDestroyCommandPool(m_device.getHandle(), m_transfer_cmd_pool, nullptr);
 
     vkDestroyImageView(m_device.getHandle(), m_framebuffer_image_view, nullptr);
@@ -251,7 +322,9 @@ RenderBackend::~RenderBackend()
 
     vkDestroyPipelineLayout(m_device.getHandle(), m_pipeline_layout, nullptr);
 
+    vkDestroyDescriptorSetLayout(m_device.getHandle(), m_descriptor_set_layout, nullptr);
     vkDestroyDescriptorPool(m_device.getHandle(), m_main_desciptor_pool, nullptr);
+    vkDestroySampler(m_device.getHandle(), m_sampler, nullptr);
 }
 
 void RenderBackend::submitFrame(bool window_resized, const WorldDrawData& world_draw_data)
@@ -265,9 +338,7 @@ void RenderBackend::submitFrame(bool window_resized, const WorldDrawData& world_
     auto& stuff = m_fif[m_frame_count % m_fif.size()];
 
     // Wait for command buffer to be available
-    if (!m_command_buffer_ready) {
-        waitForFrameReady();
-    }
+    waitForFrameReady();
 
     GC_CHECKVK(vkResetCommandPool(m_device.getHandle(), stuff.pool, 0));
 
@@ -336,10 +407,10 @@ void RenderBackend::submitFrame(bool window_resized, const WorldDrawData& world_
         color_attachment.resolveMode = VK_RESOLVE_MODE_NONE;
         color_attachment.loadOp = VK_ATTACHMENT_LOAD_OP_CLEAR;
         color_attachment.storeOp = VK_ATTACHMENT_STORE_OP_STORE;
-        color_attachment.clearValue.color.float32[0] = 1.0f;
-        color_attachment.clearValue.color.float32[1] = 1.0f;
-        color_attachment.clearValue.color.float32[2] = 1.0f;
-        color_attachment.clearValue.color.float32[3] = 1.0f;
+        color_attachment.clearValue.color.float32[0] = 0.0f;
+        color_attachment.clearValue.color.float32[1] = 0.0f;
+        color_attachment.clearValue.color.float32[2] = 0.0f;
+        color_attachment.clearValue.color.float32[3] = 0.0f;
         VkRenderingAttachmentInfo depth_attachment{};
         depth_attachment.sType = VK_STRUCTURE_TYPE_RENDERING_ATTACHMENT_INFO;
         depth_attachment.imageView = m_depth_stencil_view;
@@ -385,6 +456,7 @@ void RenderBackend::submitFrame(bool window_resized, const WorldDrawData& world_
     if (GPUPipeline* pipeline = world_draw_data.getPipeline()) {
         pipeline->useResource(m_timeline_semaphore, m_timeline_value + 1);
         vkCmdBindPipeline(stuff.cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, pipeline->getHandle());
+        vkCmdBindDescriptorSets(stuff.cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, m_pipeline_layout, 0, 1, &m_descriptor_set, 0, nullptr);
 
         const double aspect_ratio = static_cast<double>(m_swapchain.getExtent().width) / static_cast<double>(m_swapchain.getExtent().height);
         glm::mat4 projection_matrix = glm::perspectiveLH_ZO(glm::radians(45.0), aspect_ratio, 0.1, 1000.0);
@@ -481,13 +553,23 @@ void RenderBackend::submitFrame(bool window_resized, const WorldDrawData& world_
 
     ++m_frame_count;
 
-    waitForFrameReady();
+    // This will wait for the next frame to be ready to render to.
+    // With 1 FIF this will wait until the rendering commands just submitted above are complete.
+    // With 2 FIFs this will wait until the rendering commands submitted in the last call to submitFrame() are complete.
+    // With 1 FIF this can make frame-times much longer if game logic is heavy on the CPU side. (before command buffer recording)
+    if (m_fif.size() >= 2) {
+        waitForFrameReady();
+    }
 }
 
 void RenderBackend::cleanupGPUResources()
 {
     ZoneScoped;
-    m_delete_queue.deleteUnusedResources(std::array{m_timeline_semaphore});
+    auto num_resources_deleted = m_delete_queue.deleteUnusedResources(std::array{m_timeline_semaphore});
+    if (num_resources_deleted > 0) {
+        GC_DEBUG("Deleted {} GPU resources", num_resources_deleted);
+        printGPUMemoryStats(m_allocator.getHandle(), m_device.getPhysicalDevice());
+    }
 }
 
 GPUPipeline RenderBackend::createPipeline(std::span<const uint8_t> vertex_spv, std::span<const uint8_t> fragment_spv)
@@ -553,9 +635,9 @@ GPUPipeline RenderBackend::createPipeline(std::span<const uint8_t> vertex_spv, s
     rasterization_state.cullMode = VK_CULL_MODE_BACK_BIT;
     rasterization_state.frontFace = VK_FRONT_FACE_CLOCKWISE; // it is actually CCW but shader flips things
     rasterization_state.depthBiasEnable = VK_FALSE;
-    rasterization_state.depthBiasConstantFactor = 0.0f; // ignored
-    rasterization_state.depthBiasClamp = 0.0f;          // ignored
-    rasterization_state.depthBiasSlopeFactor = 0.0f;    // ignored
+    rasterization_state.depthBiasConstantFactor = 0.0f;      // ignored
+    rasterization_state.depthBiasClamp = 0.0f;               // ignored
+    rasterization_state.depthBiasSlopeFactor = 0.0f;         // ignored
 
     const VkFormat color_attachment_format = m_swapchain.getSurfaceFormat().format;
 
@@ -642,7 +724,7 @@ GPUPipeline RenderBackend::createPipeline(std::span<const uint8_t> vertex_spv, s
     return GPUPipeline(m_delete_queue, handle);
 }
 
-GPUImageView RenderBackend::createImageView()
+RenderTexture RenderBackend::createTexture()
 {
     ZoneScoped;
 
@@ -671,7 +753,7 @@ GPUImageView RenderBackend::createImageView()
     }
     vmaUnmapMemory(m_allocator.getHandle(), buffer_alloc);
 
-    GPUStagingBuffer gpu_staging_buffer(m_delete_queue, buffer, buffer_alloc);
+    GPUBuffer gpu_staging_buffer(m_delete_queue, buffer, buffer_alloc);
 
     VkImageCreateInfo image_info{};
     image_info.sType = VK_STRUCTURE_TYPE_IMAGE_CREATE_INFO;
@@ -808,7 +890,20 @@ GPUImageView RenderBackend::createImageView()
     VkImageView image_view{};
     GC_CHECKVK(vkCreateImageView(m_device.getHandle(), &view_info, nullptr, &image_view));
 
-    return GPUImageView(m_delete_queue, image_view, gpu_image);
+    VkDescriptorImageInfo descriptor_image_info{};
+    descriptor_image_info.imageView = image_view;
+    descriptor_image_info.imageLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
+    VkWriteDescriptorSet set_write{};
+    set_write.sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
+    set_write.dstSet = m_descriptor_set;
+    set_write.dstBinding = 0;
+    set_write.dstArrayElement = 0;
+    set_write.descriptorCount = 1;
+    set_write.descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
+    set_write.pImageInfo = &descriptor_image_info;
+    vkUpdateDescriptorSets(m_device.getHandle(), 1, &set_write, 0, nullptr);
+
+    return RenderTexture(GPUImageView(m_delete_queue, image_view, gpu_image));
 };
 
 void RenderBackend::waitIdle()
@@ -853,7 +948,9 @@ void RenderBackend::recreateFramesInFlightResources()
 
 void RenderBackend::waitForFrameReady()
 {
-    ZoneScoped;
+    ZoneScopedC(tracy::Color::Crimson);
+
+    if (m_command_buffer_ready) return;
 
     const auto& stuff = m_fif[m_frame_count % m_fif.size()];
 

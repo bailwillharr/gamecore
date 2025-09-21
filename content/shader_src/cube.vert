@@ -80,7 +80,7 @@ void main() {
 	fragUV = inUV;
 	fragPosTangentSpace = worldToTangentSpace * vec3(worldPosition);
 	fragViewPosTangentSpace = worldToTangentSpace * vec3(0.0, 0.0, 0.0);
-	fragLightDirTangentSpace = worldToTangentSpace * vec3(-0.4278,0.7923,0.43502); // directional light
+	fragLightDirTangentSpace = worldToTangentSpace * normalize(vec3(0.1,0.1,-1.0)); // directional light
 
     fragColor = (inNorm + 1.0) * 0.5;
 

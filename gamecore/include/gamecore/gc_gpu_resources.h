@@ -36,8 +36,10 @@ public:
 
     /* Deletes all resources that are no longer in use by calling the corresponding deleter function object. */
     /* 'timeline_semaphores' should be the corresponding timeline semaphore for every queue that uses GPUResources.  */
-    void deleteUnusedResources(std::span<const VkSemaphore> timeline_semaphores)
+    /* Returns number of resources deleted */
+    uint32_t deleteUnusedResources(std::span<const VkSemaphore> timeline_semaphores)
     {
+        uint32_t num_resources_deleted{};
         if (!m_deletion_entries.empty()) { // very low cost function call if nothing to delete
             std::vector<uint64_t> timeline_values(timeline_semaphores.size());
             for (size_t i = 0; i < timeline_semaphores.size(); ++i) {
@@ -53,13 +55,17 @@ public:
                         m_deletion_entries[j].deleter(m_device, m_allocator);
                         m_deletion_entries[j] = m_deletion_entries.back();
                         m_deletion_entries.pop_back();
+                        ++num_resources_deleted;
                     }
                 }
             }
         }
+        return num_resources_deleted;
     }
 
     bool empty() const { return m_deletion_entries.empty(); }
+
+    VkDevice getDevice() const { return m_device; }
 };
 
 // Ensure that derived classes using this class call m_delete_queue->markForDeletion()
@@ -99,6 +105,20 @@ public:
         m_timeline_semaphore = timeline_semaphore;
         m_resource_free_signal_value = resource_free_signal_value;
     }
+
+    /* Returns true if the resource isn't in use by any queue. */
+    bool isFree() const
+    {
+        if (m_timeline_semaphore == VK_NULL_HANDLE) {
+            return true;
+        }
+        uint64_t current_semaphore_value{};
+        GC_CHECKVK(vkGetSemaphoreCounterValue(m_delete_queue.getDevice(), m_timeline_semaphore, &current_semaphore_value));
+        if (current_semaphore_value >= m_resource_free_signal_value) {
+            return true;
+        }
+        return false;
+    }
 };
 
 class GPUPipeline : public GPUResource {
@@ -132,7 +152,6 @@ public:
 class GPUImage : public GPUResource {
     VkImage m_handle{};
     VmaAllocation m_allocation{};
-    bool m_uploaded{};
 
 public:
     GPUImage(GPUResourceDeleteQueue& delete_queue, VkImage handle, VmaAllocation allocation)
@@ -142,12 +161,10 @@ public:
         GC_ASSERT(m_allocation);
     }
     GPUImage(const GPUImage&) = delete;
-    GPUImage(GPUImage&& other) noexcept
-        : GPUResource(std::move(other)), m_handle(other.m_handle), m_allocation(other.m_allocation), m_uploaded(other.m_uploaded)
+    GPUImage(GPUImage&& other) noexcept : GPUResource(std::move(other)), m_handle(other.m_handle), m_allocation(other.m_allocation)
     {
         other.m_handle = VK_NULL_HANDLE;
         other.m_allocation = {};
-        other.m_uploaded = false;
     }
 
     GPUImage& operator=(const GPUImage&) = delete;
@@ -163,25 +180,6 @@ public:
                 GC_TRACE("Deleting GPUImage {}", reinterpret_cast<void*>(image));
                 vmaDestroyImage(allocator, image, allocation);
             });
-        }
-    }
-
-    /* Checks if the image has finished being uploaded to the GPU and is ready to use */
-    bool isUploaded(VkDevice device)
-    {
-        if (m_uploaded) {
-            return true;
-        }
-        else {
-            uint64_t value{};
-            GC_CHECKVK(vkGetSemaphoreCounterValue(device, getTimelineSemaphore(), &value));
-            if (value >= getResourceFreeSignalValue()) {
-                m_uploaded = true;
-                return true;
-            }
-            else {
-                return false;
-            }
         }
     }
 
@@ -237,29 +235,29 @@ public:
     }
 };
 
-/* A (usually host-local) buffer. Mainly used to ensure staging buffers are destroyed after being used for uploading to a GPUImage or GPUBuffer */
-class GPUStagingBuffer : public GPUResource {
+/* A buffer. Could be a host-local mapped staging buffer, a vertex buffer, whatever. */
+class GPUBuffer : public GPUResource {
     VkBuffer m_handle{};
     VmaAllocation m_allocation{};
 
 public:
-    GPUStagingBuffer(GPUResourceDeleteQueue& delete_queue, VkBuffer handle, VmaAllocation allocation)
+    GPUBuffer(GPUResourceDeleteQueue& delete_queue, VkBuffer handle, VmaAllocation allocation)
         : GPUResource(delete_queue), m_handle(handle), m_allocation(allocation)
     {
         GC_ASSERT(m_handle);
         GC_ASSERT(m_allocation);
     }
-    GPUStagingBuffer(const GPUStagingBuffer&) = delete;
-    GPUStagingBuffer(GPUStagingBuffer&& other) noexcept : GPUResource(std::move(other)), m_handle(other.m_handle), m_allocation(other.m_allocation)
+    GPUBuffer(const GPUBuffer&) = delete;
+    GPUBuffer(GPUBuffer&& other) noexcept : GPUResource(std::move(other)), m_handle(other.m_handle), m_allocation(other.m_allocation)
     {
         other.m_handle = VK_NULL_HANDLE;
         other.m_allocation = {};
     }
 
-    GPUStagingBuffer& operator=(const GPUStagingBuffer&) = delete;
-    GPUStagingBuffer& operator=(GPUStagingBuffer&&) = delete;
+    GPUBuffer& operator=(const GPUBuffer&) = delete;
+    GPUBuffer& operator=(GPUBuffer&&) = delete;
 
-    ~GPUStagingBuffer()
+    ~GPUBuffer()
     {
         GC_TRACE("~GPUStagingBuffer() {}", reinterpret_cast<void*>(m_handle));
         if (m_handle != VK_NULL_HANDLE) {

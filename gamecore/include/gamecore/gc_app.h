@@ -49,8 +49,6 @@ class App {
     const uint64_t m_performance_counter_frequency{};
     const uint64_t m_performance_counter_init{};
 
-    uint64_t m_last_frame_begin_stamp{};
-
 private:
     /* application lifetime is controlled by static variable 'instance' in instance() static method */
     explicit App(const AppInitOptions& options);

@@ -200,13 +200,18 @@ void App::run()
     std::unique_ptr<GPUPipeline> pipeline{};
     WorldDrawData world_draw_data;
 
-    m_last_frame_begin_stamp = getNanos() - 1'000'000; // treat the first delta time as 1 ms
+    auto texture = renderBackend().createTexture();
+
+    uint64_t frame_begin_stamp = getNanos() - 16'666'667LL; // set first delta time to something reasonable
     while (!window().shouldQuit()) {
+        FrameMark;
+        Logger::instance().incrementFrameNumber();
 
-        const auto frame_begin_stamp = getNanos();
+        const uint64_t last_frame_begin_stamp = frame_begin_stamp;
+        frame_begin_stamp = getNanos();
 
+        frame_state.delta_time = static_cast<double>(frame_begin_stamp - last_frame_begin_stamp) * 1e-9;
         frame_state.window_state = &window().processEvents(DebugUI::windowEventInterceptor);
-        frame_state.delta_time = static_cast<double>(frame_begin_stamp - m_last_frame_begin_stamp) * 1e-9;
 
         {
             ZoneScopedN("UI Logic");
@@ -235,7 +240,7 @@ void App::run()
                     world_draw_data.setPipeline(nullptr);
                     pipeline = {};
                 }
-                else {
+                else if (texture.isUploaded()) {
                     auto vert = content().loadAsset(strToName("cube.vert"));
                     auto frag = content().loadAsset(strToName("cube.frag"));
                     if (!vert.empty() && !frag.empty()) {
@@ -248,37 +253,20 @@ void App::run()
 
         if (auto comp = m_world->getComponent<TransformComponent>(0)) {
             comp->setPosition(comp->getPosition() + glm::vec3{frame_state.window_state->getMouseMotion() * 0.02f, 0.0f});
+            comp->setRotation(glm::angleAxis(static_cast<float>(frame_begin_stamp) * 1e-9f, glm::vec3{0.0f, 1.0f, 0.0f}));
         }
 
         m_world->update(frame_state);
 
+        world_draw_data.reset();
+        for (const auto& mat : frame_state.cube_transforms) {
+            world_draw_data.drawCube(mat);
+        }
+
         m_debug_ui->update(frame_state.delta_time);
 
-        world_draw_data.reset();
-        for (const auto& cube_matrix : frame_state.cube_transforms) {
-            world_draw_data.drawCube(cube_matrix);
-        }
-
         renderBackend().submitFrame(frame_state.window_state->getResizedFlag(), world_draw_data);
-
-        {
-            constexpr size_t TEST_SIZE = 100;
-            std::vector<GPUImageView> tings{};
-            tings.reserve(TEST_SIZE);
-            for (int i = 0; i < TEST_SIZE; ++i) {
-                tings.push_back(renderBackend().createImageView());
-            }
-            for (int i = 0; i < TEST_SIZE; ++i) {
-                GC_ASSERT(tings[i].getImage());
-            }
-        }
         renderBackend().cleanupGPUResources();
-
-        // renderBackend().waitForFrameReady(); // reduces latency
-
-        m_last_frame_begin_stamp = frame_begin_stamp;
-
-        FrameMark;
     }
     GC_TRACE("Quitting...");
 }

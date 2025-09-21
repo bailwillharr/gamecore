@@ -21,7 +21,7 @@ inline double tock(Tick tick)
     using namespace std::literals;
 
     const double duration_sec = (std::chrono::steady_clock::now() - tick.second) / 1.0s;
-    GC_DEBUG("Stopwatch '{}' took {} ms", tick.first, duration_sec * 1000.0);
+    GC_TRACE("Stopwatch '{}' took {} ms", tick.first, duration_sec * 1000.0);
     return duration_sec;
 }
 

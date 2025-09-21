@@ -9,6 +9,7 @@
 #include <SDL3/SDL_video.h>
 #include <SDL3/SDL_events.h>
 #include <SDL3/SDL_filesystem.h>
+#include <SDL3/SDL_timer.h>
 
 #include <tracy/Tracy.hpp>
 
@@ -93,17 +94,21 @@ void DebugUI::update(double dt)
     ImGui_ImplSDL3_NewFrame();
     ImGui_ImplVulkan_NewFrame();
     ImGui::NewFrame();
+    static int delay_ms{};
 
     if (this->active) {
         ImGui::Begin("Debug UI", &this->active);
         ImGui::Text("Delta time: %.3f ms", dt * 1000.0);
         ImGui::Checkbox("Show ImGui Demo", &m_show_demo);
+        ImGui::SliderInt("Game update delay", &delay_ms, 0, 100);
         ImGui::End();
 
         if (m_show_demo) {
             ImGui::ShowDemoWindow(&m_show_demo);
         }
     }
+
+    SDL_DelayPrecise(static_cast<uint64_t>(delay_ms) * 1'000'000ULL);
 
     ImGui::Render();
 }

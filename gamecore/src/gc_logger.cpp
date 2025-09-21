@@ -13,23 +13,11 @@ namespace gc {
 
 Logger::~Logger() {}
 
-void Logger::trace(std::string_view message)
-{
-#ifdef GC_LOG_TRACE_DEBUG
-    log(message, LogLevel::LVL_TRACE);
-#else
-    (void)message;
-#endif
-}
+void Logger::incrementFrameNumber() {}
 
-void Logger::debug(std::string_view message)
-{
-#ifdef GC_LOG_TRACE_DEBUG
-    log(message, LogLevel::LVL_DEBUG);
-#else
-    (void)message;
-#endif
-}
+void Logger::trace(std::string_view message) { log(message, LogLevel::LVL_TRACE); }
+
+void Logger::debug(std::string_view message) { log(message, LogLevel::LVL_DEBUG); }
 
 void Logger::info(std::string_view message) { log(message, LogLevel::LVL_INFO); }
 

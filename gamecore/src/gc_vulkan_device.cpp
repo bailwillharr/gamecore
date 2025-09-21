@@ -239,8 +239,8 @@ VulkanDevice::VulkanDevice()
                                                       .queueCount = 1u,
                                                       .pQueuePriorities = queue_priorities.data()});
 
-        constexpr std::array<const char*, 2> REQUIRED_EXTENSION_NAMES{VK_KHR_SWAPCHAIN_EXTENSION_NAME, VK_EXT_SWAPCHAIN_MAINTENANCE_1_EXTENSION_NAME};
-        constexpr std::array<const char*, 2> OPTIONAL_EXTENSION_NAMES{VK_EXT_MEMORY_PRIORITY_EXTENSION_NAME, VK_EXT_MEMORY_BUDGET_EXTENSION_NAME};
+        constexpr std::array REQUIRED_EXTENSION_NAMES{VK_KHR_SWAPCHAIN_EXTENSION_NAME, VK_EXT_SWAPCHAIN_MAINTENANCE_1_EXTENSION_NAME};
+        constexpr std::array OPTIONAL_EXTENSION_NAMES{VK_EXT_MEMORY_PRIORITY_EXTENSION_NAME, VK_EXT_MEMORY_BUDGET_EXTENSION_NAME};
 
         // First only add optional extension names and then remove any which are unsupported.
         // Then add required extensions without checking for compatibility and create the device.

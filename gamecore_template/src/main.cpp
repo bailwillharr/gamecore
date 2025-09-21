@@ -28,21 +28,20 @@ int main([[maybe_unused]] int argc, [[maybe_unused]] char* argv[])
 
     gc::App& app = gc::app();
 
-    // On Windows/NVidia, triple buffered gives horrible latency so use double buffering instead
-    //    app.renderBackend().setSyncMode(gc::RenderSyncMode::VSYNC_ON_DOUBLE_BUFFERED);
-    app.renderBackend().setSyncMode(gc::RenderSyncMode::VSYNC_ON_TRIPLE_BUFFERED_UNTHROTTLED);
+    // On Windows/NVIDIA, triple buffered gives horrible latency so use double buffering instead
+    app.renderBackend().setSyncMode(gc::RenderSyncMode::VSYNC_ON_DOUBLE_BUFFERED);
 
     gc::Window& win = app.window();
     win.setTitle("Hello world!");
     win.setIsResizable(true);
 
     gc::World& world = app.world();
-    std::array<gc::Entity, 100> cubes{};
-    const gc::Entity parent = world.createEntity(gc::strToName("parent"), gc::ENTITY_NONE, glm::vec3{0.0f, 0.0f, 50.0f});
-    for (int x = 0; x < 10; ++x) {
-        for (int y = 0; y < 10; ++y) {
-            auto& cube = cubes[x * 10 + y];
-            cube = world.createEntity(gc::strToNameRuntime(std::format("cube{}.{}", x, y)), parent, glm::vec3{x * 3.0f - 15.0f, y * 3.0f - 15.0f, 0.0f});
+    std::array<gc::Entity, 36> cubes{};
+    const gc::Entity parent = world.createEntity(gc::strToName("parent"), gc::ENTITY_NONE, glm::vec3{0.0f, 0.0f, 25.0f});
+    for (int x = 0; x < 6; ++x) {
+        for (int y = 0; y < 6; ++y) {
+            auto& cube = cubes[x * 6 + y];
+            cube = world.createEntity(gc::strToNameRuntime(std::format("cube{}.{}", x, y)), parent, glm::vec3{x * 3.0f - 9.0f, y * 3.0f - 9.0f, 0.0f});
             world.addComponent<gc::CubeComponent>(cube);
         }
     }

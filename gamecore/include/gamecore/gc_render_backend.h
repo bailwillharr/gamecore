@@ -47,6 +47,27 @@ struct RenderBackendInfo {
     VkFormat depth_stencil_format;
 };
 
+class RenderTexture {
+    GPUImageView m_image_view;
+    bool m_uploaded;
+
+public:
+    explicit RenderTexture(GPUImageView&& image_view) : m_image_view(std::move(image_view)), m_uploaded(false) {}
+
+    bool isUploaded()
+    {
+        if (m_uploaded) {
+            return true;
+        }
+        // If the backing image is no longer in use by the queue, assuming the backing image was just created, this means the image is uploaded.
+        if (m_image_view.getImage()->isFree()) {
+            m_uploaded = true;
+            return true;
+        }
+        return false;
+    }
+};
+
 enum class RenderSyncMode { VSYNC_ON_DOUBLE_BUFFERED, VSYNC_ON_TRIPLE_BUFFERED, VSYNC_ON_TRIPLE_BUFFERED_UNTHROTTLED, VSYNC_OFF };
 
 class RenderBackend {
@@ -57,7 +78,10 @@ class RenderBackend {
     GPUResourceDeleteQueue m_delete_queue;
 
     // global descriptor pool
+    VkSampler m_sampler{};
     VkDescriptorPool m_main_desciptor_pool{};
+    VkDescriptorSetLayout m_descriptor_set_layout{};
+    VkDescriptorSet m_descriptor_set{};
 
     // pipeline layout for most 3D rendering
     VkPipelineLayout m_pipeline_layout{};
@@ -125,7 +149,7 @@ public:
     void cleanupGPUResources();
 
     GPUPipeline createPipeline(std::span<const uint8_t> vertex_spv, std::span<const uint8_t> fragment_spv);
-    GPUImageView createImageView();
+    RenderTexture createTexture();
 
     RenderBackendInfo getInfo() const
     {

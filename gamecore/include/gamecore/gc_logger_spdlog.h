@@ -1,7 +1,9 @@
 #pragma once
 
+#include <atomic>
 #include <memory>
 #include <string_view>
+#include <thread>
 
 #include "gamecore/gc_logger.h"
 
@@ -14,14 +16,18 @@ namespace gc {
 /* Create with createLoggerSpdlog() */
 class LoggerSpdlog final : public Logger {
     std::unique_ptr<spdlog::logger> m_spdlogger;
+    std::atomic<int64_t> m_frame_number; // -1 means before game loop starts
+    const std::thread::id m_main_thread_id;
 
 public:
     LoggerSpdlog();
     LoggerSpdlog(const LoggerSpdlog&) = delete;
 
-    ~LoggerSpdlog();
+    ~LoggerSpdlog() override;
 
     LoggerSpdlog& operator=(const LoggerSpdlog&) = delete;
+
+    void incrementFrameNumber() override;
 
     void log(std::string_view message, LogLevel level) override;
 };

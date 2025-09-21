@@ -15,14 +15,18 @@ namespace gc {
 class WorldDrawData {
     std::vector<glm::mat4> m_cube_matrices{}; // start simple
     GPUPipeline* m_pipeline{};
+    GPUImageView* m_texture{};
 
 public:
     void drawCube(const glm::mat4& model_matrix) { m_cube_matrices.push_back(model_matrix); }
-    void setPipeline(GPUPipeline* pipeline) { m_pipeline = pipeline; }
-
     void reset() { m_cube_matrices.clear(); }
+
+    void setPipeline(GPUPipeline* pipeline) { m_pipeline = pipeline; }
+    void setTexture(GPUImageView* texture) { m_texture = texture; }
+
     const auto& getCubeMatrices() const { return m_cube_matrices; }
     auto getPipeline() const { return m_pipeline; }
+    auto getTexture() const { return m_texture; }
 };
 
 } // namespace gc

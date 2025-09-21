@@ -4,11 +4,14 @@
 #include <format>
 
 /* Logger macros that cut TRACE and DEBUG from release builds */
-#ifdef GC_LOG_TRACE_DEBUG
+#ifdef GC_LOG_TRACE
 #define GC_TRACE(...) ::gc::Logger::instance().trace(::std::format(__VA_ARGS__))
-#define GC_DEBUG(...) ::gc::Logger::instance().debug(::std::format(__VA_ARGS__))
 #else
 #define GC_TRACE(...) (void)0
+#endif
+#ifdef GC_LOG_DEBUG
+#define GC_DEBUG(...) ::gc::Logger::instance().debug(::std::format(__VA_ARGS__))
+#else
 #define GC_DEBUG(...) (void)0
 #endif
 #define GC_INFO(...) ::gc::Logger::instance().info(::std::format(__VA_ARGS__))
@@ -26,9 +29,9 @@ class Logger {
 public:
     virtual ~Logger();
 
-    /* only logs if GC_LOG_TRACE_DEBUG is defined */
+    virtual void incrementFrameNumber();
+
     void trace(std::string_view message);
-    /* only logs if GC_LOG_TRACE_DEBUG is defined */
     void debug(std::string_view message);
     void info(std::string_view message);
     void warn(std::string_view message);
