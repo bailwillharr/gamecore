@@ -50,6 +50,8 @@ class WindowState {
     glm::vec2 m_mouse_position_norm{};
     glm::vec2 m_mouse_motion{};
 
+    bool m_mouse_captured = false;
+
     glm::ivec2 m_window_size{};
 
     bool m_is_fullscreen = false;
@@ -76,6 +78,7 @@ public:
     // returns values from -1.0 to 1.0, left-to-right, bottom-to-top (GL style)
     const glm::vec2& getMousePositionNorm() const;
     const glm::vec2& getMouseMotion() const;
+    const bool getIsMouseCaptured() const;
 
     bool getIsFullscreen() const;
     bool getResizedFlag() const;
@@ -85,7 +88,12 @@ class Window {
     SDL_Window* m_window_handle{};
     WindowState m_state{};
 
+    SDL_WindowID m_window_id{};
+
     bool m_should_quit = false;
+
+    uint32_t m_mouse_capture_event_index{}; // mouse release event index is this + 1
+    uint32_t m_mouse_release_event_index{};
 
 public:
     explicit Window(const WindowInitInfo& info);
@@ -102,7 +110,7 @@ public:
     const WindowState& processEvents(const std::function<void(SDL_Event&)>& event_interceptor = {});
 
     // can be internally set by Alt+F4, X button, etc
-    void setQuitFlag();
+    void pushQuitEvent();
 
     bool shouldQuit() const;
 
@@ -115,6 +123,8 @@ public:
     // This method may fail but the window will remain usable.
     // If width or height == 0, fullscreen == true will use desktop resolution and fullscreen == false will maximise the window
     void setSize(uint32_t width, uint32_t height, bool fullscreen);
+
+    void setMouseCaptured(bool captured);
 };
 
 } // namespace gc

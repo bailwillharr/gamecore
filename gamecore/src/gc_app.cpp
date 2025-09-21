@@ -10,6 +10,7 @@
 
 #include <tracy/Tracy.hpp>
 
+#include "gamecore/gc_threading.h"
 #include "gamecore/gc_assert.h"
 #include "gamecore/gc_gpu_resources.h"
 #include "gamecore/gc_name.h"
@@ -124,8 +125,6 @@ App::~App()
     }
 }
 
-bool App::isMainThread() const { return std::this_thread::get_id() == m_main_thread_id; }
-
 uint64_t App::getNanos() const
 {
     // billion / frequency must be in brackets to avoid overflow
@@ -138,6 +137,7 @@ void App::initialise(const AppInitOptions& options)
     if (s_app) {
         abortGame("App::initialise() called when App is already initialised!");
     }
+    isMainThread(); // first call to this function assigns the main thread
     s_app = new App(options);
 }
 
@@ -216,7 +216,7 @@ void App::run()
         {
             ZoneScopedN("UI Logic");
             if (frame_state.window_state->getKeyDown(SDL_SCANCODE_ESCAPE)) {
-                window().setQuitFlag();
+                window().pushQuitEvent();
             }
             if (frame_state.window_state->getKeyPress(SDL_SCANCODE_F11)) {
                 window().setSize(0, 0, !frame_state.window_state->getIsFullscreen());
@@ -226,27 +226,11 @@ void App::run()
             }
             if (frame_state.window_state->getKeyPress(SDL_SCANCODE_X)) {
                 // show/hide mouse
-                if (!SDL_SetWindowRelativeMouseMode(window().getHandle(), !SDL_GetWindowRelativeMouseMode(window().getHandle()))) {
-                    GC_ERROR("SDL_SetWindowRelativeMouseMode() error: {}", SDL_GetError());
-                }
+                window().setMouseCaptured(!frame_state.window_state->getIsMouseCaptured());
             }
             if (frame_state.window_state->getKeyPress(SDL_SCANCODE_T)) {
                 if (auto comp = m_world->getComponent<TransformComponent>(0)) {
                     comp->setPosition({1.0f, 1.0f, 1.0f});
-                }
-            }
-            else if (frame_state.window_state->getKeyPress(SDL_SCANCODE_I)) {
-                if (pipeline) {
-                    world_draw_data.setPipeline(nullptr);
-                    pipeline = {};
-                }
-                else if (texture.isUploaded()) {
-                    auto vert = content().loadAsset(strToName("cube.vert"));
-                    auto frag = content().loadAsset(strToName("cube.frag"));
-                    if (!vert.empty() && !frag.empty()) {
-                        pipeline = std::make_unique<GPUPipeline>(renderBackend().createPipeline(vert, frag));
-                        world_draw_data.setPipeline(pipeline.get());
-                    }
                 }
             }
         }
@@ -264,6 +248,18 @@ void App::run()
         }
 
         m_debug_ui->update(frame_state.delta_time);
+
+        if (texture.isUploaded() && !pipeline) {
+            auto vert = content().loadAsset(strToName("cube.vert"));
+            auto frag = content().loadAsset(strToName("cube.frag"));
+            if (!vert.empty() && !frag.empty()) {
+                pipeline = std::make_unique<GPUPipeline>(renderBackend().createPipeline(vert, frag));
+                world_draw_data.setPipeline(pipeline.get());
+            }
+            else {
+                GC_ERROR("Could find cube.vert or cube.frag");
+            }
+        }
 
         renderBackend().submitFrame(frame_state.window_state->getResizedFlag(), world_draw_data);
         renderBackend().cleanupGPUResources();

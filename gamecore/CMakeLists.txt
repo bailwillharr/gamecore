@@ -35,7 +35,9 @@ set(SRC_FILES
  "src/gc_importer_gltf.cpp"
  "src/gc_ecs.cpp"
  "src/gc_transform_system.cpp"
- "src/gc_cube_system.cpp")
+ "src/gc_cube_system.cpp"
+ "src/gc_threading.cpp"
+)
 
 # Public API includes
 # Care must be taken to ensure these headers do not reference private headers from src/
@@ -74,6 +76,7 @@ set(INCLUDE_FILES
  "include/gamecore/gc_cube_system.h"
  "include/gamecore/gc_frame_state.h"
  "include/gamecore/gc_format_specialisations.h"
+ "include/gamecore/gc_threading.h"
 )
 
 # gamecore is a static library
@@ -99,6 +102,7 @@ endif()
 if (GC_DEV_BUILD)
     target_compile_definitions(${PROJECT_NAME} PUBLIC GC_DO_ASSERTS)
     target_compile_definitions(${PROJECT_NAME} PUBLIC GC_LOG_DEBUG)
+    target_compile_definitions(${PROJECT_NAME} PUBLIC GC_LOG_TRACE)
     target_compile_definitions(${PROJECT_NAME} PUBLIC GC_LOOKUP_ASSET_IDS)
     #target_compile_definitions(${PROJECT_NAME} PUBLIC GC_VULKAN_VALIDATION) # Vulkan Configurator can do this
 endif()

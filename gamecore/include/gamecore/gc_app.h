@@ -61,8 +61,6 @@ public:
     App& operator=(const App&) = delete;
     App& operator=(App&&) = delete;
 
-    bool isMainThread() const;
-
     uint64_t getNanos() const;
 
     /* Access global engine components with these methods: */
