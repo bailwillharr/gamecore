@@ -94,28 +94,44 @@ int main([[maybe_unused]] int argc, [[maybe_unused]] char* argv[])
     }
     gcpak::GcpakCreator gcpak_creator{};
     for (const auto& dir_entry : std::filesystem::directory_iterator(shader_dir)) {
-        if (dir_entry.is_regular_file() && determineShaderKind(dir_entry.path()).has_value()) {
-            if (std::filesystem::last_write_time(dir_entry.path()) > gcpak_date_modified) {
-                auto binary = compileShader(compiler, dir_entry);
-                if (!binary.empty()) {
-                    std::cout << "Compiled shader: " << dir_entry.path().filename() << "\n";
-                    gcpak_creator.addAsset(gcpak::GcpakCreator::Asset{dir_entry.path().filename().string(), binary});
-                }
-                else {
-                    std::cerr << "Failed to compile shader: " << dir_entry.path().filename() << "\n";
-                }
-            }
-            else {
-                std::cout << "Shader up to date: " << dir_entry.path().filename() << "\n";
-            }
+
+        if (!dir_entry.is_regular_file()) {
+            continue;
         }
+
+        if (!determineShaderKind(dir_entry.path())) {
+            continue;
+        }
+
+        if (std::filesystem::last_write_time(dir_entry.path()) <= gcpak_date_modified) {
+            std::cout << "Shader up to date: " << dir_entry.path().filename() << "\n";
+            continue;
+        }
+
+        auto binary = compileShader(compiler, dir_entry);
+        if (binary.empty()) {
+            std::cerr << "Failed to compile shader: " << dir_entry.path().filename() << "\n";
+            continue;
+        }
+
+        std::cout << "Compiled shader: " << dir_entry.path().filename() << "\n";
+        gcpak_creator.addAsset(gcpak::GcpakCreator::Asset{dir_entry.path().filename().string(), binary});
     }
 
     if (!gcpak_creator.saveFile(gcpak_path)) {
         std::cerr << "Failed to save gcpak file shaders.gcpak!\n";
         return EXIT_FAILURE;
     }
+
     std::cout << "Saved shaders to " << gcpak_path << "\n";
+
+    { // wait for enter before exit
+        std::cout << "Press enter to exit\n";
+        int c{};
+        do {
+            c = getchar();
+        } while (c != '\n' && c != EOF);
+    }
 
     return EXIT_SUCCESS;
 }
