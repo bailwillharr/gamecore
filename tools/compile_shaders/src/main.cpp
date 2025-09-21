@@ -84,7 +84,7 @@ int main([[maybe_unused]] int argc, [[maybe_unused]] char* argv[])
     }
 
     const auto gcpak_path = shader_dir.parent_path() / "shaders.gcpak";
-    const auto gcpak_date_modified = std::filesystem::last_write_time(gcpak_path);
+    //const auto gcpak_date_modified = std::filesystem::exists(gcpak_path) ? std::filesystem::last_write_time(gcpak_path) : std::filesystem::file_time_type::min();
 
     // find all regular files in the directory and compile them
     const shaderc::Compiler compiler{};
@@ -103,10 +103,10 @@ int main([[maybe_unused]] int argc, [[maybe_unused]] char* argv[])
             continue;
         }
 
-        if (std::filesystem::last_write_time(dir_entry.path()) <= gcpak_date_modified) {
-            std::cout << "Shader up to date: " << dir_entry.path().filename() << "\n";
-            continue;
-        }
+        // (std::filesystem::last_write_time(dir_entry.path()) <= gcpak_date_modified) {
+        //    std::cout << "Shader up to date: " << dir_entry.path().filename() << "\n";
+        //    continue;
+        //}
 
         auto binary = compileShader(compiler, dir_entry);
         if (binary.empty()) {
