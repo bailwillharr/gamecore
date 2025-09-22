@@ -17,4 +17,4 @@ public:
     VmaAllocator getHandle() const;
 };
 
-}
+} // namespace gc

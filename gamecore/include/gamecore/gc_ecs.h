@@ -3,35 +3,20 @@
 #include <cstdint>
 
 #include <bitset>
-#include <map>
-#include <set>
 #include <vector>
 #include <limits>
 #include <unordered_map>
 #include <atomic>
 #include <stack>
-#include <typeinfo>
 
 #include "gamecore/gc_assert.h"
-#include "gamecore/gc_frame_state.h"
 #include "gamecore/gc_logger.h"
-
-/*TODO : For signature generation. Do not tie it to World, do something like:
-
-static uint32_t s_next_index = 0;
-
-template <typename T>
-uint32_t getComponentIndex() {
-    static uint32_t index = s_next_index++;
-    return index;
-}
-
-*/
 
 namespace gc {
 
-class World;  // forward-dec
-class System; // forward-dec
+class World;      // forward-dec
+class System;     // forward-dec
+class FrameState; // forward-dec
 
 using Entity = uint32_t;
 

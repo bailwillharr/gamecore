@@ -5,9 +5,7 @@
 
 #include <array>
 #include <algorithm>
-#include <optional>
 #include <vector>
-#include <tuple>
 
 #include <SDL3/SDL_vulkan.h>
 

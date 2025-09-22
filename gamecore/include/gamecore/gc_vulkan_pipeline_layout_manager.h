@@ -2,10 +2,8 @@
 
 namespace gc {
 
-	class VulkanPipelineLayoutManager {
-		// Unused
-	};
-
+class VulkanPipelineLayoutManager {
+    // Unused
 };
 
 } // namespace gc

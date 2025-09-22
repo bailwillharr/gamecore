@@ -4,7 +4,6 @@
 
 #include <mat4x4.hpp>
 
-#include "gamecore/gc_vulkan_common.h"
 #include "gamecore/gc_gpu_resources.h"
 
 namespace gc {

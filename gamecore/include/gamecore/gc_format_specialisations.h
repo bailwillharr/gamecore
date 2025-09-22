@@ -1,10 +1,10 @@
 #pragma once
 
-#include <string>
 #include <format>
 
 #include <vec2.hpp>
 #include <vec3.hpp>
+#include <ext/quaternion_float.hpp>
 
 template <>
 struct std::formatter<glm::vec2> {

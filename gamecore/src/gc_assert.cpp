@@ -1,9 +1,6 @@
 #include "gamecore/gc_assert.h"
 
-#include <cstdio>
 #include <cstdlib>
-
-#include <array>
 
 #include "gamecore/gc_logger.h"
 

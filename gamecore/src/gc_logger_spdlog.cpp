@@ -2,7 +2,6 @@
 
 #include <vector>
 #include <memory>
-#include <thread>
 #include <string_view>
 
 #include <spdlog/logger.h>

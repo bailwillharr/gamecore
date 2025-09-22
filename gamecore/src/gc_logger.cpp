@@ -1,8 +1,6 @@
 #include "gamecore/gc_logger.h"
 
 #include <string_view>
-#include <memory>
-#include <mutex>
 
 #include "gamecore/gc_defines.h"
 #if GC_LOGGER == GC_LOGGER_SPDLOG

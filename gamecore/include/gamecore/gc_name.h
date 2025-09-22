@@ -4,8 +4,6 @@
 
 #include <string_view>
 #include <string>
-#include <format>
-#include <unordered_map>
 #include <filesystem>
 
 #include "gamecore/gc_crc_table.h"

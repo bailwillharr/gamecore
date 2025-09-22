@@ -5,7 +5,7 @@
 
 struct ImGuiContext; // forward-dec
 struct SDL_Window;   // forward-dec
-union SDL_Event; // forward-dec
+union SDL_Event;     // forward-dec
 
 namespace gc {
 

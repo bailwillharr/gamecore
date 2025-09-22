@@ -1,10 +1,7 @@
 #pragma once
 
-#include <atomic>
 #include <array>
-#include <vector>
 #include <string>
-#include <optional>
 #include <functional>
 
 #include <vec2.hpp>

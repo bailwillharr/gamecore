@@ -3,7 +3,6 @@
 #include <atomic>
 #include <memory>
 #include <string_view>
-#include <thread>
 
 #include "gamecore/gc_logger.h"
 

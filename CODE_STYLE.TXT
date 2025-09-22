@@ -1,11 +1,3 @@
-This document is here to standardise the code style throughout the repo.
-
-
-
-################################################################################
-
-
-
 ######################
 # NAMING CONVENTIONS #
 ######################
@@ -15,9 +7,11 @@ This document is here to standardise the code style throughout the repo.
 All variable names in all contexts are snake_case.
 Examples: i, my_var, num, player_camera_controller
 
-Static local variables begin with `s_`.
+Static variables (both in functions and out) begin with `s_`.
 Example:
 `
+static MyClass s_instance;
+
 void MyFunc() {
 	static int s_count = 0;
 }
@@ -37,7 +31,7 @@ public:
 }
 `
 
-Global variables, whether extern or static, are prefixed with `g_`.
+Global variables, when exported out of a translation unit, are prefixed with `g_`.
 Example: (in a header file)
 `
 extern const char* const g_resources_directory;
@@ -72,6 +66,19 @@ enum class Options {
 using IntVector = std::vector<int>;
 `
 
+# Template parameters, concepts
+
+Template parameters and concepts use UpperCamelCase
+Examples:
+`
+template <typename T>
+concept ValidSystem = std::is_base_of_v<System>;
+
+template <typename T, FooType Type>
+class Foo {
+}
+`
+
 # Namespaces
 
 Namespaces only contain lowercase letters. No other characters, including underscores, are used in namespace names.
@@ -91,6 +98,7 @@ Classes are laid out as follows:
 `
 class X {
 	/* using declarations */
+    /* nested classes, structs, and enums
 	/* static data members */
 	/* non-static data members */
 
@@ -119,26 +127,14 @@ private:
 };
 `
 
-Structs are laid out as follows:
-`
-struct Y {
-	/* static data members */
-	/* non-static data members */
-
-	/* static methods */
-	/* non-static methods */
-};
-`
+Structs are laid out similarly.
 Avoid having access specifiers in structs.
-Structs should almost always be POD. If not, consider using a class instead.
+Structs should almost always be trivially constructible and copyable. If not, consider using a class instead.
 
 Inlined methods are to be avoided as much as possible. Even for trivial getters/setters.
-Inline methods are only used when doing so provides a tangible performance gain.
 
 Classes that should not be copied and/or moved should have their copy and/or move constructors
 and copy/move assignment operators explicitly deleted.
-
-Classes that do not use the default constructor should have it explicitly deleted.
 
 Ensure that constructors with a single argument are marked `explicit` unless implicit construction
 is intended.
@@ -158,6 +154,27 @@ Header files should be included in the following order:
 - C standard library includes (as, e.g., cstdint)
 - C++ STL includes
 - External libraries from, e.g., 'dependencies/' directory, PhysX, or Vulkan SDK. Use angle brackets.
-- Libraries in the source tree. Use double quotes.
+- Headers from other projects in the source tree. Use angle brackets.
 - Header files from the current project. Use double quotes.
 Each section should be sorted alphabetically (In VS: highlight the includes, right-click -> #include directives -> sort).
+
+
+
+################################################################################
+
+
+
+################
+# HEADER FILES #
+################
+
+Header files should be organised as follows:
+- pragma once
+- includes as mentioned above, be conservative with number of includes
+- forward declarations
+- using declarations
+- concepts
+- constexpr constants
+- extern global variables
+- function declarations or definitions if templated/inline (or later if needed)
+- classes, structs, enums, etc.

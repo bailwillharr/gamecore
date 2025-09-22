@@ -6,7 +6,6 @@
 #include <atomic>
 #include <mutex>
 #include <condition_variable>
-#include <deque>
 
 #include "gamecore/gc_ring_buffer.h"
 

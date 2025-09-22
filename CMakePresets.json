@@ -150,6 +150,7 @@
       "inherits": "x64-debug-linux",
       "cacheVariables": {
         "CMAKE_BUILD_TYPE": "Release",
+        "CMAKE_INTERPROCEDURAL_OPTIMIZATION": "ON",
         "GC_DEV_BUILD": "OFF",
 		"GC_PROFILING": "OFF"
       },
@@ -166,6 +167,7 @@
       "inherits": "x64-debug-linux",
       "cacheVariables": {
         "CMAKE_BUILD_TYPE": "Release",
+        "CMAKE_INTERPROCEDURAL_OPTIMIZATION": "ON",
         "GC_DEV_BUILD": "OFF",
 		"GC_PROFILING": "ON"
       },

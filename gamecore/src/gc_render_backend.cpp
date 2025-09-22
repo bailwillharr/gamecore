@@ -433,46 +433,46 @@ void RenderBackend::submitFrame(bool window_resized, const WorldDrawData& world_
         vkCmdBeginRendering(stuff.cmd, &info);
     }
 
-    // Set viewport and scissor (dynamic states)
+    {
+        ZoneScopedN("Record draw commands");
 
-    const VkExtent2D swapchain_extent = m_swapchain.getExtent();
+        // Set viewport and scissor (dynamic states)
+        const VkExtent2D swapchain_extent = m_swapchain.getExtent();
+        VkViewport viewport = {};
+        viewport.x = 0.0f;
+        viewport.y = 0.0f;
+        viewport.width = static_cast<float>(swapchain_extent.width);
+        viewport.height = static_cast<float>(swapchain_extent.height);
+        viewport.minDepth = 0.0f;
+        viewport.maxDepth = 1.0f;
+        vkCmdSetViewport(stuff.cmd, 0, 1, &viewport);
+        VkRect2D scissor = {};
+        scissor.offset = {0, 0};
+        scissor.extent = swapchain_extent;
+        vkCmdSetScissor(stuff.cmd, 0, 1, &scissor);
 
-    VkViewport viewport = {};
-    viewport.x = 0.0f;
-    viewport.y = 0.0f;
-    viewport.width = static_cast<float>(swapchain_extent.width);
-    viewport.height = static_cast<float>(swapchain_extent.height);
-    viewport.minDepth = 0.0f;
-    viewport.maxDepth = 1.0f;
-    vkCmdSetViewport(stuff.cmd, 0, 1, &viewport);
+        // render provided draw_data here
+        // for now just record into primary command buffer. Might change later.
+        if (GPUPipeline* pipeline = world_draw_data.getPipeline()) {
+            pipeline->useResource(m_timeline_semaphore, m_timeline_value + 1);
+            vkCmdBindPipeline(stuff.cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, pipeline->getHandle());
+            vkCmdBindDescriptorSets(stuff.cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, m_pipeline_layout, 0, 1, &m_descriptor_set, 0, nullptr);
 
-    VkRect2D scissor = {};
-    scissor.offset = {0, 0};
-    scissor.extent = swapchain_extent;
-    vkCmdSetScissor(stuff.cmd, 0, 1, &scissor);
+            const double aspect_ratio = static_cast<double>(m_swapchain.getExtent().width) / static_cast<double>(m_swapchain.getExtent().height);
+            glm::mat4 projection_matrix = glm::perspectiveLH_ZO(glm::radians(45.0), aspect_ratio, 0.1, 1000.0);
+            vkCmdPushConstants(stuff.cmd, m_pipeline_layout, VK_SHADER_STAGE_VERTEX_BIT, 64, 64, &projection_matrix);
 
-    // render provided draw_data here
-    // for now just record into primary command buffer. Might change later.
-    if (GPUPipeline* pipeline = world_draw_data.getPipeline()) {
-        pipeline->useResource(m_timeline_semaphore, m_timeline_value + 1);
-        vkCmdBindPipeline(stuff.cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, pipeline->getHandle());
-        vkCmdBindDescriptorSets(stuff.cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, m_pipeline_layout, 0, 1, &m_descriptor_set, 0, nullptr);
-
-        const double aspect_ratio = static_cast<double>(m_swapchain.getExtent().width) / static_cast<double>(m_swapchain.getExtent().height);
-        glm::mat4 projection_matrix = glm::perspectiveLH_ZO(glm::radians(45.0), aspect_ratio, 0.1, 1000.0);
-        vkCmdPushConstants(stuff.cmd, m_pipeline_layout, VK_SHADER_STAGE_VERTEX_BIT, 64, 64, &projection_matrix);
-
-        for (const auto& matrix : world_draw_data.getCubeMatrices()) {
-            vkCmdPushConstants(stuff.cmd, m_pipeline_layout, VK_SHADER_STAGE_VERTEX_BIT, 0, 64, &matrix);
-            vkCmdDraw(stuff.cmd, 36, 1, 0, 0);
+            for (const auto& matrix : world_draw_data.getCubeMatrices()) {
+                vkCmdPushConstants(stuff.cmd, m_pipeline_layout, VK_SHADER_STAGE_VERTEX_BIT, 0, 64, &matrix);
+                vkCmdDraw(stuff.cmd, 36, 1, 0, 0);
+            }
         }
-    }
-    else {
-        // GC_ERROR("No pipeline set for world draw data");
-    }
+        else {
+            // GC_ERROR("No pipeline set for world draw data");
+        }
 
-    ImGui_ImplVulkan_RenderDrawData(ImGui::GetDrawData(), stuff.cmd);
-
+        ImGui_ImplVulkan_RenderDrawData(ImGui::GetDrawData(), stuff.cmd);
+    }
     vkCmdEndRendering(stuff.cmd);
 
     /* Transition image to TRANSFER_SRC layout */
@@ -635,9 +635,9 @@ GPUPipeline RenderBackend::createPipeline(std::span<const uint8_t> vertex_spv, s
     rasterization_state.cullMode = VK_CULL_MODE_BACK_BIT;
     rasterization_state.frontFace = VK_FRONT_FACE_CLOCKWISE; // it is actually CCW but shader flips things
     rasterization_state.depthBiasEnable = VK_FALSE;
-    rasterization_state.depthBiasConstantFactor = 0.0f;      // ignored
-    rasterization_state.depthBiasClamp = 0.0f;               // ignored
-    rasterization_state.depthBiasSlopeFactor = 0.0f;         // ignored
+    rasterization_state.depthBiasConstantFactor = 0.0f; // ignored
+    rasterization_state.depthBiasClamp = 0.0f;          // ignored
+    rasterization_state.depthBiasSlopeFactor = 0.0f;    // ignored
 
     const VkFormat color_attachment_format = m_swapchain.getSurfaceFormat().format;
 

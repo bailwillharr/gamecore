@@ -27,7 +27,6 @@
 #include "gamecore/gc_cube_system.h"
 #include "gamecore/gc_stopwatch.h"
 #include "gamecore/gc_frame_state.h"
-#include "gamecore/gc_format_specialisations.h"
 
 namespace gc {
 

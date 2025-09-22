@@ -3,6 +3,7 @@
 #include <format>
 #include <string>
 #include <fstream>
+#include <unordered_map>
 
 #include "gamecore/gc_logger.h"
 
