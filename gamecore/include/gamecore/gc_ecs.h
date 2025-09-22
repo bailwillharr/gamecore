@@ -16,7 +16,7 @@ namespace gc {
 
 class World;      // forward-dec
 class System;     // forward-dec
-class FrameState; // forward-dec
+struct FrameState; // forward-dec
 
 using Entity = uint32_t;
 

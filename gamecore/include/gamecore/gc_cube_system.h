@@ -5,7 +5,7 @@
 namespace gc {
 
 class World;      // forward-dec
-class FrameState; // forward-dec
+struct FrameState; // forward-dec
 
 class CubeSystem : public System {
 
