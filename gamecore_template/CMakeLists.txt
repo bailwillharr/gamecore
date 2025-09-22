@@ -54,6 +54,6 @@ endif()
 add_custom_command(
   TARGET ${PROJECT_NAME} POST_BUILD
   COMMAND ${CMAKE_COMMAND} -E create_symlink
-  ${PROJECT_SOURCE_DIR}/../content ${PROJECT_BINARY_DIR}/content
+  ${PROJECT_SOURCE_DIR}/../content $<TARGET_FILE_DIR:${PROJECT_NAME}>/content
   VERBATIM
 )
