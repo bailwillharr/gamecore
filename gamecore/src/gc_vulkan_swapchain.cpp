@@ -46,7 +46,7 @@ static void recreatePerSwapchainImageResources(const VulkanDevice& device, uint3
             VkCommandPoolCreateInfo info{};
             info.sType = VK_STRUCTURE_TYPE_COMMAND_POOL_CREATE_INFO;
             info.flags = VK_COMMAND_POOL_CREATE_TRANSIENT_BIT;
-            info.queueFamilyIndex = device.getMainQueueFamilyIndex();
+            info.queueFamilyIndex = device.getQueueFamilyIndex();
             GC_CHECKVK(vkCreateCommandPool(device.getHandle(), &info, nullptr, &resources.copy_image_pool));
         }
         {

@@ -228,6 +228,8 @@ public:
         GPUResource::useResource(timeline_semaphore, resource_free_signal_value);
     }
 
+    VkImageView getHandle() const { return m_handle; }
+
     const std::shared_ptr<GPUImage>& getImage() const
     {
         GC_ASSERT(m_image);

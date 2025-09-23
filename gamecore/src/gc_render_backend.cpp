@@ -164,6 +164,25 @@ static void printGPUMemoryStats(VmaAllocator allocator, VkPhysicalDevice physica
     }
 }
 
+[[maybe_unused]] static void delayCommandBuffer(VkCommandBuffer cmd, VkImage image, size_t iters)
+{
+    for (size_t i = 0; i < iters; ++i) {
+        VkClearColorValue color{};
+        color.float32[0] = 0.5f;
+        color.float32[1] = 0.8f;
+        color.float32[2] = 0.3f;
+        color.float32[3] = 1.0f;
+        VkImageSubresourceRange range{};
+        range.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT;
+        range.baseMipLevel = 0;
+        range.levelCount = 1;
+        range.baseArrayLayer = 0;
+        range.layerCount = 1;
+        vkCmdClearColorImage(cmd, image, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, &color, 1, &range);
+        // vkCmdPipelineBarrier(cmd, VK_PIPELINE_STAGE_TRANSFER_BIT, VK_PIPELINE_STAGE_TRANSFER_BIT, 0, 0, nullptr, 0, nullptr, 0, nullptr);
+    }
+}
+
 RenderBackend::RenderBackend(SDL_Window* window_handle)
     : m_device(), m_allocator(m_device), m_swapchain(m_device, window_handle), m_delete_queue(m_device.getHandle(), m_allocator.getHandle())
 {
@@ -219,16 +238,6 @@ RenderBackend::RenderBackend(SDL_Window* window_handle)
         GC_CHECKVK(vkCreateDescriptorSetLayout(m_device.getHandle(), &info, nullptr, &m_descriptor_set_layout));
     }
 
-    // create descriptor set, combined image sampler
-    {
-        VkDescriptorSetAllocateInfo info{};
-        info.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_ALLOCATE_INFO;
-        info.descriptorPool = m_main_desciptor_pool;
-        info.descriptorSetCount = 1;
-        info.pSetLayouts = &m_descriptor_set_layout;
-        GC_CHECKVK(vkAllocateDescriptorSets(m_device.getHandle(), &info, &m_descriptor_set));
-    }
-
     // create a simple pipeline layout for all 3D stuff (for now)
     {
         VkPushConstantRange push_constant_range{};
@@ -274,21 +283,23 @@ RenderBackend::RenderBackend(SDL_Window* window_handle)
         VkSemaphoreCreateInfo info{};
         info.sType = VK_STRUCTURE_TYPE_SEMAPHORE_CREATE_INFO;
         info.pNext = &type_info;
-        GC_CHECKVK(vkCreateSemaphore(m_device.getHandle(), &info, nullptr, &m_timeline_semaphore));
+        GC_CHECKVK(vkCreateSemaphore(m_device.getHandle(), &info, nullptr, &m_main_timeline_semaphore));
+        GC_CHECKVK(vkCreateSemaphore(m_device.getHandle(), &info, nullptr, &m_transfer_timeline_semaphore));
     }
 
-    m_timeline_value = 0;
+    m_main_timeline_value = 0;
+    m_transfer_timeline_value = 0;
     m_present_finished_value = 0;
 
     {
         VkCommandPoolCreateInfo info{};
         info.sType = VK_STRUCTURE_TYPE_COMMAND_POOL_CREATE_INFO;
-        info.queueFamilyIndex = m_device.getMainQueueFamilyIndex();
+        info.queueFamilyIndex = m_device.getQueueFamilyIndex();
         info.flags = VK_COMMAND_POOL_CREATE_TRANSIENT_BIT | VK_COMMAND_POOL_CREATE_RESET_COMMAND_BUFFER_BIT;
         GC_CHECKVK(vkCreateCommandPool(m_device.getHandle(), &info, nullptr, &m_transfer_cmd_pool));
     }
 
-    // m_timeline_semaphore and the frame in flight command pools will be created when submitFrame() is called for the first time.
+    // m_main_timeline_semaphore and the frame in flight command pools will be created when submitFrame() is called for the first time.
 
     GC_TRACE("Initialised RenderBackend");
 }
@@ -302,10 +313,19 @@ RenderBackend::~RenderBackend()
     cleanupGPUResources();
     if (!m_delete_queue.empty()) {
         GC_WARN("One or more GPU resources are still in use at application shutdown!");
+        uint64_t main_val{}, transfer_val{};
+        GC_CHECKVK(vkGetSemaphoreCounterValue(m_device.getHandle(), m_main_timeline_semaphore, &main_val));
+        GC_CHECKVK(vkGetSemaphoreCounterValue(m_device.getHandle(), m_transfer_timeline_semaphore, &transfer_val));
+        GC_TRACE("Main semaphore value: {}", main_val);
+        GC_TRACE("Transfer semaphore value: {}", transfer_val);
     }
 
-    if (m_timeline_semaphore) {
-        vkDestroySemaphore(m_device.getHandle(), m_timeline_semaphore, nullptr);
+    if (m_transfer_timeline_semaphore) {
+        vkDestroySemaphore(m_device.getHandle(), m_transfer_timeline_semaphore, nullptr);
+    }
+
+    if (m_main_timeline_semaphore) {
+        vkDestroySemaphore(m_device.getHandle(), m_main_timeline_semaphore, nullptr);
     }
 
     // destroy frame in flight resources
@@ -325,6 +345,24 @@ RenderBackend::~RenderBackend()
     vkDestroyDescriptorSetLayout(m_device.getHandle(), m_descriptor_set_layout, nullptr);
     vkDestroyDescriptorPool(m_device.getHandle(), m_main_desciptor_pool, nullptr);
     vkDestroySampler(m_device.getHandle(), m_sampler, nullptr);
+}
+
+void RenderBackend::setSyncMode(RenderSyncMode mode)
+{
+    switch (mode) {
+        case RenderSyncMode::VSYNC_ON_DOUBLE_BUFFERED:
+            m_swapchain.setRequestedPresentMode(VK_PRESENT_MODE_FIFO_RELAXED_KHR);
+            break;
+        case RenderSyncMode::VSYNC_ON_TRIPLE_BUFFERED:
+            m_swapchain.setRequestedPresentMode(VK_PRESENT_MODE_FIFO_KHR);
+            break;
+        case RenderSyncMode::VSYNC_ON_TRIPLE_BUFFERED_UNTHROTTLED:
+            m_swapchain.setRequestedPresentMode(VK_PRESENT_MODE_MAILBOX_KHR);
+            break;
+        case RenderSyncMode::VSYNC_OFF:
+            m_swapchain.setRequestedPresentMode(VK_PRESENT_MODE_IMMEDIATE_KHR);
+            break;
+    }
 }
 
 void RenderBackend::submitFrame(bool window_resized, const WorldDrawData& world_draw_data)
@@ -453,10 +491,14 @@ void RenderBackend::submitFrame(bool window_resized, const WorldDrawData& world_
 
         // render provided draw_data here
         // for now just record into primary command buffer. Might change later.
-        if (GPUPipeline* pipeline = world_draw_data.getPipeline()) {
-            pipeline->useResource(m_timeline_semaphore, m_timeline_value + 1);
-            vkCmdBindPipeline(stuff.cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, pipeline->getHandle());
-            vkCmdBindDescriptorSets(stuff.cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, m_pipeline_layout, 0, 1, &m_descriptor_set, 0, nullptr);
+        if (world_draw_data.getPipeline() && world_draw_data.getMaterial() && world_draw_data.getMaterial()->getTexture()->isUploaded()) {
+
+            world_draw_data.getPipeline()->useResource(m_main_timeline_semaphore, m_main_timeline_value + 1);
+            world_draw_data.getMaterial()->getTexture()->getImageView().useResource(m_main_timeline_semaphore, m_main_timeline_value + 1);
+
+            vkCmdBindPipeline(stuff.cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, world_draw_data.getPipeline()->getHandle());
+            auto descriptor_set = world_draw_data.getMaterial()->getDescriptorSet();
+            vkCmdBindDescriptorSets(stuff.cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, m_pipeline_layout, 0, 1, &descriptor_set, 0, nullptr);
 
             const double aspect_ratio = static_cast<double>(m_swapchain.getExtent().width) / static_cast<double>(m_swapchain.getExtent().height);
             glm::mat4 projection_matrix = glm::perspectiveLH_ZO(glm::radians(45.0), aspect_ratio, 0.1, 1000.0);
@@ -466,9 +508,6 @@ void RenderBackend::submitFrame(bool window_resized, const WorldDrawData& world_
                 vkCmdPushConstants(stuff.cmd, m_pipeline_layout, VK_SHADER_STAGE_VERTEX_BIT, 0, 64, &matrix);
                 vkCmdDraw(stuff.cmd, 36, 1, 0, 0);
             }
-        }
-        else {
-            // GC_ERROR("No pipeline set for world draw data");
         }
 
         ImGui_ImplVulkan_RenderDrawData(ImGui::GetDrawData(), stuff.cmd);
@@ -505,7 +544,7 @@ void RenderBackend::submitFrame(bool window_resized, const WorldDrawData& world_
     /* Submit command buffer */
     {
         ZoneScopedN("Submit command buffer, signal with:");
-        ZoneValue(m_timeline_value + 1);
+        ZoneValue(m_main_timeline_value + 1);
 
         VkCommandBufferSubmitInfo cmd_info{};
         cmd_info.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_SUBMIT_INFO;
@@ -513,18 +552,18 @@ void RenderBackend::submitFrame(bool window_resized, const WorldDrawData& world_
 
         VkSemaphoreSubmitInfo wait_info{};
         wait_info.sType = VK_STRUCTURE_TYPE_SEMAPHORE_SUBMIT_INFO;
-        wait_info.semaphore = m_timeline_semaphore;
+        wait_info.semaphore = m_main_timeline_semaphore;
         wait_info.stageMask = VK_PIPELINE_STAGE_2_CLEAR_BIT;
         wait_info.value = m_present_finished_value;
 
-        m_timeline_value += 1;
-        stuff.command_buffer_available_value = m_timeline_value;
+        m_main_timeline_value += 1;
+        stuff.command_buffer_available_value = m_main_timeline_value;
 
         VkSemaphoreSubmitInfo signal_info{};
         signal_info.sType = VK_STRUCTURE_TYPE_SEMAPHORE_SUBMIT_INFO;
-        signal_info.semaphore = m_timeline_semaphore;
+        signal_info.semaphore = m_main_timeline_semaphore;
         signal_info.stageMask = VK_PIPELINE_STAGE_2_CLEAR_BIT;
-        signal_info.value = m_timeline_value;
+        signal_info.value = m_main_timeline_value;
 
         VkSubmitInfo2 submit{};
         submit.sType = VK_STRUCTURE_TYPE_SUBMIT_INFO_2;
@@ -539,9 +578,9 @@ void RenderBackend::submitFrame(bool window_resized, const WorldDrawData& world_
 
     m_command_buffer_ready = false;
 
-    const bool swapchain_recreated = m_swapchain.acquireAndPresent(m_framebuffer_image, window_resized, m_timeline_semaphore, m_timeline_value);
+    const bool swapchain_recreated = m_swapchain.acquireAndPresent(m_framebuffer_image, window_resized, m_main_timeline_semaphore, m_main_timeline_value);
 
-    m_present_finished_value = m_timeline_value;
+    m_present_finished_value = m_main_timeline_value;
 
     if (swapchain_recreated) {
         recreateDepthStencil(m_device.getHandle(), m_allocator.getHandle(), m_depth_stencil_format, m_swapchain.getExtent(), m_depth_stencil,
@@ -565,7 +604,7 @@ void RenderBackend::submitFrame(bool window_resized, const WorldDrawData& world_
 void RenderBackend::cleanupGPUResources()
 {
     ZoneScoped;
-    auto num_resources_deleted = m_delete_queue.deleteUnusedResources(std::array{m_timeline_semaphore});
+    auto num_resources_deleted = m_delete_queue.deleteUnusedResources(std::array{m_main_timeline_semaphore, m_transfer_timeline_semaphore});
     if (num_resources_deleted > 0) {
         GC_DEBUG("Deleted {} GPU resources", num_resources_deleted);
         printGPUMemoryStats(m_allocator.getHandle(), m_device.getPhysicalDevice());
@@ -635,9 +674,9 @@ GPUPipeline RenderBackend::createPipeline(std::span<const uint8_t> vertex_spv, s
     rasterization_state.cullMode = VK_CULL_MODE_BACK_BIT;
     rasterization_state.frontFace = VK_FRONT_FACE_CLOCKWISE; // it is actually CCW but shader flips things
     rasterization_state.depthBiasEnable = VK_FALSE;
-    rasterization_state.depthBiasConstantFactor = 0.0f; // ignored
-    rasterization_state.depthBiasClamp = 0.0f;          // ignored
-    rasterization_state.depthBiasSlopeFactor = 0.0f;    // ignored
+    rasterization_state.depthBiasConstantFactor = 0.0f;      // ignored
+    rasterization_state.depthBiasClamp = 0.0f;               // ignored
+    rasterization_state.depthBiasSlopeFactor = 0.0f;         // ignored
 
     const VkFormat color_attachment_format = m_swapchain.getSurfaceFormat().format;
 
@@ -777,15 +816,41 @@ RenderTexture RenderBackend::createTexture()
     VmaAllocation allocation{};
     GC_CHECKVK(vmaCreateImage(m_allocator.getHandle(), &image_info, &alloc_info, &image, &allocation, nullptr));
 
+#if 0
+    VkImage big_image{};
+    VmaAllocation big_image_alloc{};
+    {
+        // create a massive image for debug purposes
+        VkImageCreateInfo big_image_info{};
+        big_image_info.sType = VK_STRUCTURE_TYPE_IMAGE_CREATE_INFO;
+        big_image_info.flags = 0;
+        big_image_info.imageType = VK_IMAGE_TYPE_2D;
+        big_image_info.format = VK_FORMAT_R8G8B8A8_SRGB; // supported by all conforming drivers
+        big_image_info.extent.width = 16384;
+        big_image_info.extent.height = 16384;
+        big_image_info.extent.depth = 1;
+        big_image_info.mipLevels = 1;
+        big_image_info.arrayLayers = 1;
+        big_image_info.samples = VK_SAMPLE_COUNT_1_BIT;
+        big_image_info.tiling = VK_IMAGE_TILING_OPTIMAL;
+        big_image_info.usage = VK_IMAGE_USAGE_TRANSFER_DST_BIT;
+        big_image_info.sharingMode = VK_SHARING_MODE_EXCLUSIVE;
+        VmaAllocationCreateInfo big_alloc_info{};
+        big_alloc_info.flags = 0;
+        big_alloc_info.usage = VMA_MEMORY_USAGE_AUTO;
+        big_alloc_info.priority = 0.5f;
+        GC_CHECKVK(vmaCreateImage(m_allocator.getHandle(), &big_image_info, &big_alloc_info, &big_image, &big_image_alloc, nullptr));
+    }
+#endif
+
     {
         VkCommandBufferAllocateInfo cmd_info{};
         cmd_info.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_ALLOCATE_INFO;
         cmd_info.level = VK_COMMAND_BUFFER_LEVEL_PRIMARY;
         cmd_info.commandPool = m_transfer_cmd_pool;
         cmd_info.commandBufferCount = 1;
-        m_transfer_cmds.push_back(VK_NULL_HANDLE);
-        GC_CHECKVK(vkAllocateCommandBuffers(m_device.getHandle(), &cmd_info, &m_transfer_cmds.back()));
-        VkCommandBuffer cmd = m_transfer_cmds.back();
+        VkCommandBuffer cmd{};
+        GC_CHECKVK(vkAllocateCommandBuffers(m_device.getHandle(), &cmd_info, &cmd));
 
         VkCommandBufferBeginInfo begin_info{};
         begin_info.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO;
@@ -800,8 +865,8 @@ RenderTexture RenderBackend::createTexture()
         barrier.dstAccessMask = VK_ACCESS_2_TRANSFER_WRITE_BIT;
         barrier.oldLayout = VK_IMAGE_LAYOUT_UNDEFINED;
         barrier.newLayout = VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL;
-        barrier.srcQueueFamilyIndex = m_device.getMainQueueFamilyIndex();
-        barrier.dstQueueFamilyIndex = m_device.getMainQueueFamilyIndex();
+        barrier.srcQueueFamilyIndex = m_device.getQueueFamilyIndex();
+        barrier.dstQueueFamilyIndex = m_device.getQueueFamilyIndex();
         barrier.image = image;
         barrier.subresourceRange.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT;
         barrier.subresourceRange.baseMipLevel = 0;
@@ -836,6 +901,8 @@ RenderTexture RenderBackend::createTexture()
         barrier.newLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
         vkCmdPipelineBarrier2(cmd, &dependency);
 
+        // delayCommandBuffer(cmd, big_image, 1000);
+
         GC_CHECKVK(vkEndCommandBuffer(cmd));
 
         VkCommandBufferSubmitInfo cmd_submit_info{};
@@ -843,8 +910,8 @@ RenderTexture RenderBackend::createTexture()
         cmd_submit_info.commandBuffer = cmd;
         VkSemaphoreSubmitInfo signal_info{};
         signal_info.sType = VK_STRUCTURE_TYPE_SEMAPHORE_SUBMIT_INFO;
-        signal_info.semaphore = m_timeline_semaphore;
-        signal_info.value = ++m_timeline_value;
+        signal_info.semaphore = m_transfer_timeline_semaphore;
+        signal_info.value = ++m_transfer_timeline_value;
         signal_info.stageMask = VK_PIPELINE_STAGE_2_COPY_BIT;
         VkSubmitInfo2 submit_info{};
         submit_info.sType = VK_STRUCTURE_TYPE_SUBMIT_INFO_2;
@@ -853,11 +920,12 @@ RenderTexture RenderBackend::createTexture()
         submit_info.pCommandBufferInfos = &cmd_submit_info;
         submit_info.signalSemaphoreInfoCount = 1;
         submit_info.pSignalSemaphoreInfos = &signal_info;
-        GC_CHECKVK(vkQueueSubmit2(m_device.getMainQueue(), 1, &submit_info, VK_NULL_HANDLE));
+        const auto transfer_queue = m_device.getTransferQueue();
+        GC_CHECKVK(vkQueueSubmit2(transfer_queue, 1, &submit_info, VK_NULL_HANDLE));
 
         GPUResourceDeleteQueue::DeletionEntry command_buffer_deletion_entry{};
-        command_buffer_deletion_entry.timeline_semaphore = m_timeline_semaphore;
-        command_buffer_deletion_entry.resource_free_signal_value = m_timeline_value;
+        command_buffer_deletion_entry.timeline_semaphore = m_transfer_timeline_semaphore;
+        command_buffer_deletion_entry.resource_free_signal_value = m_transfer_timeline_value;
         const VkCommandPool transfer_cmd_pool = m_transfer_cmd_pool;
         command_buffer_deletion_entry.deleter = [transfer_cmd_pool, cmd](VkDevice device, [[maybe_unused]] VmaAllocator allocator) {
             GC_TRACE("freeing command buffer: {}", reinterpret_cast<void*>(cmd));
@@ -870,8 +938,8 @@ RenderTexture RenderBackend::createTexture()
 
     // The destructor for GPUStagingBuffer will be called when this function returns.
     // It will be actually destroyed only after the image has been uploaded.
-    gpu_staging_buffer.useResource(m_timeline_semaphore, m_timeline_value);
-    gpu_image->useResource(m_timeline_semaphore, m_timeline_value);
+    gpu_staging_buffer.useResource(m_transfer_timeline_semaphore, m_transfer_timeline_value);
+    gpu_image->useResource(m_transfer_timeline_semaphore, m_transfer_timeline_value);
 
     VkImageViewCreateInfo view_info{};
     view_info.sType = VK_STRUCTURE_TYPE_IMAGE_VIEW_CREATE_INFO;
@@ -890,21 +958,13 @@ RenderTexture RenderBackend::createTexture()
     VkImageView image_view{};
     GC_CHECKVK(vkCreateImageView(m_device.getHandle(), &view_info, nullptr, &image_view));
 
-    VkDescriptorImageInfo descriptor_image_info{};
-    descriptor_image_info.imageView = image_view;
-    descriptor_image_info.imageLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
-    VkWriteDescriptorSet set_write{};
-    set_write.sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
-    set_write.dstSet = m_descriptor_set;
-    set_write.dstBinding = 0;
-    set_write.dstArrayElement = 0;
-    set_write.descriptorCount = 1;
-    set_write.descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
-    set_write.pImageInfo = &descriptor_image_info;
-    vkUpdateDescriptorSets(m_device.getHandle(), 1, &set_write, 0, nullptr);
-
     return RenderTexture(GPUImageView(m_delete_queue, image_view, gpu_image));
 };
+
+RenderMaterial RenderBackend::createMaterial(const std::shared_ptr<RenderTexture>& texture)
+{
+    return RenderMaterial(m_device.getHandle(), m_main_desciptor_pool, m_descriptor_set_layout, texture);
+}
 
 void RenderBackend::waitIdle()
 {
@@ -931,7 +991,7 @@ void RenderBackend::recreateFramesInFlightResources()
             VkCommandPoolCreateInfo info{};
             info.sType = VK_STRUCTURE_TYPE_COMMAND_POOL_CREATE_INFO;
             info.flags = VK_COMMAND_POOL_CREATE_TRANSIENT_BIT;
-            info.queueFamilyIndex = m_device.getMainQueueFamilyIndex();
+            info.queueFamilyIndex = m_device.getQueueFamilyIndex();
             GC_CHECKVK(vkCreateCommandPool(m_device.getHandle(), &info, nullptr, &stuff.pool));
         }
         {
@@ -959,7 +1019,7 @@ void RenderBackend::waitForFrameReady()
     VkSemaphoreWaitInfo info{};
     info.sType = VK_STRUCTURE_TYPE_SEMAPHORE_WAIT_INFO;
     info.semaphoreCount = 1;
-    info.pSemaphores = &m_timeline_semaphore;
+    info.pSemaphores = &m_main_timeline_semaphore;
     info.pValues = &stuff.command_buffer_available_value;
     GC_CHECKVK(vkWaitSemaphores(m_device.getHandle(), &info, UINT64_MAX));
     m_command_buffer_ready = true;

@@ -53,7 +53,7 @@ class VulkanDevice {
     std::vector<std::string> m_extensions_enabled{};
 
     VkQueue m_main_queue{};
-    VkQueue m_present_queue{};
+    VkQueue m_transfer_queue{};
     uint32_t m_main_queue_family_index{};
 
 public:
@@ -68,8 +68,10 @@ public:
     inline const VkDevice& getHandle() const { return m_device; }
     inline const VkPhysicalDevice& getPhysicalDevice() const { return m_physical_device; }
 
-    inline uint32_t getMainQueueFamilyIndex() const { return m_main_queue_family_index; }
+    inline uint32_t getQueueFamilyIndex() const { return m_main_queue_family_index; }
     inline VkQueue getMainQueue() const { return m_main_queue; }
+    // On the same queue family as main queue, may be the same as the present queue
+    inline VkQueue getTransferQueue() const { return m_transfer_queue; }
 
     inline const VulkanDeviceProperties& getProperties() const { return m_properties; }
 

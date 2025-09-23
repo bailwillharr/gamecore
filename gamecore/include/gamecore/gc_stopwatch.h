@@ -1,28 +1,38 @@
 #pragma once
 
 #include <chrono>
-#include <tuple>
 
 #include "gamecore/gc_logger.h"
 
 namespace gc {
 
-using Tick = std::pair<std::string, std::chrono::steady_clock::time_point>;
-
-inline Tick tick(std::string name)
-{
-    // stores time point and some name
-    return std::make_pair(name, std::chrono::steady_clock::now());
-}
-
-/* Logs the time taken and returns the time taken in seconds */
-inline double tock(Tick tick)
-{
-    using namespace std::literals;
-
-    const double duration_sec = (std::chrono::steady_clock::now() - tick.second) / 1.0s;
-    GC_TRACE("Stopwatch '{}' took {} ms", tick.first, duration_sec * 1000.0);
-    return duration_sec;
-}
+class Stopwatch; // forward-dec
 
 } // namespace gc
+
+template <>
+struct std::formatter<gc::Stopwatch>; // forward-dec
+
+namespace gc {
+
+class Stopwatch {
+    friend struct std::formatter<gc::Stopwatch>;
+
+    const std::chrono::steady_clock::time_point m_start;
+
+public:
+    Stopwatch() : m_start(std::chrono::steady_clock::now()) {}
+};
+
+} // namespace gc
+
+template <>
+struct std::formatter<gc::Stopwatch> {
+    constexpr auto parse(std::format_parse_context& ctx) const { return ctx.begin(); }
+    auto format(const gc::Stopwatch& sw, std::format_context& ctx) const
+    {
+        using namespace std::literals;
+        const double duration_sec = (std::chrono::steady_clock::now() - sw.m_start) / 1.0ms;
+        return std::format_to(ctx.out(), "{:.3} ms", duration_sec);
+    }
+};

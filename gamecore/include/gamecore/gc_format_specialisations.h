@@ -1,5 +1,6 @@
 #pragma once
 
+#include <chrono>
 #include <format>
 
 #include <vec2.hpp>

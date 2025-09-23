@@ -1,7 +1,6 @@
 #pragma once
 
 #include <memory>
-#include <thread>
 #include <filesystem>
 #include <string>
 
@@ -43,11 +42,7 @@ class App {
     std::unique_ptr<DebugUI> m_debug_ui{};
     std::unique_ptr<World> m_world{};
 
-    const std::thread::id m_main_thread_id{};
     std::filesystem::path m_save_directory{};
-
-    const uint64_t m_performance_counter_frequency{};
-    const uint64_t m_performance_counter_init{};
 
 private:
     /* application lifetime is controlled by static variable 'instance' in instance() static method */
@@ -60,8 +55,6 @@ public:
 
     App& operator=(const App&) = delete;
     App& operator=(App&&) = delete;
-
-    uint64_t getNanos() const;
 
     /* Access global engine components with these methods: */
 

@@ -228,13 +228,13 @@ VulkanDevice::VulkanDevice()
 
         // Separate present queue adds very slight delay (0.05ms) to frame time with no apparent benefit
 
-        const std::vector<float> queue_priorities{1.0f};
+        const std::vector<float> queue_priorities{1.0f, 0.9f};
         std::vector<VkDeviceQueueCreateInfo> queue_infos{};
         // Create a main queue for graphics operations
         queue_infos.push_back(VkDeviceQueueCreateInfo{.sType = VK_STRUCTURE_TYPE_DEVICE_QUEUE_CREATE_INFO,
                                                       .pNext = nullptr,
                                                       .queueFamilyIndex = m_main_queue_family_index,
-                                                      .queueCount = 1u,
+                                                      .queueCount = std::min(2u, main_queue_family_queue_count),
                                                       .pQueuePriorities = queue_priorities.data()});
 
         constexpr std::array REQUIRED_EXTENSION_NAMES{VK_KHR_SWAPCHAIN_EXTENSION_NAME, VK_EXT_SWAPCHAIN_MAINTENANCE_1_EXTENSION_NAME};
@@ -287,6 +287,14 @@ VulkanDevice::VulkanDevice()
         {
             // Get Queues
             vkGetDeviceQueue(m_device, m_main_queue_family_index, 0, &m_main_queue);
+            if (main_queue_family_queue_count >= 2) {
+                vkGetDeviceQueue(m_device, m_main_queue_family_index, 1, &m_transfer_queue);
+            }
+            else {
+                m_transfer_queue = m_main_queue;
+            }
+            GC_ASSERT(m_main_queue);
+            GC_ASSERT(m_transfer_queue);
         }
     }
 

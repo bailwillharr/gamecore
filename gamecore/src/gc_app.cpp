@@ -34,9 +34,6 @@ namespace gc {
 App* App::s_app = nullptr;
 
 App::App(const AppInitOptions& options)
-    : m_main_thread_id(std::this_thread::get_id()),
-      m_performance_counter_frequency(SDL_GetPerformanceFrequency()),
-      m_performance_counter_init(SDL_GetPerformanceCounter())
 {
 
     /* Register some information for the program */
@@ -69,42 +66,42 @@ App::App(const AppInitOptions& options)
     /* SUBSYSTEM INITIALISATION */
 
     {
-        auto t = tick("Jobs subsystem init");
+        Stopwatch sw{};
         m_jobs = std::make_unique<Jobs>(std::thread::hardware_concurrency());
-        tock(t);
+        GC_TRACE("Jobs subsystem init took: {}", sw);
     }
 
     {
-        auto t = tick("Content subsystem init");
+        Stopwatch sw{};
         m_content = std::make_unique<Content>();
-        tock(t);
+        GC_TRACE("Content subsystem init took: {}", sw);
     }
 
     {
-        auto t = tick("Window subsystenm init");
+        Stopwatch sw{};
         WindowInitInfo window_init_info{};
         window_init_info.vulkan_support = true;
         window_init_info.resizable = false;
         m_window = std::make_unique<Window>(window_init_info);
-        tock(t);
+        GC_TRACE("Window subsystem init took: {}", sw);
     }
 
     {
-        auto t = tick("RenderBackend subsystem init");
+        Stopwatch sw{};
         m_render_backend = std::make_unique<RenderBackend>(m_window->getHandle());
-        tock(t);
+        GC_TRACE("RenderBackend subsystem init took: {}", sw);
     }
 
     {
-        auto t = tick("DebugUI subsystem init");
+        Stopwatch sw{};
         m_debug_ui = std::make_unique<DebugUI>(m_window->getHandle(), m_render_backend->getInfo(), m_save_directory / "imgui.ini");
-        tock(t);
+        GC_TRACE("DebugUI subsystem init took: {}", sw);
     }
 
     {
-        auto t = tick("World subsystem init");
+        Stopwatch sw{};
         m_world = std::make_unique<World>();
-        tock(t);
+        GC_TRACE("World subsystem init took: {}", sw);
     }
 
     GC_TRACE("Initialised Application");
@@ -122,13 +119,6 @@ App::~App()
         GC_ERROR("Jobs were still running at time of application shutdown!");
         jobs().wait();
     }
-}
-
-uint64_t App::getNanos() const
-{
-    // billion / frequency must be in brackets to avoid overflow
-    uint64_t value = (SDL_GetPerformanceCounter() - m_performance_counter_init) * (static_cast<uint64_t>(1'000'000'000) / m_performance_counter_frequency);
-    return value;
 }
 
 void App::initialise(const AppInitOptions& options)
@@ -196,18 +186,33 @@ void App::run()
 
     FrameState frame_state{};
 
+    WorldDrawData world_draw_data{};
+
     std::unique_ptr<GPUPipeline> pipeline{};
-    WorldDrawData world_draw_data;
+    {
+        auto vert = content().loadAsset(strToName("cube.vert"));
+        auto frag = content().loadAsset(strToName("cube.frag"));
+        if (!vert.empty() && !frag.empty()) {
+            pipeline = std::make_unique<GPUPipeline>(renderBackend().createPipeline(vert, frag));
+            world_draw_data.setPipeline(pipeline.get());
+        }
+        else {
+            GC_ERROR("Could find cube.vert or cube.frag");
+        }
+    }
 
-    auto texture = renderBackend().createTexture();
+    auto material = renderBackend().createMaterial(std::make_shared<RenderTexture>(renderBackend().createTexture()));
 
-    uint64_t frame_begin_stamp = getNanos() - 16'666'667LL; // set first delta time to something reasonable
+    world_draw_data.setPipeline(pipeline.get());
+    world_draw_data.setMaterial(&material);
+
+    uint64_t frame_begin_stamp = SDL_GetTicksNS() - 16'666'667LL; // set first delta time to something reasonable
     while (!window().shouldQuit()) {
         FrameMark;
         Logger::instance().incrementFrameNumber();
 
         const uint64_t last_frame_begin_stamp = frame_begin_stamp;
-        frame_begin_stamp = getNanos();
+        frame_begin_stamp = SDL_GetTicksNS();
 
         frame_state.delta_time = static_cast<double>(frame_begin_stamp - last_frame_begin_stamp) * 1e-9;
         frame_state.window_state = &window().processEvents(DebugUI::windowEventInterceptor);
@@ -247,18 +252,6 @@ void App::run()
         }
 
         m_debug_ui->update(frame_state.delta_time);
-
-        if (texture.isUploaded() && !pipeline) {
-            auto vert = content().loadAsset(strToName("cube.vert"));
-            auto frag = content().loadAsset(strToName("cube.frag"));
-            if (!vert.empty() && !frag.empty()) {
-                pipeline = std::make_unique<GPUPipeline>(renderBackend().createPipeline(vert, frag));
-                world_draw_data.setPipeline(pipeline.get());
-            }
-            else {
-                GC_ERROR("Could find cube.vert or cube.frag");
-            }
-        }
 
         renderBackend().submitFrame(frame_state.window_state->getResizedFlag(), world_draw_data);
         renderBackend().cleanupGPUResources();
