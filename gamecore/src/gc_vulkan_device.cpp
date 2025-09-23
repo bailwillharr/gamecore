@@ -289,9 +289,11 @@ VulkanDevice::VulkanDevice()
             vkGetDeviceQueue(m_device, m_main_queue_family_index, 0, &m_main_queue);
             if (main_queue_family_queue_count >= 2) {
                 vkGetDeviceQueue(m_device, m_main_queue_family_index, 1, &m_transfer_queue);
+                GC_DEBUG("Using separate queues for rendering and transfer");
             }
             else {
                 m_transfer_queue = m_main_queue;
+                GC_DEBUG("Using same queue for rendering and transfer");
             }
             GC_ASSERT(m_main_queue);
             GC_ASSERT(m_transfer_queue);
