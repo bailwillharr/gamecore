@@ -34,9 +34,6 @@ file(
 )
 include(${CMAKE_CURRENT_BINARY_DIR}/cmake/CPM.cmake)
 
-# shaderc_combined (from Vulkan SDK)
-find_package(Vulkan REQUIRED COMPONENTS shaderc_combined volk REQUIRED)
-
 # spdlog
 cpmaddpackage(
   NAME spdlog
@@ -56,6 +53,17 @@ cpmaddpackage(
   NAME SDL3
   VERSION 3.2.22
   URL https://github.com/libsdl-org/SDL/archive/refs/tags/release-3.2.22.zip
+  EXCLUDE_FROM_ALL YES
+  SYSTEM YES
+)
+
+# Volk
+cpmaddpackage(
+  NAME volk
+  VERSION 1.4.304
+  URL https://github.com/zeux/volk/archive/refs/tags/1.4.304.zip
+  OPTIONS
+    "VOLK_PULL_IN_VULKAN ON"
   EXCLUDE_FROM_ALL YES
   SYSTEM YES
 )
@@ -177,7 +185,7 @@ target_compile_definitions(imgui PUBLIC IMGUI_DISABLE_OBSOLETE_FUNCTIONS)
 # use ImGui_ImplVulkan_LoadFunctions():
 target_compile_definitions(imgui PUBLIC IMGUI_IMPL_VULKAN_NO_PROTOTYPES)
 target_include_directories(imgui PUBLIC ${imgui_SOURCE_DIR})
-target_link_libraries(imgui PRIVATE Vulkan::volk)
+target_link_libraries(imgui PRIVATE volk::volk)
 target_link_libraries(imgui PRIVATE SDL3::SDL3)
 
 # tinygltf
@@ -203,6 +211,9 @@ cpmaddpackage(
     EXCLUDE_FROM_ALL YES
     SYSTEM YES
 )
+
+# shaderc_combined (from Vulkan SDK)
+find_package(Vulkan REQUIRED COMPONENTS shaderc_combined REQUIRED)
 
 # library for manipulating game asset files
 add_subdirectory(gcpak)

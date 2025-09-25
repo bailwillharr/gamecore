@@ -7,12 +7,11 @@
 #include <format>
 #include <string>
 
-#include <volk/volk.h>
+#include <volk.h>
 
 #include <vk_mem_alloc.h>
 
 #include "gamecore/gc_abort.h"
-#include "gamecore/gc_logger.h"
 
 #define GC_CHECKVK(fun) ::gc::vulkanCheckError(fun, #fun)
 

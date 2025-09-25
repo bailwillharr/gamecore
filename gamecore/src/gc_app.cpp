@@ -208,7 +208,6 @@ void App::run()
 
     uint64_t frame_begin_stamp = SDL_GetTicksNS() - 16'666'667LL; // set first delta time to something reasonable
     while (!window().shouldQuit()) {
-        FrameMark;
         Logger::instance().incrementFrameNumber();
 
         const uint64_t last_frame_begin_stamp = frame_begin_stamp;
@@ -255,6 +254,8 @@ void App::run()
 
         renderBackend().submitFrame(frame_state.window_state->getResizedFlag(), world_draw_data);
         renderBackend().cleanupGPUResources();
+
+        FrameMark;
     }
     GC_TRACE("Quitting...");
 }
