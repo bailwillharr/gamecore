@@ -9,8 +9,6 @@
 
 #include <SDL3/SDL_vulkan.h>
 
-#include <volk.h>
-
 #include "gamecore/gc_abort.h"
 #include "gamecore/gc_assert.h"
 #include "gamecore/gc_logger.h"

@@ -108,7 +108,7 @@ target_include_directories(${PROJECT_NAME} PRIVATE src)
 target_link_libraries(${PROJECT_NAME} PRIVATE gcpak)
 target_link_libraries(${PROJECT_NAME} PRIVATE spdlog::spdlog)
 target_link_libraries(${PROJECT_NAME} PUBLIC SDL3::SDL3)
-target_link_libraries(${PROJECT_NAME} PUBLIC volk::volk) # pulls in Vulkan
+target_link_libraries(${PROJECT_NAME} PUBLIC Vulkan::volk) # pulls in Vulkan
 target_link_libraries(${PROJECT_NAME} PUBLIC GPUOpen::VulkanMemoryAllocator)
 target_link_libraries(${PROJECT_NAME} PUBLIC Tracy::TracyClient)
 target_link_libraries(${PROJECT_NAME} PUBLIC asio::asio)

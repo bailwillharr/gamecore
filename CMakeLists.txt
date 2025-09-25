@@ -34,11 +34,14 @@ file(
 )
 include(${CMAKE_CURRENT_BINARY_DIR}/cmake/CPM.cmake)
 
+# shaderc_combined (from Vulkan SDK)
+find_package(Vulkan REQUIRED COMPONENTS shaderc_combined volk REQUIRED)
+
 # spdlog
 cpmaddpackage(
   NAME spdlog
-  VERSION 1.15.1
-  URL https://github.com/gabime/spdlog/archive/refs/tags/v1.15.1.zip
+  VERSION 1.15.3
+  URL https://github.com/gabime/spdlog/archive/refs/tags/v1.15.3.zip
   OPTIONS
     "SPDLOG_BUILD_SHARED OFF"
     "SPDLOG_SYSTEM_INCLUDES ON"
@@ -51,19 +54,8 @@ cpmaddpackage(
 # SDL3
 cpmaddpackage(
   NAME SDL3
-  VERSION 3.2.4
-  URL https://github.com/libsdl-org/SDL/archive/refs/tags/release-3.2.4.zip
-  EXCLUDE_FROM_ALL YES
-  SYSTEM YES
-)
-
-# Volk
-cpmaddpackage(
-  NAME volk
-  VERSION 1.4.304
-  URL https://github.com/zeux/volk/archive/refs/tags/1.4.304.zip
-  OPTIONS
-    "VOLK_PULL_IN_VULKAN ON"
+  VERSION 3.2.22
+  URL https://github.com/libsdl-org/SDL/archive/refs/tags/release-3.2.22.zip
   EXCLUDE_FROM_ALL YES
   SYSTEM YES
 )
@@ -71,8 +63,8 @@ cpmaddpackage(
 # VulkanMemoryAllocator
 cpmaddpackage(
   NAME VulkanMemoryAllocator
-  VERSION 3.2.1
-  URL https://github.com/GPUOpen-LibrariesAndSDKs/VulkanMemoryAllocator/archive/refs/tags/v3.2.1.zip
+  VERSION 3.3.0
+  URL https://github.com/GPUOpen-LibrariesAndSDKs/VulkanMemoryAllocator/archive/refs/tags/v3.3.0.zip
   EXCLUDE_FROM_ALL YES
   SYSTEM YES
 )
@@ -90,6 +82,7 @@ cpmaddpackage(
   OPTIONS
     "${GC_TRACY_ENABLE}"
     "TRACY_ON_DEMAND OFF"
+    "TRACY_NO_FRAME_IMAGE ON"
   EXCLUDE_FROM_ALL YES
   SYSTEM YES
 )
@@ -184,7 +177,7 @@ target_compile_definitions(imgui PUBLIC IMGUI_DISABLE_OBSOLETE_FUNCTIONS)
 # use ImGui_ImplVulkan_LoadFunctions():
 target_compile_definitions(imgui PUBLIC IMGUI_IMPL_VULKAN_NO_PROTOTYPES)
 target_include_directories(imgui PUBLIC ${imgui_SOURCE_DIR})
-target_link_libraries(imgui PRIVATE volk::volk)
+target_link_libraries(imgui PRIVATE Vulkan::volk)
 target_link_libraries(imgui PRIVATE SDL3::SDL3)
 
 # tinygltf
@@ -210,9 +203,6 @@ cpmaddpackage(
     EXCLUDE_FROM_ALL YES
     SYSTEM YES
 )
-
-# shaderc_combined (from Vulkan SDK)
-find_package(Vulkan REQUIRED COMPONENTS shaderc_combined REQUIRED)
 
 # library for manipulating game asset files
 add_subdirectory(gcpak)
