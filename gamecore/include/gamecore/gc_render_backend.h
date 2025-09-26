@@ -140,8 +140,6 @@ class RenderBackend {
 
     uint64_t m_frame_count{};
 
-    bool m_command_buffer_ready = false;
-
     /* Important synchronisation objects */
     /* If the number of frames-in-flight changes, everything here is reset */
     struct FIFStuff {

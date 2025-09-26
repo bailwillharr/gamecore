@@ -379,6 +379,10 @@ void VulkanSwapchain::recreateSwapchain()
         min_image_count = surface_caps.surfaceCapabilities.maxImageCount;
     }
     GC_TRACE("Min image count: {}", min_image_count);
+    if (m_requested_present_mode == VK_PRESENT_MODE_MAILBOX_KHR && min_image_count < 3 && surface_caps.surfaceCapabilities.maxImageCount >= 3) {
+        // MAILBOX with 2 images will end up waiting for vsync so request at least 3
+        min_image_count = 3;
+    }
     if (m_requested_present_mode == VK_PRESENT_MODE_FIFO_KHR && min_image_count < 3 && surface_caps.surfaceCapabilities.maxImageCount >= 3) {
         // use triple buffering if FIFO was explicitly requested
         min_image_count = 3;

@@ -131,7 +131,7 @@ static void recreateFramebufferImage(VkDevice device, VmaAllocator allocator, Vk
 static uint32_t getAppropriateFramesInFlight(uint32_t swapchain_image_count)
 {
     if (swapchain_image_count > 2) {
-        return 1;
+        return 2;
     }
     else {
         return 1;
@@ -576,8 +576,6 @@ void RenderBackend::submitFrame(bool window_resized, const WorldDrawData& world_
         GC_CHECKVK(vkQueueSubmit2(m_device.getMainQueue(), 1, &submit, VK_NULL_HANDLE));
     }
 
-    m_command_buffer_ready = false;
-
     const bool swapchain_recreated = m_swapchain.acquireAndPresent(m_framebuffer_image, window_resized, m_main_timeline_semaphore, m_main_timeline_value);
 
     m_present_finished_value = m_main_timeline_value;
@@ -591,14 +589,6 @@ void RenderBackend::submitFrame(bool window_resized, const WorldDrawData& world_
     }
 
     ++m_frame_count;
-
-    // This will wait for the next frame to be ready to render to.
-    // With 1 FIF this will wait until the rendering commands just submitted above are complete.
-    // With 2 FIFs this will wait until the rendering commands submitted in the last call to submitFrame() are complete.
-    // With 1 FIF this can make frame-times much longer if game logic is heavy on the CPU side. (before command buffer recording)
-    if (m_fif.size() >= 2) {
-        waitForFrameReady();
-    }
 }
 
 void RenderBackend::cleanupGPUResources()
@@ -984,8 +974,6 @@ void RenderBackend::waitForFrameReady()
 {
     ZoneScopedC(tracy::Color::Crimson);
 
-    if (m_command_buffer_ready) return;
-
     const auto& stuff = m_fif[m_frame_count % m_fif.size()];
 
     ZoneValue(stuff.command_buffer_available_value);
@@ -996,7 +984,6 @@ void RenderBackend::waitForFrameReady()
     info.pSemaphores = &m_main_timeline_semaphore;
     info.pValues = &stuff.command_buffer_available_value;
     GC_CHECKVK(vkWaitSemaphores(m_device.getHandle(), &info, UINT64_MAX));
-    m_command_buffer_ready = true;
 }
 
 } // namespace gc
