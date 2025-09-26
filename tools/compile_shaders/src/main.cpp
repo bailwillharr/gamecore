@@ -18,7 +18,7 @@
 static std::optional<shaderc_shader_kind> determineShaderKind(const std::filesystem::path& path)
 {
     auto ext = path.extension().string();
-    std::transform(ext.cbegin(), ext.cend(), ext.begin(), tolower);
+    std::transform(ext.cbegin(), ext.cend(), ext.begin(), [](char c) -> char { return static_cast<char>(tolower(c)); });
     if (ext == std::string(".vert")) {
         return shaderc_vertex_shader;
     }

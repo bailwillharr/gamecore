@@ -19,7 +19,7 @@
 static bool isImage(const std::filesystem::path& path)
 {
     auto ext = path.extension().string();
-    std::transform(ext.cbegin(), ext.cend(), ext.begin(), tolower);
+    std::transform(ext.cbegin(), ext.cend(), ext.begin(), [](char c) -> char { return static_cast<char>(tolower(c)); });
     return (ext == ".png") || (ext == ".jpg") || (ext == ".jpeg");
 }
 

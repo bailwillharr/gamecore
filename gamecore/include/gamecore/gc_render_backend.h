@@ -221,7 +221,7 @@ public:
 
     VkDevice getDevice() const { return m_device.getHandle(); }
 
-    void waitIdle();
+    void waitIdle(); // waits for all Vulkan queues to finish
 
 private:
     void recreateFramesInFlightResources();

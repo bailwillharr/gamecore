@@ -213,7 +213,7 @@ void App::run()
     world_draw_data.setMaterial(material.get());
 
     uint64_t frame_count{};
-    std::array<double, 100> delta_times{};
+    std::array<double, 20> delta_times{};
     uint64_t frame_begin_stamp = SDL_GetTicksNS() - 16'666'667LL; // set first delta time to something reasonable
     while (!window().shouldQuit()) {
         Logger::instance().incrementFrameNumber();

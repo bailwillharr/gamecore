@@ -581,6 +581,7 @@ void RenderBackend::submitFrame(bool window_resized, const WorldDrawData& world_
     m_present_finished_value = m_main_timeline_value;
 
     if (swapchain_recreated) {
+        GC_CHECKVK(vkQueueWaitIdle(m_device.getMainQueue())); // if window was just un-minimised, acquireAndPresent() will be using the framebuffer image right now.
         recreateDepthStencil(m_device.getHandle(), m_allocator.getHandle(), m_depth_stencil_format, m_swapchain.getExtent(), m_depth_stencil,
                              m_depth_stencil_allocation, m_depth_stencil_view);
         recreateFramebufferImage(m_device.getHandle(), m_allocator.getHandle(), m_swapchain.getSurfaceFormat().format, m_swapchain.getExtent(),

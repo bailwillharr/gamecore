@@ -29,7 +29,7 @@ int main([[maybe_unused]] int argc, [[maybe_unused]] char* argv[])
     gc::App& app = gc::app();
 
     // On Windows/NVIDIA, triple buffered gives horrible latency so use double buffering instead
-    app.renderBackend().setSyncMode(gc::RenderSyncMode::VSYNC_ON_TRIPLE_BUFFERED_UNTHROTTLED);
+    app.renderBackend().setSyncMode(gc::RenderSyncMode::VSYNC_ON_TRIPLE_BUFFERED);
 
     gc::Window& win = app.window();
     win.setTitle("Hello world!");

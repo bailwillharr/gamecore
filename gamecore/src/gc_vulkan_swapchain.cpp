@@ -113,6 +113,8 @@ bool VulkanSwapchain::acquireAndPresent(VkImage image_to_present, bool window_re
 
     GC_ASSERT(image_to_present != VK_NULL_HANDLE);
 
+    bool swapchain_recreated = false;
+
     if (m_minimised) {
         m_minimised = !isSwapchainCreatable(); // false means minimised
         if (m_minimised) {                     // is it still minimised?
@@ -125,6 +127,7 @@ bool VulkanSwapchain::acquireAndPresent(VkImage image_to_present, bool window_re
             waitForSwapchainImageOperations();
             recreateSwapchain();
             recreatePerSwapchainImageResources(m_device, static_cast<uint32_t>(m_images.size()), m_resources_per_swapchain_image);
+            swapchain_recreated = true;
         }
     }
 
@@ -327,13 +330,14 @@ bool VulkanSwapchain::acquireAndPresent(VkImage image_to_present, bool window_re
             waitForSwapchainImageOperations();
             recreateSwapchain();
             recreatePerSwapchainImageResources(m_device, static_cast<uint32_t>(m_images.size()), m_resources_per_swapchain_image);
+            swapchain_recreated = true;
         }
         else {
             m_minimised = true;
         }
     }
 
-    return recreate_swapchain;
+    return swapchain_recreated;
 }
 
 void VulkanSwapchain::recreateSwapchain()
