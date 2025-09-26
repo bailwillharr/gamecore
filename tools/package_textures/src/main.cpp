@@ -4,11 +4,11 @@
 
 #include "package_textures.h"
 
+#include <cstring>
+
 #include <iostream>
 #include <vector>
 #include <filesystem>
-#include <fstream>
-#include <optional>
 #include <memory>
 #include <algorithm>
 

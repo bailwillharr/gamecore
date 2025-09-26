@@ -1,5 +1,7 @@
 #include "gamecore/gc_render_backend.h"
 
+#include <cstring>
+
 #include <array>
 
 #include <SDL3/SDL_vulkan.h>
@@ -663,9 +665,9 @@ GPUPipeline RenderBackend::createPipeline(std::span<const uint8_t> vertex_spv, s
     rasterization_state.cullMode = VK_CULL_MODE_BACK_BIT;
     rasterization_state.frontFace = VK_FRONT_FACE_CLOCKWISE; // it is actually CCW but shader flips things
     rasterization_state.depthBiasEnable = VK_FALSE;
-    rasterization_state.depthBiasConstantFactor = 0.0f;      // ignored
-    rasterization_state.depthBiasClamp = 0.0f;               // ignored
-    rasterization_state.depthBiasSlopeFactor = 0.0f;         // ignored
+    rasterization_state.depthBiasConstantFactor = 0.0f; // ignored
+    rasterization_state.depthBiasClamp = 0.0f;          // ignored
+    rasterization_state.depthBiasSlopeFactor = 0.0f;    // ignored
 
     const VkFormat color_attachment_format = m_swapchain.getSurfaceFormat().format;
 
