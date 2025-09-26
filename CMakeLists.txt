@@ -212,6 +212,19 @@ cpmaddpackage(
     SYSTEM YES
 )
 
+# stb
+cpmaddpackage(
+    NAME stb
+    URL https://github.com/nothings/stb/archive/fede005abaf93d9d7f3a679d1999b2db341b360f.zip
+    DOWNLOAD_ONLY YES
+)
+file(WRITE "${stb_SOURCE_DIR}/stb_image_impl.cpp" "#define STB_IMAGE_IMPLEMENTATION\n#include \"stb_image.h\"\n")
+add_library(stb STATIC
+  "${stb_SOURCE_DIR}/stb_image_impl.cpp"
+  "${stb_SOURCE_DIR}/stb_image.h"
+)
+target_include_directories(stb PUBLIC ${stb_SOURCE_DIR})
+
 # shaderc_combined (from Vulkan SDK)
 find_package(Vulkan REQUIRED COMPONENTS shaderc_combined REQUIRED)
 
@@ -226,3 +239,4 @@ add_subdirectory(gamecore_template)
 
 #add_subdirectory(tools/gcpak_editor) # broken
 add_subdirectory(tools/compile_shaders)
+add_subdirectory(tools/package_textures)

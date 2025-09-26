@@ -61,14 +61,15 @@ struct GcpakHeader {
 };
 
 enum class GcpakAssetType : std::uint32_t {
-    RAW = 0,
+    INVALID = 0,
+    SPIRV_SHADER = 1, // passed directly into VkShaderModuleCreateInfo
+    TEXTURE_R8G8B8A8 = 2, // first 4 bytes is width, second 4 bytes is height, remaining data is just R8G8B8A8
 };
 
 struct GcpakAssetEntry {
     uint64_t offset; // absolute positition of start of asset data in the file
     uint32_t crc32_id;
     GcpakAssetType asset_type;
-    uint32_t size_uncompressed; // set to zero for no compression
     uint32_t size;              // size of data in file (compressed size if compression enabled)
 
     void serialize(std::ostream& s) const
@@ -76,7 +77,6 @@ struct GcpakAssetEntry {
         s.write(reinterpret_cast<const char*>(&offset), sizeof(uint64_t));
         s.write(reinterpret_cast<const char*>(&crc32_id), sizeof(uint32_t));
         s.write(reinterpret_cast<const char*>(&asset_type), sizeof(GcpakAssetType));
-        s.write(reinterpret_cast<const char*>(&size_uncompressed), sizeof(uint32_t));
         s.write(reinterpret_cast<const char*>(&size), sizeof(uint32_t));
     }
 
@@ -86,12 +86,11 @@ struct GcpakAssetEntry {
         s.read(reinterpret_cast<char*>(&header.offset), sizeof(uint64_t));
         s.read(reinterpret_cast<char*>(&header.crc32_id), sizeof(uint32_t));
         s.read(reinterpret_cast<char*>(&header.asset_type), sizeof(GcpakAssetType));
-        s.read(reinterpret_cast<char*>(&header.size_uncompressed), sizeof(uint32_t));
         s.read(reinterpret_cast<char*>(&header.size), sizeof(uint32_t));
         return header;
     }
 
-    static size_t getSerializedSize() { return sizeof(offset) + sizeof(crc32_id) + sizeof(asset_type) + sizeof(size_uncompressed) + sizeof(size); }
+    static size_t getSerializedSize() { return sizeof(offset) + sizeof(crc32_id) + sizeof(asset_type) + sizeof(size); }
 };
 
 class GcpakCreator {
@@ -99,6 +98,7 @@ public:
     struct Asset {
         std::string name;
         std::vector<uint8_t> data;
+        GcpakAssetType type;
     };
 
 private:

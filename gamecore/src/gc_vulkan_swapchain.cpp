@@ -338,39 +338,6 @@ bool VulkanSwapchain::acquireAndPresent(VkImage image_to_present, bool window_re
 
 void VulkanSwapchain::recreateSwapchain()
 {
-
-    /* No members of the swapchain class are altered nor is the swapchain recreated if the window is minimised */
-
-    // get capabilities. These can change, for example, if the window is made fullscreen or moved to another monitor.
-    // minImageCount and maxImageCount can also change depending on desired present mode.
-    VkPhysicalDeviceSurfaceInfo2KHR surface_info{};
-    surface_info.sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_SURFACE_INFO_2_KHR;
-    surface_info.pNext = nullptr;
-    surface_info.surface = m_surface;
-    VkSurfaceCapabilities2KHR surface_caps{};
-    surface_caps.sType = VK_STRUCTURE_TYPE_SURFACE_CAPABILITIES_2_KHR;
-    if (VkResult res = vkGetPhysicalDeviceSurfaceCapabilities2KHR(m_device.getPhysicalDevice(), &surface_info, &surface_caps); res != VK_SUCCESS) {
-        abortGame("vkGetPhysicalDeviceSurfaceCapabilities2KHR() error: {}", vulkanResToString(res));
-    }
-
-    // Extent
-    {
-        const VkExtent2D caps_current_extent = surface_caps.surfaceCapabilities.currentExtent;
-        if (caps_current_extent.width == UINT32_MAX && caps_current_extent.height == UINT32_MAX) {
-            // In this case, swapchain size dictates the size of the window.
-            // Just get the size from SDL
-            int w{}, h{};
-            if (!SDL_GetWindowSizeInPixels(m_window_handle, &w, &h)) {
-                abortGame("SDL_GetWindowSizeInPixels() error: {}", SDL_GetError());
-            }
-            m_extent.width = w;
-            m_extent.height = h;
-        }
-        else {
-            m_extent = caps_current_extent;
-        }
-    }
-
     // Get surface present modes
     uint32_t present_mode_count{};
     if (VkResult res = vkGetPhysicalDeviceSurfacePresentModesKHR(m_device.getPhysicalDevice(), m_surface, &present_mode_count, nullptr); res != VK_SUCCESS) {
@@ -390,6 +357,54 @@ void VulkanSwapchain::recreateSwapchain()
     }
 
     GC_DEBUG("Using present mode: {}", vulkanPresentModeToString(m_present_mode));
+
+    // get capabilities. These can change, for example, if the window is made fullscreen or moved to another monitor.
+    // minImageCount and maxImageCount can also change depending on desired present mode.
+    VkSurfacePresentModeEXT surface_present_mode{};
+    surface_present_mode.sType = VK_STRUCTURE_TYPE_SURFACE_PRESENT_MODE_EXT;
+    surface_present_mode.presentMode = m_present_mode;
+    VkPhysicalDeviceSurfaceInfo2KHR surface_info{};
+    surface_info.sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_SURFACE_INFO_2_KHR;
+    surface_info.pNext = &surface_present_mode;
+    surface_info.surface = m_surface;
+    VkSurfaceCapabilities2KHR surface_caps{};
+    surface_caps.sType = VK_STRUCTURE_TYPE_SURFACE_CAPABILITIES_2_KHR;
+    if (VkResult res = vkGetPhysicalDeviceSurfaceCapabilities2KHR(m_device.getPhysicalDevice(), &surface_info, &surface_caps); res != VK_SUCCESS) {
+        abortGame("vkGetPhysicalDeviceSurfaceCapabilities2KHR() error: {}", vulkanResToString(res));
+    }
+
+    // Get min image count
+    uint32_t min_image_count = surface_caps.surfaceCapabilities.minImageCount;
+    if (surface_caps.surfaceCapabilities.maxImageCount > 0 && min_image_count > surface_caps.surfaceCapabilities.maxImageCount) {
+        min_image_count = surface_caps.surfaceCapabilities.maxImageCount;
+    }
+    GC_TRACE("Min image count: {}", min_image_count);
+    if (m_requested_present_mode == VK_PRESENT_MODE_MAILBOX_KHR && min_image_count < 3 && surface_caps.surfaceCapabilities.maxImageCount >= 4) {
+        min_image_count = 4;
+    }
+    if (m_requested_present_mode == VK_PRESENT_MODE_FIFO_KHR && min_image_count < 3 && surface_caps.surfaceCapabilities.maxImageCount >= 3) {
+        // use triple buffering if FIFO was explicitly requested
+        min_image_count = 3;
+    }
+    // if requested present mode is FIFO_RELAXED, use lowest possible image count (double buffering with most drivers)
+
+    // Extent
+    {
+        const VkExtent2D caps_current_extent = surface_caps.surfaceCapabilities.currentExtent;
+        if (caps_current_extent.width == UINT32_MAX && caps_current_extent.height == UINT32_MAX) {
+            // In this case, swapchain size dictates the size of the window.
+            // Just get the size from SDL
+            int w{}, h{};
+            if (!SDL_GetWindowSizeInPixels(m_window_handle, &w, &h)) {
+                abortGame("SDL_GetWindowSizeInPixels() error: {}", SDL_GetError());
+            }
+            m_extent.width = w;
+            m_extent.height = h;
+        }
+        else {
+            m_extent = caps_current_extent;
+        }
+    }
 
     // Get surface formats
     uint32_t surface_format_count{};
@@ -412,24 +427,6 @@ void VulkanSwapchain::recreateSwapchain()
         }
     }
 
-    // Get min image count
-    uint32_t min_image_count = surface_caps.surfaceCapabilities.minImageCount;
-    if (surface_caps.surfaceCapabilities.maxImageCount > 0 && min_image_count > surface_caps.surfaceCapabilities.maxImageCount) {
-        min_image_count = surface_caps.surfaceCapabilities.maxImageCount;
-    }
-
-    GC_TRACE("Min image count: {}", min_image_count);
-
-    if (m_present_mode == VK_PRESENT_MODE_MAILBOX_KHR && min_image_count < 3 && surface_caps.surfaceCapabilities.maxImageCount >= 3) {
-        // always use at least 3 swapchain images with MAILBOX
-        min_image_count = 3;
-    }
-    else if (m_requested_present_mode == VK_PRESENT_MODE_FIFO_KHR && min_image_count < 3 && surface_caps.surfaceCapabilities.maxImageCount >= 3) {
-        // use triple buffering if FIFO was explicitly requested
-        min_image_count = 3;
-    }
-    // if requested present mode is FIFO_RELAXED, use lowest possible image count (double buffering with most drivers)
-
     // clamp extent to min and max
     if (m_extent.width > surface_caps.surfaceCapabilities.maxImageExtent.width) {
         m_extent.width = surface_caps.surfaceCapabilities.maxImageExtent.width;
@@ -446,14 +443,14 @@ void VulkanSwapchain::recreateSwapchain()
 
     // Finally create swapchain
     const VkSwapchainKHR old_swapchain = m_swapchain;
-    VkSwapchainPresentModesCreateInfoEXT swapchain_present_modes_info{};
-    swapchain_present_modes_info.sType = VK_STRUCTURE_TYPE_SWAPCHAIN_PRESENT_MODES_CREATE_INFO_EXT;
-    swapchain_present_modes_info.pNext = nullptr;
-    swapchain_present_modes_info.presentModeCount = 1;
-    swapchain_present_modes_info.pPresentModes = &m_present_mode;
+    // VkSwapchainPresentModesCreateInfoEXT swapchain_present_modes_info{};
+    // swapchain_present_modes_info.sType = VK_STRUCTURE_TYPE_SWAPCHAIN_PRESENT_MODES_CREATE_INFO_EXT;
+    // swapchain_present_modes_info.pNext = nullptr;
+    // swapchain_present_modes_info.presentModeCount = 1;
+    // swapchain_present_modes_info.pPresentModes = &m_present_mode;
     VkSwapchainCreateInfoKHR sc_info{};
     sc_info.sType = VK_STRUCTURE_TYPE_SWAPCHAIN_CREATE_INFO_KHR;
-    sc_info.pNext = &swapchain_present_modes_info;
+    sc_info.pNext = nullptr; // &swapchain_present_modes_info;
     sc_info.flags = 0;
     sc_info.surface = m_surface;
     sc_info.minImageCount = min_image_count;
@@ -490,12 +487,9 @@ void VulkanSwapchain::recreateSwapchain()
         abortGame("vkGetPhysicalDeviceSurfacePresentModesKHR() error: {}", vulkanResToString(res));
     }
 
-    // (destroy old depth/stencil image and image view)
-    // create depth/stencil image and image view
-
     // done
-    GC_DEBUG("Recreated swapchain. new extent: ({}, {}), requested image count: {}, new image count: {}", sc_info.imageExtent.width, sc_info.imageExtent.height,
-             min_image_count, image_count);
+    GC_DEBUG("Recreated swapchain. new extent: ({}, {}), requested min image count: {}, new image count: {}", sc_info.imageExtent.width,
+             sc_info.imageExtent.height, min_image_count, image_count);
 }
 
 bool VulkanSwapchain::isSwapchainCreatable()

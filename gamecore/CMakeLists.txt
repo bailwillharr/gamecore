@@ -117,6 +117,7 @@ target_link_libraries(${PROJECT_NAME} PUBLIC glm::glm)
 target_link_libraries(${PROJECT_NAME} PUBLIC imgui)
 target_link_libraries(${PROJECT_NAME} PUBLIC tinygltf)
 target_link_libraries(${PROJECT_NAME} PUBLIC mio::mio)
+target_link_libraries(${PROJECT_NAME} PUBLIC stb)
 
 if(WIN32)
     target_link_libraries(${PROJECT_NAME} PUBLIC Vulkan::shaderc_combined)

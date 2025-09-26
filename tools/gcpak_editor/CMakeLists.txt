@@ -28,8 +28,7 @@ set_property(TARGET ${PROJECT_NAME} PROPERTY CXX_EXTENSIONS OFF)
 
 target_link_libraries(${PROJECT_NAME} PRIVATE gcpak)
 
-# SDL3 for open file dialog
-target_link_libraries(${PROJECT_NAME} PRIVATE SDL3::SDL3)
+target_link_libraries(${PROJECT_NAME} PRIVATE stb)
 
 if(WIN32)
     add_custom_command(

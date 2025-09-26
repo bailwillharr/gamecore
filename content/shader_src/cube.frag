@@ -26,7 +26,7 @@ void main() {
 
 	const float ao = 1.0;
 	const float roughness = 0.3;
-	const float metallic = 1.0;
+	const float metallic = 0.0;
 
 	const float roughness_2 = roughness * roughness;
 

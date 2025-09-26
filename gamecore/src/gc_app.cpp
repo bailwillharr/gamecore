@@ -201,10 +201,16 @@ void App::run()
         }
     }
 
-    auto material = renderBackend().createMaterial(std::make_shared<RenderTexture>(renderBackend().createTexture()));
+    std::unique_ptr<RenderMaterial> material{};
+    {
+        auto image_data = content().loadAsset(strToName("nuke.jpg"));
+        if (!image_data.empty()) {
+            material = std::make_unique<RenderMaterial>(renderBackend().createMaterial(std::make_shared<RenderTexture>(renderBackend().createTexture(image_data))));
+        }
+    }
 
     world_draw_data.setPipeline(pipeline.get());
-    world_draw_data.setMaterial(&material);
+    world_draw_data.setMaterial(material.get());
 
     uint64_t frame_begin_stamp = SDL_GetTicksNS() - 16'666'667LL; // set first delta time to something reasonable
     while (!window().shouldQuit()) {

@@ -139,10 +139,6 @@ std::vector<uint8_t> Content::loadAsset(std::uint32_t id) const
         return {};
     }
     const PackageAssetInfo& asset_info = it->second;
-    if (asset_info.entry.size_uncompressed != 0) {
-        GC_ERROR("Asset {} is compressed which is not supported yet", assetIDToStr(id));
-        return {};
-    }
 
     GC_ASSERT(asset_info.file_index < m_package_file_maps.size());
 

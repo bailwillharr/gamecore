@@ -75,8 +75,7 @@ bool GcpakCreator::saveFile(const std::filesystem::path& path)
             GcpakAssetEntry entry{};
             entry.offset = offsets[i];
             entry.crc32_id = crc32(m_assets[i].name);
-            entry.asset_type = GcpakAssetType::RAW;
-            entry.size_uncompressed = 0;
+            entry.asset_type = m_assets[i].type;
             entry.size = static_cast<uint32_t>(m_assets[i].data.size());
             entry.serialize(file);
             if (!file) {

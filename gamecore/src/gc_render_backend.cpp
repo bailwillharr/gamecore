@@ -131,7 +131,7 @@ static void recreateFramebufferImage(VkDevice device, VmaAllocator allocator, Vk
 static uint32_t getAppropriateFramesInFlight(uint32_t swapchain_image_count)
 {
     if (swapchain_image_count > 2) {
-        return 2;
+        return 1;
     }
     else {
         return 1;
@@ -763,13 +763,23 @@ GPUPipeline RenderBackend::createPipeline(std::span<const uint8_t> vertex_spv, s
     return GPUPipeline(m_delete_queue, handle);
 }
 
-RenderTexture RenderBackend::createTexture()
+RenderTexture RenderBackend::createTexture(std::span<const uint8_t> r8g8b8a8_pak)
 {
     ZoneScoped;
 
+    GC_ASSERT(r8g8b8a8_pak.size() > 2ULL * sizeof(uint32_t));
+    uint32_t width{}, height{};
+    std::memcpy(&width, r8g8b8a8_pak.data(), sizeof(uint32_t));
+    std::memcpy(&height, r8g8b8a8_pak.data() + sizeof(uint32_t), sizeof(uint32_t));
+    GC_ASSERT(width != 0 && height != 0);
+    GC_ASSERT(r8g8b8a8_pak.size() == 2 * sizeof(uint32_t) + (static_cast<size_t>(width) * static_cast<size_t>(height) * 4ULL));
+    const uint8_t* const bitmap_data_start = r8g8b8a8_pak.data() + 2 * sizeof(uint32_t);
+
+    GC_TRACE("creating texture with size: {}x{}", width, height);
+
     VkBufferCreateInfo buffer_info{};
     buffer_info.sType = VK_STRUCTURE_TYPE_BUFFER_CREATE_INFO;
-    buffer_info.size = 16ULL * 16ULL * 4ULL;
+    buffer_info.size = static_cast<VkDeviceSize>(width) * static_cast<VkDeviceSize>(height) * 4ULL;
     buffer_info.usage = VK_BUFFER_USAGE_TRANSFER_SRC_BIT;
     buffer_info.sharingMode = VK_SHARING_MODE_EXCLUSIVE;
     VmaAllocationCreateInfo buffer_alloc_info{};
@@ -782,14 +792,7 @@ RenderTexture RenderBackend::createTexture()
 
     uint8_t* data_dest{};
     GC_CHECKVK(vmaMapMemory(m_allocator.getHandle(), buffer_alloc, reinterpret_cast<void**>(&data_dest)));
-    for (int y = 0; y < 16; ++y) {
-        for (int x = 0; x < 16; ++x) {
-            data_dest[4 * (y * 16 + x) + 0] = 255 / (1 + (x % 2));
-            data_dest[4 * (y * 16 + x) + 1] = 255 / (1 + (y % 2));
-            data_dest[4 * (y * 16 + x) + 2] = 0;
-            data_dest[4 * (y * 16 + x) + 3] = 255;
-        }
-    }
+    std::memcpy(data_dest, bitmap_data_start, buffer_info.size);
     vmaUnmapMemory(m_allocator.getHandle(), buffer_alloc);
 
     GPUBuffer gpu_staging_buffer(m_delete_queue, buffer, buffer_alloc);
@@ -799,8 +802,8 @@ RenderTexture RenderBackend::createTexture()
     image_info.flags = 0;
     image_info.imageType = VK_IMAGE_TYPE_2D;
     image_info.format = VK_FORMAT_R8G8B8A8_SRGB; // supported by all conforming drivers
-    image_info.extent.width = 16;
-    image_info.extent.height = 16;
+    image_info.extent.width = width;
+    image_info.extent.height = height;
     image_info.extent.depth = 1;
     image_info.mipLevels = 1;
     image_info.arrayLayers = 1;
@@ -815,33 +818,6 @@ RenderTexture RenderBackend::createTexture()
     VkImage image{};
     VmaAllocation allocation{};
     GC_CHECKVK(vmaCreateImage(m_allocator.getHandle(), &image_info, &alloc_info, &image, &allocation, nullptr));
-
-#if 0
-    VkImage big_image{};
-    VmaAllocation big_image_alloc{};
-    {
-        // create a massive image for debug purposes
-        VkImageCreateInfo big_image_info{};
-        big_image_info.sType = VK_STRUCTURE_TYPE_IMAGE_CREATE_INFO;
-        big_image_info.flags = 0;
-        big_image_info.imageType = VK_IMAGE_TYPE_2D;
-        big_image_info.format = VK_FORMAT_R8G8B8A8_SRGB; // supported by all conforming drivers
-        big_image_info.extent.width = 16384;
-        big_image_info.extent.height = 16384;
-        big_image_info.extent.depth = 1;
-        big_image_info.mipLevels = 1;
-        big_image_info.arrayLayers = 1;
-        big_image_info.samples = VK_SAMPLE_COUNT_1_BIT;
-        big_image_info.tiling = VK_IMAGE_TILING_OPTIMAL;
-        big_image_info.usage = VK_IMAGE_USAGE_TRANSFER_DST_BIT;
-        big_image_info.sharingMode = VK_SHARING_MODE_EXCLUSIVE;
-        VmaAllocationCreateInfo big_alloc_info{};
-        big_alloc_info.flags = 0;
-        big_alloc_info.usage = VMA_MEMORY_USAGE_AUTO;
-        big_alloc_info.priority = 0.5f;
-        GC_CHECKVK(vmaCreateImage(m_allocator.getHandle(), &big_image_info, &big_alloc_info, &big_image, &big_image_alloc, nullptr));
-    }
-#endif
 
     {
         VkCommandBufferAllocateInfo cmd_info{};
@@ -900,8 +876,6 @@ RenderTexture RenderBackend::createTexture()
         barrier.oldLayout = VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL;
         barrier.newLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
         vkCmdPipelineBarrier2(cmd, &dependency);
-
-        // delayCommandBuffer(cmd, big_image, 1000);
 
         GC_CHECKVK(vkEndCommandBuffer(cmd));
 

@@ -1,3 +1,31 @@
 CURRENTLY BROKEN
 
-For adding, removing, and editing assets in gcpak files.
+PROPOSED INTERFACE:
+
+For now, don't allow removing files. Just delete the .gcpak file and re-add everything.
+
+CLI
+
+options:
+-a add a file
+-t override type (SPIRV_SHADER, TEXTURE_RGB_PNG, TEXTURE_RGB_BC7, etc)
+-n specify asset name
+
+When overriding the type, file extension checking is done.
+If the file is a .png and BC7 is requested, the texture is compressed.
+
+Command line usage:
+
+gcpak shaders.gcpak
+Lists contents of shaders.gcpak
+
+EXAMPLES:
+
+gcpak -a terrain.vert shaders.gcpak
+Compiles shader with compile_shaders and adds the compiled shader to shaders.gcpak using:
+  asset type: SPIRV_SHADER
+  asset name: terrain
+Emits a warning if the asset was overwritten.
+Creates the gcpak file if it doesn't already exist.
+
+gcpak 

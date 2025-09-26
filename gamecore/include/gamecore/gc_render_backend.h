@@ -179,7 +179,7 @@ public:
     void cleanupGPUResources();
 
     GPUPipeline createPipeline(std::span<const uint8_t> vertex_spv, std::span<const uint8_t> fragment_spv);
-    RenderTexture createTexture();
+    RenderTexture createTexture(std::span<const uint8_t> r8g8b8a8_pak);
     RenderMaterial createMaterial(const std::shared_ptr<RenderTexture>& texture);
 
     RenderBackendInfo getInfo() const

@@ -34,6 +34,8 @@ int main([[maybe_unused]] int argc, [[maybe_unused]] char* argv[])
     gc::Window& win = app.window();
     win.setTitle("Hello world!");
     win.setIsResizable(true);
+    win.setMouseCaptured(true);
+    win.setSize(0, 0, true);
 
     gc::World& world = app.world();
     std::array<gc::Entity, 36> cubes{};
