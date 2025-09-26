@@ -8,7 +8,6 @@
 #include <tracy/Tracy.hpp>
 
 #include <backends/imgui_impl_vulkan.h>
-#include <vulkan/vulkan_core.h>
 
 #include <ext/matrix_clip_space.hpp>
 
