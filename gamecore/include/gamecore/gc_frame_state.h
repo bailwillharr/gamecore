@@ -12,6 +12,7 @@ class WindowState; // forward-dec
 struct FrameState {
     const WindowState* window_state{};
     double delta_time{};
+    double average_frame_time{};
     std::vector<glm::mat4> cube_transforms{};
 };
 

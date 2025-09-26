@@ -50,7 +50,7 @@ struct RenderBackendInfo {
 
 class RenderTexture {
     GPUImageView m_image_view;
-    bool m_uploaded;
+    mutable bool m_uploaded;
 
 public:
     explicit RenderTexture(GPUImageView&& image_view) : m_image_view(std::move(image_view)), m_uploaded(false) {}
@@ -60,12 +60,12 @@ public:
     RenderTexture& operator=(const RenderTexture&) = delete;
     RenderTexture& operator=(RenderTexture&&) = delete;
 
-    bool isUploaded()
+    bool isUploaded() const
     {
         if (m_uploaded) {
             return true;
         }
-        // If the backing image is no longer in use by the queue, assuming the backing image was just created, this means the image is uploaded.
+        // if the backing image is no longer in use by the queue, assuming the backing image was just created, this means the image is uploaded.
         if (m_image_view.getImage()->isFree()) {
             m_uploaded = true;
             return true;
@@ -78,12 +78,13 @@ public:
 
 class RenderMaterial {
     std::shared_ptr<RenderTexture> m_texture{};
+    std::shared_ptr<GPUPipeline> m_pipeline{};
     VkDescriptorSet m_descriptor_set{};
 
 public:
     RenderMaterial(VkDevice device, VkDescriptorPool descriptor_pool, VkDescriptorSetLayout descriptor_set_layout,
-                   const std::shared_ptr<RenderTexture>& texture)
-        : m_texture(texture)
+                   const std::shared_ptr<RenderTexture>& texture, const std::shared_ptr<GPUPipeline>& pipeline)
+        : m_texture(texture), m_pipeline(pipeline)
     {
         GC_ASSERT(m_texture);
         VkDescriptorSetAllocateInfo info{};
@@ -107,9 +108,33 @@ public:
     }
 
     const auto& getTexture() const { return m_texture; }
+    const auto& getPipeline() const { return m_pipeline; }
 
     // call getTexture().isUploaded() before binding
     VkDescriptorSet getDescriptorSet() const { return m_descriptor_set; }
+};
+
+class RenderMesh {
+    std::shared_ptr<GPUBuffer> m_vertex_buffer{};
+    mutable bool m_uploaded{};
+
+public:
+    RenderMesh(const std::shared_ptr<GPUBuffer>& vertex_buffer) : m_vertex_buffer(vertex_buffer), m_uploaded(false) {}
+
+    bool isUploaded() const
+    {
+        if (m_uploaded) {
+            return true;
+        }
+        // if the buffer is no longer in use by the queue, assuming the buffer was just created, this means the buffer is uploaded.
+        if (m_vertex_buffer->isFree()) {
+            m_uploaded = true;
+            return true;
+        }
+        return false;
+    }
+
+    const auto& getVertexBuffer() const { return m_vertex_buffer; }
 };
 
 enum class RenderSyncMode { VSYNC_ON_DOUBLE_BUFFERED, VSYNC_ON_TRIPLE_BUFFERED, VSYNC_ON_TRIPLE_BUFFERED_UNTHROTTLED, VSYNC_OFF };
@@ -178,7 +203,7 @@ public:
 
     GPUPipeline createPipeline(std::span<const uint8_t> vertex_spv, std::span<const uint8_t> fragment_spv);
     RenderTexture createTexture(std::span<const uint8_t> r8g8b8a8_pak);
-    RenderMaterial createMaterial(const std::shared_ptr<RenderTexture>& texture);
+    RenderMaterial createMaterial(const std::shared_ptr<RenderTexture>& texture, const std::shared_ptr<GPUPipeline>& pipeline);
 
     RenderBackendInfo getInfo() const
     {

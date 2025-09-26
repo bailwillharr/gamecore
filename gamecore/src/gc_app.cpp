@@ -3,6 +3,7 @@
 #include <memory>
 #include <thread>
 #include <string>
+#include <numeric>
 
 #include <SDL3/SDL_init.h>
 #include <SDL3/SDL_timer.h>
@@ -188,16 +189,15 @@ void App::run()
 
     WorldDrawData world_draw_data{};
 
-    std::unique_ptr<GPUPipeline> pipeline{};
+    std::shared_ptr<GPUPipeline> pipeline{};
     {
         auto vert = content().loadAsset(strToName("cube.vert"));
         auto frag = content().loadAsset(strToName("cube.frag"));
         if (!vert.empty() && !frag.empty()) {
-            pipeline = std::make_unique<GPUPipeline>(renderBackend().createPipeline(vert, frag));
-            world_draw_data.setPipeline(pipeline.get());
+            pipeline = std::make_shared<GPUPipeline>(renderBackend().createPipeline(vert, frag));
         }
         else {
-            GC_ERROR("Could find cube.vert or cube.frag");
+            GC_ERROR("Couldn't find cube.vert or cube.frag");
         }
     }
 
@@ -205,13 +205,15 @@ void App::run()
     {
         auto image_data = content().loadAsset(strToName("nuke.jpg"));
         if (!image_data.empty()) {
-            material = std::make_unique<RenderMaterial>(renderBackend().createMaterial(std::make_shared<RenderTexture>(renderBackend().createTexture(image_data))));
+            material = std::make_unique<RenderMaterial>(
+                renderBackend().createMaterial(std::make_shared<RenderTexture>(renderBackend().createTexture(image_data)), pipeline));
         }
     }
 
-    world_draw_data.setPipeline(pipeline.get());
     world_draw_data.setMaterial(material.get());
 
+    uint64_t frame_count{};
+    std::array<double, 100> delta_times{};
     uint64_t frame_begin_stamp = SDL_GetTicksNS() - 16'666'667LL; // set first delta time to something reasonable
     while (!window().shouldQuit()) {
         Logger::instance().incrementFrameNumber();
@@ -220,6 +222,8 @@ void App::run()
         frame_begin_stamp = SDL_GetTicksNS();
 
         frame_state.delta_time = static_cast<double>(frame_begin_stamp - last_frame_begin_stamp) * 1e-9;
+        delta_times[frame_count % delta_times.size()] = frame_state.delta_time;
+        frame_state.average_frame_time = std::accumulate(delta_times.cbegin(), delta_times.cend(), 0.0) / static_cast<double>(delta_times.size());
         frame_state.window_state = &window().processEvents(DebugUI::windowEventInterceptor);
 
         {
@@ -256,11 +260,12 @@ void App::run()
             world_draw_data.drawCube(mat);
         }
 
-        m_debug_ui->update(frame_state.delta_time);
+        m_debug_ui->update(frame_state.average_frame_time);
 
         renderBackend().submitFrame(frame_state.window_state->getResizedFlag(), world_draw_data);
         renderBackend().cleanupGPUResources();
 
+        ++frame_count;
         FrameMark;
     }
     GC_TRACE("Quitting...");

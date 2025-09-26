@@ -492,12 +492,11 @@ void RenderBackend::submitFrame(bool window_resized, const WorldDrawData& world_
 
         // render provided draw_data here
         // for now just record into primary command buffer. Might change later.
-        if (world_draw_data.getPipeline() && world_draw_data.getMaterial() && world_draw_data.getMaterial()->getTexture()->isUploaded()) {
-
-            world_draw_data.getPipeline()->useResource(m_main_timeline_semaphore, m_main_timeline_value + 1);
+        if (world_draw_data.getMaterial() && world_draw_data.getMaterial()->getTexture()->isUploaded() && world_draw_data.getMaterial()->getPipeline()) {
+            world_draw_data.getMaterial()->getPipeline()->useResource(m_main_timeline_semaphore, m_main_timeline_value + 1);
             world_draw_data.getMaterial()->getTexture()->getImageView().useResource(m_main_timeline_semaphore, m_main_timeline_value + 1);
 
-            vkCmdBindPipeline(stuff.cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, world_draw_data.getPipeline()->getHandle());
+            vkCmdBindPipeline(stuff.cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, world_draw_data.getMaterial()->getPipeline()->getHandle());
             auto descriptor_set = world_draw_data.getMaterial()->getDescriptorSet();
             vkCmdBindDescriptorSets(stuff.cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, m_pipeline_layout, 0, 1, &descriptor_set, 0, nullptr);
 
@@ -926,9 +925,9 @@ RenderTexture RenderBackend::createTexture(std::span<const uint8_t> r8g8b8a8_pak
     return RenderTexture(GPUImageView(m_delete_queue, image_view, gpu_image));
 };
 
-RenderMaterial RenderBackend::createMaterial(const std::shared_ptr<RenderTexture>& texture)
+RenderMaterial RenderBackend::createMaterial(const std::shared_ptr<RenderTexture>& texture, const std::shared_ptr<GPUPipeline>& pipeline)
 {
-    return RenderMaterial(m_device.getHandle(), m_main_desciptor_pool, m_descriptor_set_layout, texture);
+    return RenderMaterial(m_device.getHandle(), m_main_desciptor_pool, m_descriptor_set_layout, texture, pipeline);
 }
 
 void RenderBackend::waitIdle()
