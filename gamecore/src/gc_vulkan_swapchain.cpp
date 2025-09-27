@@ -5,6 +5,7 @@
 
 #include <SDL3/SDL_vulkan.h>
 #include <SDL3/SDL_video.h>
+#include <SDL3/SDL_timer.h>
 
 #include <tracy/Tracy.hpp>
 
@@ -121,6 +122,7 @@ bool VulkanSwapchain::acquireAndPresent(VkImage image_to_present, bool window_re
             // Do not attempt to acquire and present a swapchain image if the window is minimised (it won't work).
             // False is returned here as there is no point in the application recreating images until the window is un-minimised and its new extent is
             // determined.
+            SDL_Delay(10);
             return false;
         }
         else {

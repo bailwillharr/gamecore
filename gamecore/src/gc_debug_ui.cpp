@@ -98,7 +98,7 @@ void DebugUI::update(double dt)
 
     if (this->active) {
         ImGui::Begin("Debug UI", &this->active);
-        ImGui::Text("Average frame time: %.3f ms", dt * 1000.0);
+        ImGui::Text("Average frame time: %.3f ms (%d fps)", dt * 1000.0, static_cast<int>(std::round(1.0 / dt)));
         ImGui::Checkbox("Show ImGui Demo", &m_show_demo);
         ImGui::SliderInt("Game update delay", &delay_ms, 0, 100);
         ImGui::End();

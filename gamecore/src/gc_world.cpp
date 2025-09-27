@@ -50,11 +50,16 @@ void World::deleteEntity(const Entity entity)
     GC_ASSERT(entity < static_cast<uint32_t>(m_entity_signatures.size()));
     GC_ASSERT(m_entity_signatures[entity].hasTypes<TransformComponent>());
 
+    auto& transform_system = getSystem<TransformSystem>();
+
     // delete children:
-    auto children = getSystem<TransformSystem>().getChildren(entity);
+    auto children = transform_system.getChildren(entity);
     for (Entity child : children) {
         deleteEntity(child);
     }
+
+    // remove from TransformSystem's m_parent_children map
+    transform_system.setParent(entity, ENTITY_NONE);
 
     // delete all components
     for (uint32_t i = 0; i < static_cast<uint32_t>(m_component_arrays.size()); ++i) {

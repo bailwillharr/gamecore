@@ -14,7 +14,6 @@ class World; // forward-dec
 
 class TransformSystem : public System {
 
-    // Entities could be used instead of TransformComponent pointers here. This just reduces the number of calls to getComponent<T>() in the update loop.
     std::unordered_map<Entity, std::vector<Entity>> m_parent_children{};
 
 public:

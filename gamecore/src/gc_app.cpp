@@ -248,10 +248,7 @@ void App::run()
             }
         }
 
-        if (auto comp = m_world->getComponent<TransformComponent>(0)) {
-            comp->setPosition(comp->getPosition() + glm::vec3{frame_state.window_state->getMouseMotion() * 0.02f, 0.0f});
-            comp->setRotation(glm::angleAxis(static_cast<float>(frame_begin_stamp) * 1e-9f, glm::vec3{0.0f, 1.0f, 0.0f}));
-        }
+        m_debug_ui->update(frame_state.average_frame_time);
 
         m_world->update(frame_state);
 
@@ -260,7 +257,6 @@ void App::run()
             world_draw_data.drawCube(mat);
         }
 
-        m_debug_ui->update(frame_state.average_frame_time);
 
         renderBackend().submitFrame(frame_state.window_state->getResizedFlag(), world_draw_data);
         renderBackend().cleanupGPUResources();
