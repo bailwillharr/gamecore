@@ -225,6 +225,30 @@ add_library(stb STATIC
 )
 target_include_directories(stb PUBLIC ${stb_SOURCE_DIR})
 
+# MikkTSpace
+cpmaddpackage(
+    NAME mikktspace
+    URL https://github.com/mmikk/MikkTSpace/archive/3e895b49d05ea07e4c2133156cfa94369e19e409.zip
+    DOWNLOAD_ONLY YES
+)
+add_library(mikktspace STATIC
+    "${mikktspace_SOURCE_DIR}/mikktspace.c"
+    "${mikktspace_SOURCE_DIR}/mikktspace.h"
+)
+target_include_directories(mikktspace PUBLIC ${mikktspace_SOURCE_DIR})
+
+# weldmesh
+cpmaddpackage(
+    NAME weldmesh
+    URL https://github.com/mmikk/Welder/archive/59810ac9b41b0084a9e5acf4ed69a777db51b4bd.zip
+    DOWNLOAD_ONLY YES
+)
+add_library(weldmesh STATIC
+    "${weldmesh_SOURCE_DIR}/weldmesh.c"
+    "${weldmesh_SOURCE_DIR}/weldmesh.h"
+)
+target_include_directories(weldmesh PUBLIC ${weldmesh_SOURCE_DIR})
+
 # shaderc_combined (from Vulkan SDK)
 find_package(Vulkan REQUIRED COMPONENTS shaderc_combined REQUIRED)
 

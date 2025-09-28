@@ -506,7 +506,7 @@ void RenderBackend::submitFrame(bool window_resized, const WorldDrawData& world_
 
                 vkCmdPushConstants(stuff.cmd, m_pipeline_layout, VK_SHADER_STAGE_VERTEX_BIT, 0, 64, &entry.world_matrix);
                 entry.mesh->bind(stuff.cmd, m_main_timeline_semaphore, m_main_timeline_value + 1);
-                vkCmdDraw(stuff.cmd, 36, 1, 0, 0);
+                vkCmdDrawIndexed(stuff.cmd, entry.mesh->getIndexCount(), 1, 0, 0, 0);
             }
         }
 
@@ -961,7 +961,9 @@ RenderMaterial RenderBackend::createMaterial(const std::shared_ptr<RenderTexture
 RenderMesh RenderBackend::createMesh(std::span<const MeshVertex> vertices, std::span<const uint16_t> indices)
 {
     GC_ASSERT(vertices.size() <= static_cast<size_t>(std::numeric_limits<decltype(indices)::value_type>::max()));
+    GC_ASSERT(indices.size() <= static_cast<size_t>(std::numeric_limits<uint32_t>::max()));
 
+    const uint32_t num_indices = static_cast<uint32_t>(indices.size());
     const size_t vertices_size = vertices.size() * sizeof(decltype(vertices)::value_type);
     const size_t indices_size = indices.size() * sizeof(decltype(indices)::value_type);
     const VkDeviceSize buffer_size = static_cast<VkDeviceSize>(vertices_size + indices_size);
@@ -1077,7 +1079,7 @@ RenderMesh RenderBackend::createMesh(std::span<const MeshVertex> vertices, std::
     GPUBuffer managed_buffer(m_delete_queue, buffer, buffer_alloc);
     managed_buffer.useResource(m_transfer_timeline_semaphore, m_transfer_timeline_value);
 
-    return RenderMesh(std::move(managed_buffer), static_cast<VkDeviceSize>(vertices_size), VK_INDEX_TYPE_UINT16);
+    return RenderMesh(std::move(managed_buffer), static_cast<VkDeviceSize>(vertices_size), VK_INDEX_TYPE_UINT16, num_indices);
 }
 
 void RenderBackend::waitIdle()

@@ -1,3 +1,5 @@
+#include <SDL3/SDL_main.h>
+
 #include <gamecore/gc_app.h>
 
 #include "game.h"

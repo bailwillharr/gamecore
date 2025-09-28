@@ -17,14 +17,15 @@ void buildAndStartGame(gc::App& app)
     gc::RenderBackend& render_backend = app.renderBackend();
 
     // On Windows/NVIDIA, triple buffered gives horrible latency so use double buffering instead
-    render_backend.setSyncMode(gc::RenderSyncMode::VSYNC_ON_DOUBLE_BUFFERED);
+    render_backend.setSyncMode(gc::RenderSyncMode::VSYNC_OFF);
 
     world.registerComponent<SpinComponent, gc::ComponentArrayType::SPARSE>();
     world.registerComponent<MouseMoveComponent, gc::ComponentArrayType::SPARSE>();
     world.registerSystem<SpinSystem>();
     world.registerSystem<MouseMoveSystem>();
 
-    auto mesh = genSphereMesh(app.renderBackend(), 1.0f, 12);
+    //auto mesh = genCuboidMesh(app.renderBackend(), 1.0f, 1.0f, 1.0f);
+    auto mesh = genSphereMesh(app.renderBackend(), 1.0f, 24);
 
     std::array<gc::Entity, 36> cubes{};
     const gc::Entity parent = world.createEntity(gc::strToName("parent"), gc::ENTITY_NONE, glm::vec3{0.0f, 0.0f, 25.0f});

@@ -66,5 +66,4 @@ void main() {
 	// tone mapping
 	const vec3 hdr_color = emission + lighting;
 	outColor = vec4(hdr_color / (hdr_color + 1.0), 1.0);
-	outColor = vec4(fragUV, 0.0, 1.0);
 }

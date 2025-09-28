@@ -189,8 +189,8 @@ void App::run()
 
     std::shared_ptr<GPUPipeline> pipeline{};
     {
-        auto vert = content().loadAsset(strToName("cube.vert"));
-        auto frag = content().loadAsset(strToName("cube.frag"));
+        auto vert = content().loadAsset(strToName("fancy.vert"));
+        auto frag = content().loadAsset(strToName("fancy.frag"));
         if (!vert.empty() && !frag.empty()) {
             pipeline = std::make_shared<GPUPipeline>(renderBackend().createPipeline(vert, frag));
         }
@@ -234,10 +234,7 @@ void App::run()
             }
             if (frame_state.window_state->getKeyPress(SDL_SCANCODE_F10)) {
                 m_debug_ui->active = !m_debug_ui->active;
-            }
-            if (frame_state.window_state->getKeyPress(SDL_SCANCODE_X)) {
-                // show/hide mouse
-                window().setMouseCaptured(!frame_state.window_state->getIsMouseCaptured());
+                window().setMouseCaptured(!m_debug_ui->active);
             }
             if (frame_state.window_state->getKeyPress(SDL_SCANCODE_T)) {
                 if (auto comp = m_world->getComponent<TransformComponent>(0)) {

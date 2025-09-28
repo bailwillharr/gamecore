@@ -74,7 +74,7 @@ DebugUI::DebugUI(SDL_Window* window, const RenderBackendInfo& render_backend_inf
         }
     }
 
-    this->active = true;
+    this->active = false;
 
     GC_TRACE("Initialised DebugUI");
 }
@@ -97,7 +97,7 @@ void DebugUI::update(double dt)
     static int delay_ms{};
 
     if (this->active) {
-        ImGui::Begin("Debug UI", &this->active);
+        ImGui::Begin("Debug UI", nullptr);
         ImGui::Text("Average frame time: %.3f ms (%d fps)", dt * 1000.0, static_cast<int>(std::round(1.0 / dt)));
         ImGui::Checkbox("Show ImGui Demo", &m_show_demo);
         ImGui::SliderInt("Game update delay", &delay_ms, 0, 100);
