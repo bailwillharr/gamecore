@@ -9,7 +9,6 @@ layout(location = 0) in vec2 fragUV; // for looking up textures
 layout(location = 1) in vec3 fragPosTangentSpace; // finding view vector
 layout(location = 2) in vec3 fragViewPosTangentSpace; // finding view vector
 layout(location = 3) in vec3 fragLightDirTangentSpace; // directional light
-layout(location = 4) in vec3 fragColor;
 
 layout(location = 0) out vec4 outColor;
 
@@ -67,4 +66,5 @@ void main() {
 	// tone mapping
 	const vec3 hdr_color = emission + lighting;
 	outColor = vec4(hdr_color / (hdr_color + 1.0), 1.0);
+	outColor = vec4(fragUV, 0.0, 1.0);
 }

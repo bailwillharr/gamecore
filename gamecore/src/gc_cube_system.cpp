@@ -15,11 +15,9 @@ void CubeSystem::onUpdate(FrameState& frame_state)
 {
     ZoneScoped;
 
-    frame_state.cube_transforms.clear();
-
     m_world.forEach<TransformComponent, CubeComponent>([&]([[maybe_unused]] Entity entity, TransformComponent& t, CubeComponent& c) {
-        if (c.visible) {
-            frame_state.cube_transforms.push_back(t.getWorldMatrix());
+        if (c.visible && c.mesh) {
+            frame_state.draw_data.drawMesh(t.getWorldMatrix(), c.mesh);
         }
     });
 }

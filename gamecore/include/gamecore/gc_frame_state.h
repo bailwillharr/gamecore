@@ -2,7 +2,7 @@
 
 #include <vector>
 
-#include <mat4x4.hpp>
+#include "gamecore/gc_world_draw_data.h"
 
 namespace gc {
 
@@ -13,7 +13,7 @@ struct FrameState {
     const WindowState* window_state{};
     double delta_time{};
     double average_frame_time{};
-    std::vector<glm::mat4> cube_transforms{};
+    WorldDrawData draw_data{};
 };
 
 } // namespace gc

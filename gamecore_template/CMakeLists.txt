@@ -4,6 +4,14 @@ project(gamecore_template LANGUAGES CXX VERSION 0.1.0)
 
 set(SRC_FILES
   "src/main.cpp"
+  "src/game.h"
+  "src/game.cpp"
+  "src/spin.h"
+  "src/spin.cpp"
+  "src/mouse_move.h"
+  "src/mouse_move.cpp"
+  "src/gen_mesh.h"
+  "src/gen_mesh.cpp"
 )
 
 if(WIN32)

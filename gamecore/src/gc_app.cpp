@@ -187,8 +187,6 @@ void App::run()
 
     FrameState frame_state{};
 
-    WorldDrawData world_draw_data{};
-
     std::shared_ptr<GPUPipeline> pipeline{};
     {
         auto vert = content().loadAsset(strToName("cube.vert"));
@@ -210,7 +208,7 @@ void App::run()
         }
     }
 
-    world_draw_data.setMaterial(material.get());
+    frame_state.draw_data.setMaterial(material.get());
 
     uint64_t frame_count{};
     std::array<double, 20> delta_times{};
@@ -252,13 +250,8 @@ void App::run()
 
         m_world->update(frame_state);
 
-        world_draw_data.reset();
-        for (const auto& mat : frame_state.cube_transforms) {
-            world_draw_data.drawCube(mat);
-        }
-
-
-        renderBackend().submitFrame(frame_state.window_state->getResizedFlag(), world_draw_data);
+        renderBackend().submitFrame(frame_state.window_state->getResizedFlag(), frame_state.draw_data);
+        frame_state.draw_data.reset();
         renderBackend().cleanupGPUResources();
 
         ++frame_count;

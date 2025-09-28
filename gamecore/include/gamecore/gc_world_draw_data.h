@@ -7,21 +7,24 @@
 namespace gc {
 
 class RenderMaterial; // forward-dec
+class RenderMesh;     // forward-dec
 
-// Holds the draw data for the World this current frame.
-// Owned by the RenderBackend, one per frame in flight.
-// Every frame the draw data must be 'reset'.
+struct WorldDrawEntry {
+    glm::mat4 world_matrix{};
+    RenderMesh* mesh{};
+};
+
 class WorldDrawData {
-    std::vector<glm::mat4> m_cube_matrices{}; // start simple
+    std::vector<WorldDrawEntry> m_draw_entries{}; // start simple
     RenderMaterial* m_material{};
 
 public:
-    void drawCube(const glm::mat4& model_matrix) { m_cube_matrices.push_back(model_matrix); }
-    void reset() { m_cube_matrices.clear(); }
+    void drawMesh(const glm::mat4& world_matrix, RenderMesh* mesh) { m_draw_entries.emplace_back(world_matrix, mesh); }
+    void reset() { m_draw_entries.clear(); }
 
     void setMaterial(RenderMaterial* material) { m_material = material; }
 
-    const auto& getCubeMatrices() const { return m_cube_matrices; }
+    const auto& getDrawEntries() const { return m_draw_entries; }
     auto getMaterial() const { return m_material; }
 };
 

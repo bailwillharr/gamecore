@@ -492,20 +492,20 @@ void RenderBackend::submitFrame(bool window_resized, const WorldDrawData& world_
 
         // render provided draw_data here
         // for now just record into primary command buffer. Might change later.
-        if (world_draw_data.getMaterial() && world_draw_data.getMaterial()->getTexture()->isUploaded() && world_draw_data.getMaterial()->getPipeline()) {
-            world_draw_data.getMaterial()->getPipeline()->useResource(m_main_timeline_semaphore, m_main_timeline_value + 1);
-            world_draw_data.getMaterial()->getTexture()->getImageView().useResource(m_main_timeline_semaphore, m_main_timeline_value + 1);
+        if (world_draw_data.getMaterial() && world_draw_data.getMaterial()->getTexture()->isUploaded()) {
 
-            vkCmdBindPipeline(stuff.cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, world_draw_data.getMaterial()->getPipeline()->getHandle());
-            auto descriptor_set = world_draw_data.getMaterial()->getDescriptorSet();
-            vkCmdBindDescriptorSets(stuff.cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, m_pipeline_layout, 0, 1, &descriptor_set, 0, nullptr);
+            world_draw_data.getMaterial()->bind(stuff.cmd, m_pipeline_layout, m_main_timeline_semaphore, m_main_timeline_value + 1);
 
+            // This is very fast. Might as well do it every frame.
             const double aspect_ratio = static_cast<double>(m_swapchain.getExtent().width) / static_cast<double>(m_swapchain.getExtent().height);
             glm::mat4 projection_matrix = glm::perspectiveLH_ZO(glm::radians(45.0), aspect_ratio, 0.1, 1000.0);
             vkCmdPushConstants(stuff.cmd, m_pipeline_layout, VK_SHADER_STAGE_VERTEX_BIT, 64, 64, &projection_matrix);
 
-            for (const auto& matrix : world_draw_data.getCubeMatrices()) {
-                vkCmdPushConstants(stuff.cmd, m_pipeline_layout, VK_SHADER_STAGE_VERTEX_BIT, 0, 64, &matrix);
+            for (const auto& entry : world_draw_data.getDrawEntries()) {
+                GC_ASSERT(entry.mesh);
+
+                vkCmdPushConstants(stuff.cmd, m_pipeline_layout, VK_SHADER_STAGE_VERTEX_BIT, 0, 64, &entry.world_matrix);
+                entry.mesh->bind(stuff.cmd, m_main_timeline_semaphore, m_main_timeline_value + 1);
                 vkCmdDraw(stuff.cmd, 36, 1, 0, 0);
             }
         }
@@ -581,7 +581,8 @@ void RenderBackend::submitFrame(bool window_resized, const WorldDrawData& world_
     m_present_finished_value = m_main_timeline_value;
 
     if (swapchain_recreated) {
-        GC_CHECKVK(vkQueueWaitIdle(m_device.getMainQueue())); // if window was just un-minimised, acquireAndPresent() will be using the framebuffer image right now.
+        GC_CHECKVK(
+            vkQueueWaitIdle(m_device.getMainQueue())); // if window was just un-minimised, acquireAndPresent() will be using the framebuffer image right now.
         recreateDepthStencil(m_device.getHandle(), m_allocator.getHandle(), m_depth_stencil_format, m_swapchain.getExtent(), m_depth_stencil,
                              m_depth_stencil_allocation, m_depth_stencil_view);
         recreateFramebufferImage(m_device.getHandle(), m_allocator.getHandle(), m_swapchain.getSurfaceFormat().format, m_swapchain.getExtent(),
@@ -633,14 +634,40 @@ GPUPipeline RenderBackend::createPipeline(std::span<const uint8_t> vertex_spv, s
     stage_infos[1].stage = VK_SHADER_STAGE_FRAGMENT_BIT;
     stage_infos[1].module = fragment_module;
 
+    VkVertexInputBindingDescription vertex_input_binding{};
+    vertex_input_binding.binding = 0;
+    vertex_input_binding.stride = static_cast<uint32_t>(sizeof(MeshVertex));
+    vertex_input_binding.inputRate = VK_VERTEX_INPUT_RATE_VERTEX;
+
+    std::array<VkVertexInputAttributeDescription, 4> vertex_input_attributes{};
+    vertex_input_attributes[0].binding = 0;
+    vertex_input_attributes[0].location = 0;
+    vertex_input_attributes[0].format = VK_FORMAT_R32G32B32_SFLOAT;
+    vertex_input_attributes[0].offset = static_cast<uint32_t>(offsetof(MeshVertex, position));
+
+    vertex_input_attributes[1].binding = 0;
+    vertex_input_attributes[1].location = 1;
+    vertex_input_attributes[1].format = VK_FORMAT_R32G32B32_SFLOAT;
+    vertex_input_attributes[1].offset = static_cast<uint32_t>(offsetof(MeshVertex, normal));
+
+    vertex_input_attributes[2].binding = 0;
+    vertex_input_attributes[2].location = 2;
+    vertex_input_attributes[2].format = VK_FORMAT_R32G32B32A32_SFLOAT;
+    vertex_input_attributes[2].offset = static_cast<uint32_t>(offsetof(MeshVertex, tangent));
+
+    vertex_input_attributes[3].binding = 0;
+    vertex_input_attributes[3].location = 3;
+    vertex_input_attributes[3].format = VK_FORMAT_R32G32_SFLOAT;
+    vertex_input_attributes[3].offset = static_cast<uint32_t>(offsetof(MeshVertex, uv));
+
     VkPipelineVertexInputStateCreateInfo vertex_input_state{};
     vertex_input_state.sType = VK_STRUCTURE_TYPE_PIPELINE_VERTEX_INPUT_STATE_CREATE_INFO;
     vertex_input_state.pNext = nullptr;
     vertex_input_state.flags = 0;
-    vertex_input_state.vertexBindingDescriptionCount = 0;
-    vertex_input_state.pVertexBindingDescriptions = nullptr;
-    vertex_input_state.vertexAttributeDescriptionCount = 0;
-    vertex_input_state.pVertexAttributeDescriptions = nullptr;
+    vertex_input_state.vertexBindingDescriptionCount = 1;
+    vertex_input_state.pVertexBindingDescriptions = &vertex_input_binding;
+    vertex_input_state.vertexAttributeDescriptionCount = static_cast<uint32_t>(vertex_input_attributes.size());
+    vertex_input_state.pVertexAttributeDescriptions = vertex_input_attributes.data();
 
     VkPipelineInputAssemblyStateCreateInfo input_assembly_state{};
     input_assembly_state.sType = VK_STRUCTURE_TYPE_PIPELINE_INPUT_ASSEMBLY_STATE_CREATE_INFO;
@@ -665,9 +692,9 @@ GPUPipeline RenderBackend::createPipeline(std::span<const uint8_t> vertex_spv, s
     rasterization_state.cullMode = VK_CULL_MODE_BACK_BIT;
     rasterization_state.frontFace = VK_FRONT_FACE_CLOCKWISE; // it is actually CCW but shader flips things
     rasterization_state.depthBiasEnable = VK_FALSE;
-    rasterization_state.depthBiasConstantFactor = 0.0f; // ignored
-    rasterization_state.depthBiasClamp = 0.0f;          // ignored
-    rasterization_state.depthBiasSlopeFactor = 0.0f;    // ignored
+    rasterization_state.depthBiasConstantFactor = 0.0f;      // ignored
+    rasterization_state.depthBiasClamp = 0.0f;               // ignored
+    rasterization_state.depthBiasSlopeFactor = 0.0f;         // ignored
 
     const VkFormat color_attachment_format = m_swapchain.getSurfaceFormat().format;
 
@@ -776,7 +803,7 @@ RenderTexture RenderBackend::createTexture(std::span<const uint8_t> r8g8b8a8_pak
     VmaAllocationCreateInfo buffer_alloc_info{};
     buffer_alloc_info.usage = VMA_MEMORY_USAGE_AUTO;
     buffer_alloc_info.flags = VMA_ALLOCATION_CREATE_HOST_ACCESS_SEQUENTIAL_WRITE_BIT;
-    buffer_alloc_info.requiredFlags = VK_MEMORY_PROPERTY_HOST_COHERENT_BIT;
+    buffer_alloc_info.priority = 0.5f;
     VkBuffer buffer{};
     VmaAllocation buffer_alloc{};
     GC_CHECKVK(vmaCreateBuffer(m_allocator.getHandle(), &buffer_info, &buffer_alloc_info, &buffer, &buffer_alloc, nullptr));
@@ -929,6 +956,128 @@ RenderTexture RenderBackend::createTexture(std::span<const uint8_t> r8g8b8a8_pak
 RenderMaterial RenderBackend::createMaterial(const std::shared_ptr<RenderTexture>& texture, const std::shared_ptr<GPUPipeline>& pipeline)
 {
     return RenderMaterial(m_device.getHandle(), m_main_desciptor_pool, m_descriptor_set_layout, texture, pipeline);
+}
+
+RenderMesh RenderBackend::createMesh(std::span<const MeshVertex> vertices, std::span<const uint16_t> indices)
+{
+    GC_ASSERT(vertices.size() <= static_cast<size_t>(std::numeric_limits<decltype(indices)::value_type>::max()));
+
+    const size_t vertices_size = vertices.size() * sizeof(decltype(vertices)::value_type);
+    const size_t indices_size = indices.size() * sizeof(decltype(indices)::value_type);
+    const VkDeviceSize buffer_size = static_cast<VkDeviceSize>(vertices_size + indices_size);
+
+    // create and map staging buffer
+    VkBuffer staging_buffer{};
+    VmaAllocation staging_alloc{};
+    {
+        VkBufferCreateInfo staging_buffer_info{};
+        staging_buffer_info.sType = VK_STRUCTURE_TYPE_BUFFER_CREATE_INFO;
+        staging_buffer_info.size = buffer_size;
+        staging_buffer_info.usage = VK_BUFFER_USAGE_TRANSFER_SRC_BIT;
+        staging_buffer_info.sharingMode = VK_SHARING_MODE_EXCLUSIVE;
+        VmaAllocationCreateInfo staging_alloc_info{};
+        staging_alloc_info.usage = VMA_MEMORY_USAGE_AUTO;
+        staging_alloc_info.flags = VMA_ALLOCATION_CREATE_HOST_ACCESS_SEQUENTIAL_WRITE_BIT;
+        staging_alloc_info.priority = 0.5f;
+        GC_CHECKVK(vmaCreateBuffer(m_allocator.getHandle(), &staging_buffer_info, &staging_alloc_info, &staging_buffer, &staging_alloc, nullptr));
+    }
+    GPUBuffer managed_staging_buffer(m_delete_queue, staging_buffer, staging_alloc);
+    uint8_t* data_dest{};
+    GC_CHECKVK(vmaMapMemory(m_allocator.getHandle(), staging_alloc, reinterpret_cast<void**>(&data_dest)));
+    std::memcpy(data_dest, reinterpret_cast<const uint8_t*>(vertices.data()), vertices_size);
+    std::memcpy(data_dest + vertices_size, reinterpret_cast<const uint8_t*>(indices.data()), indices_size);
+    vmaUnmapMemory(m_allocator.getHandle(), staging_alloc);
+
+    // create destination buffer
+    VkBuffer buffer{};
+    VmaAllocation buffer_alloc{};
+    {
+        VkBufferCreateInfo buffer_info{};
+        buffer_info.sType = VK_STRUCTURE_TYPE_BUFFER_CREATE_INFO;
+        buffer_info.size = buffer_size;
+        buffer_info.usage = VK_BUFFER_USAGE_TRANSFER_DST_BIT | VK_BUFFER_USAGE_VERTEX_BUFFER_BIT | VK_BUFFER_USAGE_INDEX_BUFFER_BIT;
+        buffer_info.sharingMode = VK_SHARING_MODE_EXCLUSIVE;
+        VmaAllocationCreateInfo buffer_alloc_info{};
+        buffer_alloc_info.usage = VMA_MEMORY_USAGE_AUTO;
+        buffer_alloc_info.flags = 0;
+        buffer_alloc_info.priority = 0.5f;
+        GC_CHECKVK(vmaCreateBuffer(m_allocator.getHandle(), &buffer_info, &buffer_alloc_info, &buffer, &buffer_alloc, nullptr));
+    }
+
+    // copy vertices and indices to the buffer
+    {
+        VkCommandBufferAllocateInfo cmd_info{};
+        cmd_info.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_ALLOCATE_INFO;
+        cmd_info.level = VK_COMMAND_BUFFER_LEVEL_PRIMARY;
+        cmd_info.commandPool = m_transfer_cmd_pool;
+        cmd_info.commandBufferCount = 1;
+        VkCommandBuffer cmd{};
+        GC_CHECKVK(vkAllocateCommandBuffers(m_device.getHandle(), &cmd_info, &cmd));
+
+        VkCommandBufferBeginInfo begin_info{};
+        begin_info.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO;
+        begin_info.flags = VK_COMMAND_BUFFER_USAGE_ONE_TIME_SUBMIT_BIT;
+        GC_CHECKVK(vkBeginCommandBuffer(cmd, &begin_info));
+
+        VkBufferCopy region{};
+        region.srcOffset = 0;
+        region.dstOffset = 0;
+        region.size = buffer_size;
+        vkCmdCopyBuffer(cmd, staging_buffer, buffer, 1, &region);
+
+        VkBufferMemoryBarrier2 barrier{};
+        barrier.sType = VK_STRUCTURE_TYPE_BUFFER_MEMORY_BARRIER_2;
+        barrier.srcStageMask = VK_PIPELINE_STAGE_2_COPY_BIT;
+        barrier.srcAccessMask = VK_ACCESS_2_TRANSFER_WRITE_BIT;
+        barrier.dstStageMask = VK_PIPELINE_STAGE_2_VERTEX_INPUT_BIT;
+        barrier.dstAccessMask = VK_ACCESS_2_INDEX_READ_BIT | VK_ACCESS_2_VERTEX_ATTRIBUTE_READ_BIT;
+        barrier.srcQueueFamilyIndex = m_device.getQueueFamilyIndex();
+        barrier.dstQueueFamilyIndex = m_device.getQueueFamilyIndex();
+        barrier.buffer = buffer;
+        barrier.offset = 0;
+        barrier.size = buffer_size;
+        VkDependencyInfo dependency{};
+        dependency.sType = VK_STRUCTURE_TYPE_DEPENDENCY_INFO;
+        dependency.bufferMemoryBarrierCount = 1;
+        dependency.pBufferMemoryBarriers = &barrier;
+        vkCmdPipelineBarrier2(cmd, &dependency);
+
+        GC_CHECKVK(vkEndCommandBuffer(cmd));
+
+        VkCommandBufferSubmitInfo cmd_submit_info{};
+        cmd_submit_info.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_SUBMIT_INFO;
+        cmd_submit_info.commandBuffer = cmd;
+        VkSemaphoreSubmitInfo signal_info{};
+        signal_info.sType = VK_STRUCTURE_TYPE_SEMAPHORE_SUBMIT_INFO;
+        signal_info.semaphore = m_transfer_timeline_semaphore;
+        signal_info.value = ++m_transfer_timeline_value;
+        signal_info.stageMask = VK_PIPELINE_STAGE_2_COPY_BIT;
+        VkSubmitInfo2 submit_info{};
+        submit_info.sType = VK_STRUCTURE_TYPE_SUBMIT_INFO_2;
+        submit_info.waitSemaphoreInfoCount = 0;
+        submit_info.commandBufferInfoCount = 1;
+        submit_info.pCommandBufferInfos = &cmd_submit_info;
+        submit_info.signalSemaphoreInfoCount = 1;
+        submit_info.pSignalSemaphoreInfos = &signal_info;
+        const auto transfer_queue = m_device.getTransferQueue();
+        GC_CHECKVK(vkQueueSubmit2(transfer_queue, 1, &submit_info, VK_NULL_HANDLE));
+
+        GPUResourceDeleteQueue::DeletionEntry command_buffer_deletion_entry{};
+        command_buffer_deletion_entry.timeline_semaphore = m_transfer_timeline_semaphore;
+        command_buffer_deletion_entry.resource_free_signal_value = m_transfer_timeline_value;
+        const VkCommandPool transfer_cmd_pool = m_transfer_cmd_pool;
+        command_buffer_deletion_entry.deleter = [transfer_cmd_pool, cmd](VkDevice device, [[maybe_unused]] VmaAllocator allocator) {
+            GC_TRACE("freeing command buffer: {}", reinterpret_cast<void*>(cmd));
+            vkFreeCommandBuffers(device, transfer_cmd_pool, 1, &cmd);
+        };
+        m_delete_queue.markForDeletion(command_buffer_deletion_entry);
+    }
+
+    managed_staging_buffer.useResource(m_transfer_timeline_semaphore, m_transfer_timeline_value);
+    GPUBuffer managed_buffer(m_delete_queue, buffer, buffer_alloc);
+    managed_buffer.useResource(m_transfer_timeline_semaphore, m_transfer_timeline_value);
+
+    return RenderMesh(std::move(managed_buffer), static_cast<VkDeviceSize>(vertices_size), VK_INDEX_TYPE_UINT16);
 }
 
 void RenderBackend::waitIdle()

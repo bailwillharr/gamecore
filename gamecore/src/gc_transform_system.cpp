@@ -25,7 +25,9 @@ void TransformSystem::onUpdate(FrameState& frame_state)
                 updateWorldMatricesRecursively(entity);
             }
             else {
-                updateWorldMatricesRecursively(entity, m_world.getComponent<TransformComponent>(t.m_parent)->m_world_matrix);
+                auto parent_transform = m_world.getComponent<TransformComponent>(t.m_parent);
+                GC_ASSERT(parent_transform);
+                updateWorldMatricesRecursively(entity, parent_transform->m_world_matrix);
             }
         }
     });

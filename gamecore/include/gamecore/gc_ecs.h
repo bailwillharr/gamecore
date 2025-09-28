@@ -14,8 +14,8 @@
 
 namespace gc {
 
-class World;      // forward-dec
-class System;     // forward-dec
+class World;       // forward-dec
+class System;      // forward-dec
 struct FrameState; // forward-dec
 
 using Entity = uint32_t;
@@ -114,9 +114,7 @@ enum class ComponentArrayType { SPARSE, DENSE };
 
 template <ValidComponent T, ComponentArrayType ArrayType>
 class ComponentArray : public IComponentArray {
-    static_assert(std::is_trivially_copyable_v<T>, "Component must be trivially copyable");
-
-    std::vector<T> m_component_array{};
+    std::vector<T> m_component_array{}; // looked up via entity if dense (since Entity is just an integer), looked up via m_entity_component_indices if sparse
     std::unordered_map<Entity, uint32_t> m_entity_component_indices{}; // only used if sparse
     std::stack<uint32_t> m_free_indices{};                             // only used if sparse
 

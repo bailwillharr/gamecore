@@ -3,13 +3,17 @@
 layout(push_constant) uniform PushConstants {
     mat4 world_transform;
 	mat4 projection;
-} pc; 
+} pc;
+
+layout(location = 0) in vec3 inPosition;
+layout(location = 1) in vec3 inNorm;
+layout(location = 2) in vec4 inTangent;
+layout(location = 3) in vec2 inUV;
 
 layout(location = 0) out vec2 fragUV; // for looking up textures
 layout(location = 1) out vec3 fragPosTangentSpace; // finding view vector
 layout(location = 2) out vec3 fragViewPosTangentSpace; // finding view vector
 layout(location = 3) out vec3 fragLightDirTangentSpace; // directional light
-layout(location = 4) out vec3 fragColor;
 
 // Cube vertex positions
 const vec3 vertices[8] = vec3[](
@@ -62,11 +66,6 @@ const vec2 uvs[36] = vec2[](
 );
 
 void main() {
-    const vec3 inPosition = vertices[indices[gl_VertexIndex]] + vec3(float(gl_InstanceIndex / 4) * 3.0, float(gl_InstanceIndex % 4) * 3.0, 0.0);
-    const vec3 inNorm = normals[gl_VertexIndex / 6];
-    const vec4 inTangent = vec4(tangents[gl_VertexIndex / 6], 1.0);
-    const vec2 inUV = uvs[gl_VertexIndex];
-
 	vec4 worldPosition = pc.world_transform * vec4(inPosition, 1.0);
 	gl_Position = pc.projection * worldPosition;
 	
@@ -81,8 +80,6 @@ void main() {
 	fragPosTangentSpace = worldToTangentSpace * vec3(worldPosition);
 	fragViewPosTangentSpace = worldToTangentSpace * vec3(0.0, 0.0, 0.0);
 	fragLightDirTangentSpace = worldToTangentSpace * normalize(vec3(0.1,0.1,-1.0)); // directional light
-
-    fragColor = (inNorm + 1.0) * 0.5;
 
 	gl_Position.y *= -1.0;
 }

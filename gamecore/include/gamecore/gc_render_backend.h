@@ -24,6 +24,10 @@
 #include <span>
 #include <memory>
 
+#include <vec2.hpp>
+#include <vec3.hpp>
+#include <vec4.hpp>
+
 #include "gamecore/gc_vulkan_common.h"
 #include "gamecore/gc_vulkan_device.h"
 #include "gamecore/gc_vulkan_allocator.h"
@@ -49,6 +53,7 @@ struct RenderBackendInfo {
 };
 
 class RenderTexture {
+
     GPUImageView m_image_view;
     mutable bool m_uploaded;
 
@@ -76,9 +81,16 @@ public:
     GPUImageView& getImageView() { return m_image_view; }
 };
 
+struct MeshVertex {
+    glm::vec3 position;
+    glm::vec3 normal;
+    glm::vec4 tangent;
+    glm::vec2 uv;
+};
+
 class RenderMaterial {
-    std::shared_ptr<RenderTexture> m_texture{};
-    std::shared_ptr<GPUPipeline> m_pipeline{};
+    const std::shared_ptr<RenderTexture> m_texture{};
+    const std::shared_ptr<GPUPipeline> m_pipeline{};
     VkDescriptorSet m_descriptor_set{};
 
 public:
@@ -86,7 +98,12 @@ public:
                    const std::shared_ptr<RenderTexture>& texture, const std::shared_ptr<GPUPipeline>& pipeline)
         : m_texture(texture), m_pipeline(pipeline)
     {
+        GC_ASSERT(device);
+        GC_ASSERT(descriptor_pool);
+        GC_ASSERT(descriptor_set_layout);
         GC_ASSERT(m_texture);
+        GC_ASSERT(m_pipeline);
+
         VkDescriptorSetAllocateInfo info{};
         info.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_ALLOCATE_INFO;
         info.descriptorPool = descriptor_pool;
@@ -112,14 +129,36 @@ public:
 
     // call getTexture().isUploaded() before binding
     VkDescriptorSet getDescriptorSet() const { return m_descriptor_set; }
+
+    void bind(VkCommandBuffer cmd, VkPipelineLayout pipeline_layout, VkSemaphore timeline_semaphore, uint64_t signal_value) const
+    {
+        GC_ASSERT(cmd);
+        GC_ASSERT(pipeline_layout);
+        GC_ASSERT(timeline_semaphore);
+        GC_ASSERT(m_pipeline->getHandle());
+
+        vkCmdBindPipeline(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, m_pipeline->getHandle());
+        m_pipeline->useResource(timeline_semaphore, signal_value);
+
+        vkCmdBindDescriptorSets(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, pipeline_layout, 0, 1, &m_descriptor_set, 0, nullptr);
+        m_texture->getImageView().useResource(timeline_semaphore, signal_value);
+    }
 };
 
 class RenderMesh {
-    std::shared_ptr<GPUBuffer> m_vertex_buffer{};
-    mutable bool m_uploaded{};
+    GPUBuffer m_vertex_index_buffer;
+    const VkDeviceSize m_indices_offset;
+    const VkIndexType m_index_type;
+
+    mutable bool m_uploaded{false};
 
 public:
-    RenderMesh(const std::shared_ptr<GPUBuffer>& vertex_buffer) : m_vertex_buffer(vertex_buffer), m_uploaded(false) {}
+    RenderMesh(GPUBuffer&& vertex_index_buffer, VkDeviceSize indices_offset, VkIndexType index_type)
+        : m_vertex_index_buffer(std::move(vertex_index_buffer)), m_indices_offset(indices_offset), m_index_type(index_type)
+    {
+        GC_ASSERT(m_indices_offset > 0ULL);
+        GC_ASSERT(m_index_type == VK_INDEX_TYPE_UINT16 || m_index_type == VK_INDEX_TYPE_UINT32);
+    }
 
     bool isUploaded() const
     {
@@ -127,14 +166,25 @@ public:
             return true;
         }
         // if the buffer is no longer in use by the queue, assuming the buffer was just created, this means the buffer is uploaded.
-        if (m_vertex_buffer->isFree()) {
+        if (m_vertex_index_buffer.isFree()) {
             m_uploaded = true;
             return true;
         }
         return false;
     }
 
-    const auto& getVertexBuffer() const { return m_vertex_buffer; }
+    // Ensure isUploaded() returned true before calling this
+    void bind(VkCommandBuffer cmd, VkSemaphore timeline_semaphore, uint64_t signal_value)
+    {
+        GC_ASSERT(cmd);
+        GC_ASSERT(timeline_semaphore);
+
+        const VkDeviceSize vertices_offset{0};
+        const VkBuffer buffer = m_vertex_index_buffer.getHandle();
+        vkCmdBindVertexBuffers(cmd, 0, 1, &buffer, &vertices_offset);
+        vkCmdBindIndexBuffer(cmd, buffer, m_indices_offset, m_index_type);
+        m_vertex_index_buffer.useResource(timeline_semaphore, signal_value);
+    }
 };
 
 enum class RenderSyncMode { VSYNC_ON_DOUBLE_BUFFERED, VSYNC_ON_TRIPLE_BUFFERED, VSYNC_ON_TRIPLE_BUFFERED_UNTHROTTLED, VSYNC_OFF };
@@ -204,6 +254,7 @@ public:
     GPUPipeline createPipeline(std::span<const uint8_t> vertex_spv, std::span<const uint8_t> fragment_spv);
     RenderTexture createTexture(std::span<const uint8_t> r8g8b8a8_pak);
     RenderMaterial createMaterial(const std::shared_ptr<RenderTexture>& texture, const std::shared_ptr<GPUPipeline>& pipeline);
+    RenderMesh createMesh(std::span<const MeshVertex> vertices, std::span<const uint16_t> indices);
 
     RenderBackendInfo getInfo() const
     {
