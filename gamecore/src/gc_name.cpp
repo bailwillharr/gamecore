@@ -12,7 +12,9 @@ namespace gc {
 #ifdef GC_LOOKUP_ASSET_IDS
 static std::unordered_map<Name, std::string> s_id_lut{};
 
-void loadAssetIDTable(const std::filesystem::path& file_path)
+void addNameLookup(Name name, const std::string& str) { s_id_lut.emplace(name, str); }
+
+void loadNameLookupTable(const std::filesystem::path& file_path)
 {
     std::ifstream file(file_path);
     if (!file) {
@@ -29,14 +31,24 @@ void loadAssetIDTable(const std::filesystem::path& file_path)
             return;
         }
         std::string_view name(line.begin() + 9, line.end()); // skip over hash and space character
-        s_id_lut.emplace(hash, name);
+        addNameLookup(hash, std::string(name));
+    }
+}
+
+void debugLogNameLookups()
+{
+    GC_DEBUG("All known Names:");
+    for (auto [name, str] : s_id_lut) {
+        GC_DEBUG("  {} {}", name, str);
     }
 }
 #else
-void loadAssetIDTable(const std::filesystem::path& file_path) { (void)file_path; }
+void addNameLookup(Name, const std::string&) {}
+void loadNameLookupTable(const std::filesystem::path&) {}
+void debugLogNameLookups() {}
 #endif
 
-std::string assetIDToStr(Name id)
+std::string nameToStr(Name id)
 {
 #ifdef GC_LOOKUP_ASSET_IDS
     if (s_id_lut.contains(id)) {

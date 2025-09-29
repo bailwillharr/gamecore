@@ -49,5 +49,8 @@ void buildAndStartGame(gc::App& app)
     win.setMouseCaptured(true);
     win.setSize(0, 0, true);
     win.setWindowVisibility(true);
+
+    gc::debugLogNameLookups();
+
     app.run();
 }

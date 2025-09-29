@@ -108,7 +108,7 @@ Content::Content()
                     // first attempt to load hash LUT file (loadAssetIDTable() does nothing in release builds)
                     std::filesystem::path hash_file_path = dir_entry.path();
                     hash_file_path.replace_extension("txt");
-                    loadAssetIDTable(hash_file_path);
+                    loadNameLookupTable(hash_file_path);
 
                     // pair in optional might be OTT?
                     auto& [file, num_entries] = opt.value();
@@ -119,7 +119,7 @@ Content::Content()
                         info.entry = asset_entry;
                         info.file_index = file_index;
                         m_asset_infos.emplace(info.entry.crc32_id, info);
-                        GC_DEBUG("    {} ({})", assetIDToStr(info.entry.crc32_id), bytesToHumanReadable(info.entry.size));
+                        GC_DEBUG("    {} ({})", nameToStr(info.entry.crc32_id), bytesToHumanReadable(info.entry.size));
                     }
                     m_package_file_maps.push_back(std::move(file)); // keep file handle
                 }
@@ -135,7 +135,7 @@ std::vector<uint8_t> Content::loadAsset(std::uint32_t id) const
 {
     const auto it = m_asset_infos.find(id);
     if (it == m_asset_infos.cend()) {
-        GC_ERROR("Asset {} not found in any .gcpak file", assetIDToStr(id));
+        GC_ERROR("Asset {} not found in any .gcpak file", nameToStr(id));
         return {};
     }
     const PackageAssetInfo& asset_info = it->second;
