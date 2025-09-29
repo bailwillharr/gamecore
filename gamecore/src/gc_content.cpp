@@ -43,28 +43,25 @@ static std::optional<std::filesystem::path> findContentDir()
     }
 }
 
-// returns mmap_source and number of entries in file
-static std::optional<std::pair<std::unique_ptr<mio::mmap_source>, std::uint32_t>> openAndValidateGcpak(const std::filesystem::path& file_path)
+// returns ummap_source and number of entries in file
+static std::optional<std::pair<mio::ummap_source, std::uint32_t>> openAndValidateGcpak(const std::filesystem::path& file_path)
 {
     std::error_code err;
-    auto file = std::make_unique<mio::mmap_source>();
-    file->map(file_path.string(), err);
+    mio::ummap_source file{};
+    file.map(file_path.string(), err);
     if (err) {
         GC_ERROR("Failed to map file: {}, code: {}", file_path.filename().string(), err.message());
         return {};
     }
 
-    if (file->size() < sizeof(gcpak::GcpakHeader)) {
+    if (file.size() < sizeof(gcpak::GcpakHeader)) {
         GC_ERROR("Gcpak file too small: {}", file_path.filename().string());
         return {};
     }
 
     std::stringstream ss{};
-    ss.write(reinterpret_cast<const char*>(file->data()), gcpak::GcpakHeader::getSerializedSize());
-    if (!ss) {
-        GC_ERROR("Failed to write to stringstream");
-        return {};
-    }
+    ss.write(reinterpret_cast<const char*>(file.data()), gcpak::GcpakHeader::getSerializedSize());
+    GC_ASSERT(ss); // this shouldn't ever fail
     ss.seekg(0);
     auto header = gcpak::GcpakHeader::deserialize(ss);
 
@@ -83,7 +80,7 @@ static std::optional<std::pair<std::unique_ptr<mio::mmap_source>, std::uint32_t>
 }
 
 /* no bounds checking done, ensure index < header.num_entries */
-static gcpak::GcpakAssetEntry getAssetEntry(const mio::mmap_source& map, const uint32_t index)
+static gcpak::GcpakAssetEntry getAssetEntry(const mio::ummap_source& map, const uint32_t index)
 {
     const std::ptrdiff_t entry_location_in_map = map.size() - ((static_cast<size_t>(index) + 1) * gcpak::GcpakAssetEntry::getSerializedSize());
     GC_ASSERT(entry_location_in_map > 0);
@@ -114,14 +111,14 @@ Content::Content()
                     auto& [file, num_entries] = opt.value();
                     const unsigned int file_index = static_cast<unsigned int>(m_package_file_maps.size());
                     for (uint32_t i = 0; i < num_entries; ++i) {
-                        const auto asset_entry = getAssetEntry(*file, i);
+                        const auto asset_entry = getAssetEntry(file, i);
                         PackageAssetInfo info{};
                         info.entry = asset_entry;
                         info.file_index = file_index;
                         m_asset_infos.emplace(info.entry.crc32_id, info);
-                        GC_DEBUG("    {} ({})", nameToStr(info.entry.crc32_id), bytesToHumanReadable(info.entry.size));
+                        GC_DEBUG("    {} ({})", Name(info.entry.crc32_id).getString(), bytesToHumanReadable(info.entry.size));
                     }
-                    m_package_file_maps.push_back(std::move(file)); // keep file handle
+                    m_package_file_maps.emplace_back(std::move(file)); // keep file handle
                 }
             }
         }
@@ -131,21 +128,19 @@ Content::Content()
 
 Content::~Content() { GC_TRACE("Destroying content manager..."); }
 
-std::vector<uint8_t> Content::loadAsset(std::uint32_t id) const
+std::span<const uint8_t> Content::findAsset(Name name) const
 {
-    const auto it = m_asset_infos.find(id);
-    if (it == m_asset_infos.cend()) {
-        GC_ERROR("Asset {} not found in any .gcpak file", nameToStr(id));
+    const auto it = m_asset_infos.find(name);
+    if (it == m_asset_infos.cend()) [[unlikely]] {
+        GC_ERROR("Asset {} not found in any .gcpak file", name.getString());
         return {};
     }
     const PackageAssetInfo& asset_info = it->second;
 
-    GC_ASSERT(asset_info.file_index < m_package_file_maps.size());
+    //GC_ASSERT(asset_info.file_index < m_package_file_maps.size());
 
-    const auto& file = m_package_file_maps[asset_info.file_index];
-    std::vector<uint8_t> data(asset_info.entry.size);
-    std::memcpy(data.data(), file->data() + asset_info.entry.offset, asset_info.entry.size);
-    return data;
+    const uint8_t* const asset_data = m_package_file_maps[asset_info.file_index].data() + asset_info.entry.offset;
+    return std::span<const uint8_t>(asset_data, asset_info.entry.size);
 }
 
 } // namespace gc

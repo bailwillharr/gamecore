@@ -5,46 +5,76 @@
 #include <string_view>
 #include <string>
 #include <filesystem>
+#include <fstream>
 
 #include "gamecore/gc_crc_table.h"
+#include "gamecore/gc_logger.h"
 
 namespace gc {
 
-using Name = uint32_t;
-
-// does nothing if GC_LOOKUP_ASSET_IDS isn't defined
-void addNameLookup(Name name, const std::string& str);
-
-// does nothing if GC_LOOKUP_ASSET_IDS isn't defined
-// file_path should be the .txt file found with the .gcpak file of the same name
-void loadNameLookupTable(const std::filesystem::path& file_path);
-
-// does nothing if GC_LOOKUP_ASSET_IDS isn't defined
-void debugLogNameLookups();
-
-// if GC_LOOKUP_ASSET_IDS isn't defined, it just returns the hexadecimal hash
-std::string nameToStr(Name asset_id);
-
-/* uses crc_table (gc_crc_table.h) to generate a unique 32-bit hash */
-inline constexpr uint32_t crc32(std::string_view id)
-{
-    uint32_t crc = 0xffffffffu;
-    for (char c : id) crc = (crc >> 8) ^ crc_table[(crc ^ c) & 0xff];
-    return crc ^ 0xffffffff;
-}
-
-/* Convert a string to a hash of the string for more efficient storage and comparisons. */
+class Name {
 #ifdef GC_LOOKUP_ASSET_IDS
-inline Name strToNameRuntime(std::string_view str)
-{
-    const Name name = crc32(str);
-    addNameLookup(name, std::string(str));
-    return crc32(str);
-}
-inline Name strToName(std::string_view str) { return strToNameRuntime(str); }
+    inline static std::unordered_map<uint32_t, std::string> s_lut{};
+#endif
+    uint32_t m_hash;
+
+public:
+    constexpr Name() : m_hash(0) {}
+    explicit constexpr Name(uint32_t hash) : m_hash(hash) {}
+#ifdef GC_LOOKUP_ASSET_IDS
+    explicit Name(std::string_view str) : m_hash(crc32(str))
+    {
+        // can't pass *this as object isn't constructed yet
+        s_lut.emplace(m_hash, str);
+    }
 #else
-inline Name strToNameRuntime(std::string_view str) { return crc32(str); }
-inline consteval Name strToName(std::string_view str) { return crc32(str); }
+    explicit constexpr Name(std::string_view str) : m_hash(crc32(str)) {}
 #endif
 
+    constexpr bool operator==(const Name& other) const { return m_hash == other.m_hash; }
+
+    constexpr uint32_t getHash() const { return m_hash; }
+
+    std::string getString() const
+    {
+#ifdef GC_LOOKUP_ASSET_IDS
+        if (s_lut.contains(m_hash)) {
+            return s_lut.at(m_hash);
+        }
+        else {
+            return std::format("{:#08x}", m_hash);
+        }
+#else
+        return std::format("{:#08x}", m_hash);
+#endif
+    }
+};
+
+inline void loadNameLookupTable(const std::filesystem::path& file_path)
+{
+    std::ifstream file(file_path);
+    if (!file) {
+        GC_ERROR("Failed to open file: {}", file_path.filename().string());
+        return;
+    }
+    std::string line{};
+    file.seekg(0);
+    while (std::getline(file, line)) {
+        uint32_t hash;
+        std::from_chars_result res = std::from_chars(line.data(), line.data() + line.size(), hash, 16);
+        if (res.ptr != line.data() + 8) {
+            GC_ERROR("Error parsing hash file: {}", file_path.filename().string());
+            return;
+        }
+        std::string_view str(line.begin() + 9, line.end()); // skip over hash and space character
+        // just create a Name object, if GC_LOOKUP_ASSET_IDS is defined, this will add to the LUT
+        (void)Name(str);
+    }
+}
+
 } // namespace gc
+
+template <>
+struct std::hash<gc::Name> {
+    constexpr std::size_t operator()(const gc::Name& key) const { return static_cast<size_t>(key.getHash()); }
+};

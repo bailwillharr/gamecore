@@ -20,7 +20,7 @@ class TransformComponent {
     bool m_dirty{true};
 
 public:
-    Name name{strToName("entity")};
+    Name name{"entity"};
 
 public:
     glm::vec3 getPosition() const { return m_position; }

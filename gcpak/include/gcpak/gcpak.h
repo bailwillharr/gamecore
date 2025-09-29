@@ -57,7 +57,7 @@ struct GcpakHeader {
         return header;
     }
 
-    static size_t getSerializedSize() { return sizeof(format_identifier) + sizeof(format_version) + sizeof(num_entries); }
+    static consteval size_t getSerializedSize() { return sizeof(format_identifier) + sizeof(format_version) + sizeof(num_entries); }
 };
 
 enum class GcpakAssetType : std::uint32_t {
@@ -90,7 +90,7 @@ struct GcpakAssetEntry {
         return header;
     }
 
-    static size_t getSerializedSize() { return sizeof(offset) + sizeof(crc32_id) + sizeof(asset_type) + sizeof(size); }
+    static consteval size_t getSerializedSize() { return sizeof(offset) + sizeof(crc32_id) + sizeof(asset_type) + sizeof(size); }
 };
 
 class GcpakCreator {

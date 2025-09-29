@@ -189,8 +189,8 @@ void App::run()
 
     std::shared_ptr<GPUPipeline> pipeline{};
     {
-        auto vert = content().loadAsset(strToName("fancy.vert"));
-        auto frag = content().loadAsset(strToName("fancy.frag"));
+        auto vert = content().findAsset(Name("fancy.vert"));
+        auto frag = content().findAsset(Name("fancy.frag"));
         if (!vert.empty() && !frag.empty()) {
             pipeline = std::make_shared<GPUPipeline>(renderBackend().createPipeline(vert, frag));
         }
@@ -201,7 +201,7 @@ void App::run()
 
     std::unique_ptr<RenderMaterial> material{};
     {
-        auto image_data = content().loadAsset(strToName("nuke.jpg"));
+        auto image_data = content().findAsset(Name("nuke.jpg"));
         if (!image_data.empty()) {
             material = std::make_unique<RenderMaterial>(
                 renderBackend().createMaterial(std::make_shared<RenderTexture>(renderBackend().createTexture(image_data)), pipeline));

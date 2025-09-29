@@ -3,10 +3,13 @@
 #include <cstdint>
 
 #include <vector>
+#include <span>
 #include <unordered_map>
 #include <memory>
 
 #include <mio/mmap.hpp>
+
+#include "gamecore/gc_name.h"
 
 // A wrapper around access to game engine assets:
 // - Ensures the correct content directory is used and finds all .gcpak files
@@ -20,9 +23,9 @@ struct PackageAssetInfo; // forward-dec
 class Content {
 
     // mmap_source objects are non-copyable and non-moveable so a vector cannot be used
-    std::vector<std::unique_ptr<mio::mmap_source>> m_package_file_maps;
+    std::vector<mio::ummap_source> m_package_file_maps;
 
-    std::unordered_map<uint32_t, PackageAssetInfo> m_asset_infos;
+    std::unordered_map<Name, PackageAssetInfo> m_asset_infos;
 
 public:
     Content();
@@ -36,8 +39,9 @@ public:
 
     /* use gc::strToName(std::string_view str) */
     /* This function is thread-safe */
-    /* Returns empty vector on failure */
-    std::vector<uint8_t> loadAsset(std::uint32_t name) const;
+    /* Returns a non-owning view of the asset */
+    /* Returns empty span on failure */
+    std::span<const uint8_t> findAsset(Name name) const;
 };
 
 } // namespace gc

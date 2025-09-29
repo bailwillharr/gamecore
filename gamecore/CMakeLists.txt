@@ -13,7 +13,7 @@ set(SRC_FILES
   "src/gc_logger_spdlog.cpp"
   "src/gc_jobs.cpp"
   "src/gc_content.cpp"
-  "src/gc_name.cpp"
+  
   "src/gc_units.cpp"
   "src/gc_window.cpp"
   "src/gc_vulkan_device.cpp"
