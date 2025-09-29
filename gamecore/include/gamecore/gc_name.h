@@ -1,5 +1,14 @@
 #pragma once
 
+// std::strings are expensive to compare and often require dynamic heap allocation for storage.
+// When strings are only needed for unique identifiers, such as looking up assets or resources
+// or giving names to entities, std::strings are overkill.
+// The 'Name' class stores only the hash of the string.
+// Names can be compared to other Names as different strings yield unique hashes.
+// The constructor is constexpr so hashes can be computed at compile-time.
+// For debugging, a look up table stores all hashes and their corresponding strings, accessed via Name::getString()
+// In addition, the Name class has a specialization for std::hash that does nothing (it's already a hash), which speeds up unordered_map<Name, T> lookups.
+
 #include <cstdint>
 
 #include <string_view>
