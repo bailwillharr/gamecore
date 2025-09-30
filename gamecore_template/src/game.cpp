@@ -4,6 +4,7 @@
 #include "spin.h"
 #include "mouse_move.h"
 
+#include <SDL3/SDL_stdinc.h>
 #include <gamecore/gc_app.h>
 #include <gamecore/gc_render_backend.h>
 #include <gamecore/gc_world.h>
@@ -13,6 +14,8 @@
 
 void buildAndStartGame(gc::App& app)
 {
+    SDL_srand(static_cast<int>(std::chrono::duration_cast<std::chrono::seconds>(std::chrono::system_clock::now().time_since_epoch()).count()));
+
     gc::Window& win = app.window();
     gc::World& world = app.world();
     gc::RenderBackend& render_backend = app.renderBackend();
@@ -54,7 +57,7 @@ void buildAndStartGame(gc::App& app)
     }
 
     auto cube_mesh = genCuboidMesh(app.renderBackend(), 1.0f, 1.0f, 1.0f);
-    auto sphere_mesh = genSphereMesh(app.renderBackend(), 1.0f, 24);
+    auto sphere_mesh = genSphereMesh(app.renderBackend(), 1.0f, 8);
 
     std::array<gc::Entity, 36> cubes{};
     const gc::Entity parent = world.createEntity(gc::Name("parent"), gc::ENTITY_NONE, glm::vec3{0.0f, 0.0f, 15.0f});
@@ -63,7 +66,7 @@ void buildAndStartGame(gc::App& app)
         for (int y = 0; y < 6; ++y) {
             auto& cube = cubes[x * 6 + y];
             cube = world.createEntity(gc::Name(std::format("cube{}.{}", x, y)), parent, glm::vec3{x * 3.0f - 9.0f, y * 3.0f - 9.0f, 0.0f});
-            world.addComponent<gc::CubeComponent>(cube).setMesh(&cube_mesh).setMaterial(materials[rand() % texture_names.size()].get());
+            world.addComponent<gc::CubeComponent>(cube).setMesh(&cube_mesh).setMaterial(materials[SDL_rand(texture_names.size())].get());
             world.addComponent<SpinComponent>(cube).setAxis({1.0f, 0.0f, 0.0f}).setRadiansPerSecond(-2.0f);
         }
     }
@@ -71,7 +74,7 @@ void buildAndStartGame(gc::App& app)
     const auto another_entity = world.createEntity(gc::Name("another entity"), gc::ENTITY_NONE, {0.0f, 0.0f, 10.0f});
     world.addComponent<SpinComponent>(another_entity);
     world.addComponent<MouseMoveComponent>(another_entity).sensitivity = 0.01f;
-    world.addComponent<gc::CubeComponent>(another_entity).setMesh(&sphere_mesh).setMaterial(materials[2].get());
+    world.addComponent<gc::CubeComponent>(another_entity).setMesh(&sphere_mesh).setMaterial(materials[SDL_rand(texture_names.size())].get());
 
     win.setTitle("Hello world!");
     win.setIsResizable(true);

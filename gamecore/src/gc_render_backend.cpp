@@ -191,7 +191,7 @@ RenderBackend::RenderBackend(SDL_Window* window_handle)
     {
         VkSamplerCreateInfo info{};
         info.sType = VK_STRUCTURE_TYPE_SAMPLER_CREATE_INFO;
-        info.magFilter = VK_FILTER_NEAREST;
+        info.magFilter = VK_FILTER_LINEAR;
         info.minFilter = VK_FILTER_LINEAR;
         info.mipmapMode = VK_SAMPLER_MIPMAP_MODE_LINEAR;
         info.addressModeU = VK_SAMPLER_ADDRESS_MODE_REPEAT;
@@ -690,9 +690,9 @@ GPUPipeline RenderBackend::createPipeline(std::span<const uint8_t> vertex_spv, s
     rasterization_state.cullMode = VK_CULL_MODE_BACK_BIT;
     rasterization_state.frontFace = VK_FRONT_FACE_CLOCKWISE; // it is actually CCW but shader flips things
     rasterization_state.depthBiasEnable = VK_FALSE;
-    rasterization_state.depthBiasConstantFactor = 0.0f;      // ignored
-    rasterization_state.depthBiasClamp = 0.0f;               // ignored
-    rasterization_state.depthBiasSlopeFactor = 0.0f;         // ignored
+    rasterization_state.depthBiasConstantFactor = 0.0f; // ignored
+    rasterization_state.depthBiasClamp = 0.0f;          // ignored
+    rasterization_state.depthBiasSlopeFactor = 0.0f;    // ignored
 
     const VkFormat color_attachment_format = m_swapchain.getSurfaceFormat().format;
 
