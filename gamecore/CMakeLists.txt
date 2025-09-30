@@ -1,6 +1,7 @@
 cmake_minimum_required(VERSION 3.25)
 
 option(GC_DEV_BUILD "Log trace and debug messages, run asserts" ON)
+option(GC_DISABLE_LOGGING "Disable logging completely" OFF)
 
 project(gamecore LANGUAGES CXX VERSION "0.1.0")
 
@@ -13,7 +14,7 @@ set(SRC_FILES
   "src/gc_logger_spdlog.cpp"
   "src/gc_jobs.cpp"
   "src/gc_content.cpp"
-  
+
   "src/gc_units.cpp"
   "src/gc_window.cpp"
   "src/gc_vulkan_device.cpp"
@@ -99,8 +100,11 @@ if(GC_DEV_BUILD)
     target_compile_definitions(${PROJECT_NAME} PUBLIC GC_LOOKUP_ASSET_IDS)
     #target_compile_definitions(${PROJECT_NAME} PUBLIC GC_VULKAN_VALIDATION)
 endif()
-# GC_LOGGER_SPDLOG or GC_LOGGER_NULL:
-target_compile_definitions(${PROJECT_NAME} PUBLIC GC_LOGGER=GC_LOGGER_SPDLOG)
+if (GC_DISABLE_LOGGING)
+    target_compile_definitions(${PROJECT_NAME} PUBLIC GC_LOGGER=GC_LOGGER_NULL)
+else()
+    target_compile_definitions(${PROJECT_NAME} PUBLIC GC_LOGGER=GC_LOGGER_SPDLOG)
+endif()
 
 target_include_directories(${PROJECT_NAME} PUBLIC include)
 target_include_directories(${PROJECT_NAME} PRIVATE src)

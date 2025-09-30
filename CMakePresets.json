@@ -169,7 +169,8 @@
         "CMAKE_BUILD_TYPE": "Release",
         "CMAKE_INTERPROCEDURAL_OPTIMIZATION": "ON",
         "GC_DEV_BUILD": "OFF",
-		"GC_PROFILING": "ON"
+		"GC_PROFILING": "ON",
+        "GC_DISABLE_LOGGING": "ON"
       },
       "condition": {
         "type": "equals",

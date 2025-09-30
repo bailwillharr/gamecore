@@ -143,11 +143,11 @@ gc::RenderMesh genCuboidMesh(gc::RenderBackend& render_backend, float x, float y
     vertices.push_back({{x, y, 0.0f}, {0.0f, 0.0f, -1.0f}, {-1.0f, 0.0f, 0.0f, 1.0f}, {0.0f, 0.0f}});
 
     // centre the positions
-    // for (auto& v : vertices) {
-    //    v.position.x -= x * 0.5f;
-    //    v.position.y -= y * 0.5f;
-    //    v.position.z -= z * 0.5f;
-    //}
+    for (auto& v : vertices) {
+        v.position.x -= x * 0.5f;
+        v.position.y -= y * 0.5f;
+        v.position.z -= z * 0.5f;
+    }
 
     if (wind_inside) {
         for (size_t i = 0; i < vertices.size(); i += 3) {

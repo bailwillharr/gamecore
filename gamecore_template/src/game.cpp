@@ -22,7 +22,8 @@ void buildAndStartGame(gc::App& app)
     gc::Content& content = app.content();
 
     // On Windows/NVIDIA, triple buffered gives horrible latency so use double buffering instead
-    render_backend.setSyncMode(gc::RenderSyncMode::VSYNC_ON_TRIPLE_BUFFERED_UNTHROTTLED);
+    // render_backend.setSyncMode(gc::RenderSyncMode::VSYNC_ON_TRIPLE_BUFFERED_UNTHROTTLED);
+    render_backend.setSyncMode(gc::RenderSyncMode::VSYNC_OFF);
 
     world.registerComponent<SpinComponent, gc::ComponentArrayType::SPARSE>();
     world.registerComponent<MouseMoveComponent, gc::ComponentArrayType::SPARSE>();
@@ -65,7 +66,7 @@ void buildAndStartGame(gc::App& app)
     for (int x = 0; x < 6; ++x) {
         for (int y = 0; y < 6; ++y) {
             auto& cube = cubes[x * 6 + y];
-            cube = world.createEntity(gc::Name(std::format("cube{}.{}", x, y)), parent, glm::vec3{x * 3.0f - 9.0f, y * 3.0f - 9.0f, 0.0f});
+            cube = world.createEntity(gc::Name(std::format("cube{}.{}", x, y)), parent, glm::vec3{(x - 2.5f) * 2.0f, (y - 2.5f) * 2.0f, 0.0f});
             world.addComponent<gc::CubeComponent>(cube).setMesh(&cube_mesh).setMaterial(materials[SDL_rand(texture_names.size())].get());
             world.addComponent<SpinComponent>(cube).setAxis({1.0f, 0.0f, 0.0f}).setRadiansPerSecond(-2.0f);
         }

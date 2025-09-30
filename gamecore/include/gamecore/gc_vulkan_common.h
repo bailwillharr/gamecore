@@ -11,6 +11,8 @@
 
 #include <vk_mem_alloc.h>
 
+#include <tracy/TracyVulkan.hpp>
+
 #include "gamecore/gc_abort.h"
 
 #define GC_CHECKVK(fun) ::gc::vulkanCheckError(fun, #fun)

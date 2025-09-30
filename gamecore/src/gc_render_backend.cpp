@@ -8,8 +8,10 @@
 #include <SDL3/SDL_timer.h>
 
 #include <tracy/Tracy.hpp>
+#include <tracy/TracyVulkan.hpp>
 
 #include <backends/imgui_impl_vulkan.h>
+#include <vulkan/vulkan_core.h>
 
 #include <ext/matrix_clip_space.hpp>
 
@@ -300,6 +302,31 @@ RenderBackend::RenderBackend(SDL_Window* window_handle)
         GC_CHECKVK(vkCreateCommandPool(m_device.getHandle(), &info, nullptr, &m_transfer_cmd_pool));
     }
 
+#ifdef TRACY_ENABLE
+    {
+        VkCommandPoolCreateInfo info{};
+        info.sType = VK_STRUCTURE_TYPE_COMMAND_POOL_CREATE_INFO;
+        info.queueFamilyIndex = m_device.getQueueFamilyIndex();
+        info.flags = VK_COMMAND_POOL_CREATE_RESET_COMMAND_BUFFER_BIT;
+        GC_CHECKVK(vkCreateCommandPool(m_device.getHandle(), &info, nullptr, &m_tracy_vulkan_context.pool));
+        VkCommandBufferAllocateInfo cmd_info{};
+        cmd_info.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_ALLOCATE_INFO;
+        cmd_info.level = VK_COMMAND_BUFFER_LEVEL_PRIMARY;
+        cmd_info.commandPool = m_tracy_vulkan_context.pool;
+        cmd_info.commandBufferCount = 1;
+        GC_CHECKVK(vkAllocateCommandBuffers(m_device.getHandle(), &cmd_info, &m_tracy_vulkan_context.cmd));
+        if (m_device.isExtensionEnabled(VK_EXT_CALIBRATED_TIMESTAMPS_EXTENSION_NAME)) {
+            m_tracy_vulkan_context.ctx =
+                TracyVkContextCalibrated(m_device.getPhysicalDevice(), m_device.getHandle(), m_device.getMainQueue(), m_tracy_vulkan_context.cmd,
+                                         vkGetPhysicalDeviceCalibrateableTimeDomainsEXT, vkGetCalibratedTimestampsEXT);
+        }
+        else {
+            m_tracy_vulkan_context.ctx =
+                TracyVkContext(m_device.getPhysicalDevice(), m_device.getHandle(), m_device.getMainQueue(), m_tracy_vulkan_context.cmd);
+        }
+    }
+#endif
+
     // m_main_timeline_semaphore and the frame in flight command pools will be created when submitFrame() is called for the first time.
 
     GC_TRACE("Initialised RenderBackend");
@@ -388,54 +415,55 @@ void RenderBackend::submitFrame(bool window_resized, const WorldDrawData& world_
         GC_CHECKVK(vkBeginCommandBuffer(stuff.cmd, &info));
     }
 
-    /* Transition image to COLOR_ATTACHMENT_OPTIMAL layout */
     {
-        VkImageMemoryBarrier2 barrier{};
-        barrier.sType = VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER_2;
-        barrier.srcStageMask = VK_PIPELINE_STAGE_2_NONE;
-        barrier.srcAccessMask = VK_ACCESS_2_NONE;
-        barrier.dstStageMask = VK_PIPELINE_STAGE_2_COLOR_ATTACHMENT_OUTPUT_BIT;
-        barrier.dstAccessMask = VK_ACCESS_2_COLOR_ATTACHMENT_WRITE_BIT;
-        barrier.oldLayout = VK_IMAGE_LAYOUT_UNDEFINED;
-        barrier.newLayout = VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL;
-        barrier.srcQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
-        barrier.dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
-        barrier.image = m_framebuffer_image;
-        barrier.subresourceRange.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT;
-        barrier.subresourceRange.baseMipLevel = 0;
-        barrier.subresourceRange.levelCount = 1;
-        barrier.subresourceRange.baseArrayLayer = 0;
-        barrier.subresourceRange.layerCount = 1;
-        VkDependencyInfo dep{};
-        dep.sType = VK_STRUCTURE_TYPE_DEPENDENCY_INFO;
-        dep.imageMemoryBarrierCount = 1;
-        dep.pImageMemoryBarriers = &barrier;
-        vkCmdPipelineBarrier2(stuff.cmd, &dep);
-    }
-
-    /* Transition depth stencil buffer to VK_IMAGE_LAYOUT_DEPTH_STENCIL_ATTACHMENT_OPTIMAL layout */
-    {
-        VkImageMemoryBarrier2 barrier{};
-        barrier.sType = VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER_2;
-        barrier.srcStageMask = VK_PIPELINE_STAGE_2_LATE_FRAGMENT_TESTS_BIT;
-        barrier.srcAccessMask = VK_ACCESS_2_DEPTH_STENCIL_ATTACHMENT_WRITE_BIT;
-        barrier.dstStageMask = VK_PIPELINE_STAGE_2_EARLY_FRAGMENT_TESTS_BIT;
-        barrier.dstAccessMask = VK_ACCESS_2_DEPTH_STENCIL_ATTACHMENT_WRITE_BIT;
-        barrier.oldLayout = VK_IMAGE_LAYOUT_UNDEFINED;
-        barrier.newLayout = VK_IMAGE_LAYOUT_DEPTH_STENCIL_ATTACHMENT_OPTIMAL;
-        barrier.srcQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
-        barrier.dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
-        barrier.image = m_depth_stencil;
-        barrier.subresourceRange.aspectMask = VK_IMAGE_ASPECT_DEPTH_BIT | VK_IMAGE_ASPECT_STENCIL_BIT;
-        barrier.subresourceRange.baseMipLevel = 0;
-        barrier.subresourceRange.levelCount = 1;
-        barrier.subresourceRange.baseArrayLayer = 0;
-        barrier.subresourceRange.layerCount = 1;
-        VkDependencyInfo dep{};
-        dep.sType = VK_STRUCTURE_TYPE_DEPENDENCY_INFO;
-        dep.imageMemoryBarrierCount = 1;
-        dep.pImageMemoryBarriers = &barrier;
-        vkCmdPipelineBarrier2(stuff.cmd, &dep);
+        /* Transition image to COLOR_ATTACHMENT_OPTIMAL layout */
+        {
+            VkImageMemoryBarrier2 barrier{};
+            barrier.sType = VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER_2;
+            barrier.srcStageMask = VK_PIPELINE_STAGE_2_NONE;
+            barrier.srcAccessMask = VK_ACCESS_2_NONE;
+            barrier.dstStageMask = VK_PIPELINE_STAGE_2_COLOR_ATTACHMENT_OUTPUT_BIT;
+            barrier.dstAccessMask = VK_ACCESS_2_COLOR_ATTACHMENT_WRITE_BIT;
+            barrier.oldLayout = VK_IMAGE_LAYOUT_UNDEFINED;
+            barrier.newLayout = VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL;
+            barrier.srcQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
+            barrier.dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
+            barrier.image = m_framebuffer_image;
+            barrier.subresourceRange.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT;
+            barrier.subresourceRange.baseMipLevel = 0;
+            barrier.subresourceRange.levelCount = 1;
+            barrier.subresourceRange.baseArrayLayer = 0;
+            barrier.subresourceRange.layerCount = 1;
+            VkDependencyInfo dep{};
+            dep.sType = VK_STRUCTURE_TYPE_DEPENDENCY_INFO;
+            dep.imageMemoryBarrierCount = 1;
+            dep.pImageMemoryBarriers = &barrier;
+            vkCmdPipelineBarrier2(stuff.cmd, &dep);
+        }
+        /* Transition depth stencil buffer to VK_IMAGE_LAYOUT_DEPTH_STENCIL_ATTACHMENT_OPTIMAL layout */
+        {
+            VkImageMemoryBarrier2 barrier{};
+            barrier.sType = VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER_2;
+            barrier.srcStageMask = VK_PIPELINE_STAGE_2_LATE_FRAGMENT_TESTS_BIT;
+            barrier.srcAccessMask = VK_ACCESS_2_DEPTH_STENCIL_ATTACHMENT_WRITE_BIT;
+            barrier.dstStageMask = VK_PIPELINE_STAGE_2_EARLY_FRAGMENT_TESTS_BIT;
+            barrier.dstAccessMask = VK_ACCESS_2_DEPTH_STENCIL_ATTACHMENT_WRITE_BIT;
+            barrier.oldLayout = VK_IMAGE_LAYOUT_UNDEFINED;
+            barrier.newLayout = VK_IMAGE_LAYOUT_DEPTH_STENCIL_ATTACHMENT_OPTIMAL;
+            barrier.srcQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
+            barrier.dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
+            barrier.image = m_depth_stencil;
+            barrier.subresourceRange.aspectMask = VK_IMAGE_ASPECT_DEPTH_BIT | VK_IMAGE_ASPECT_STENCIL_BIT;
+            barrier.subresourceRange.baseMipLevel = 0;
+            barrier.subresourceRange.levelCount = 1;
+            barrier.subresourceRange.baseArrayLayer = 0;
+            barrier.subresourceRange.layerCount = 1;
+            VkDependencyInfo dep{};
+            dep.sType = VK_STRUCTURE_TYPE_DEPENDENCY_INFO;
+            dep.imageMemoryBarrierCount = 1;
+            dep.pImageMemoryBarriers = &barrier;
+            vkCmdPipelineBarrier2(stuff.cmd, &dep);
+        }
     }
 
     {
@@ -474,7 +502,8 @@ void RenderBackend::submitFrame(bool window_resized, const WorldDrawData& world_
 
     {
         ZoneScopedN("Record draw commands");
-
+        ZoneValue(m_frame_count);
+        TracyVkZone(m_tracy_vulkan_context.ctx, stuff.cmd, "Record draw commands (GPU)");
         // Set viewport and scissor (dynamic states)
         const VkExtent2D swapchain_extent = m_swapchain.getExtent();
         VkViewport viewport = {};
@@ -510,10 +539,14 @@ void RenderBackend::submitFrame(bool window_resized, const WorldDrawData& world_
 
         ImGui_ImplVulkan_RenderDrawData(ImGui::GetDrawData(), stuff.cmd);
     }
-    vkCmdEndRendering(stuff.cmd);
+
+    {
+        vkCmdEndRendering(stuff.cmd);
+    }
 
     /* Transition image to TRANSFER_SRC layout */
     {
+        TracyVkZone(m_tracy_vulkan_context.ctx, stuff.cmd, "Transition colour attachment for present (GPU)");
         VkImageMemoryBarrier2 barrier{};
         barrier.sType = VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER_2;
         barrier.srcStageMask = VK_PIPELINE_STAGE_2_COLOR_ATTACHMENT_OUTPUT_BIT;
@@ -535,6 +568,10 @@ void RenderBackend::submitFrame(bool window_resized, const WorldDrawData& world_
         dep.imageMemoryBarrierCount = 1;
         dep.pImageMemoryBarriers = &barrier;
         vkCmdPipelineBarrier2(stuff.cmd, &dep);
+    }
+
+    {
+        TracyVkCollect(m_tracy_vulkan_context.ctx, stuff.cmd);
     }
 
     GC_CHECKVK(vkEndCommandBuffer(stuff.cmd));

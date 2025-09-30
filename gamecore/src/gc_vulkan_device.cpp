@@ -8,6 +8,7 @@
 #include <vector>
 
 #include <SDL3/SDL_vulkan.h>
+#include <vulkan/vulkan_core.h>
 
 #include "gamecore/gc_abort.h"
 #include "gamecore/gc_assert.h"
@@ -236,7 +237,8 @@ VulkanDevice::VulkanDevice()
                                                       .pQueuePriorities = queue_priorities.data()});
 
         constexpr std::array REQUIRED_EXTENSION_NAMES{VK_KHR_SWAPCHAIN_EXTENSION_NAME, VK_EXT_SWAPCHAIN_MAINTENANCE_1_EXTENSION_NAME};
-        constexpr std::array OPTIONAL_EXTENSION_NAMES{VK_EXT_MEMORY_PRIORITY_EXTENSION_NAME, VK_EXT_MEMORY_BUDGET_EXTENSION_NAME};
+        constexpr std::array OPTIONAL_EXTENSION_NAMES{VK_EXT_MEMORY_PRIORITY_EXTENSION_NAME, VK_EXT_MEMORY_BUDGET_EXTENSION_NAME,
+                                                      VK_EXT_CALIBRATED_TIMESTAMPS_EXTENSION_NAME};
 
         // First only add optional extension names and then remove any which are unsupported.
         // Then add required extensions without checking for compatibility and create the device.

@@ -244,6 +244,17 @@ class RenderBackend {
 
     VkCommandPool m_transfer_cmd_pool{};
 
+#define TRACY_EMABLE
+
+#ifdef TRACY_ENABLE
+    struct TracyVulkanContext {
+        VkCommandPool pool;
+        VkCommandBuffer cmd;
+        TracyVkCtx ctx;
+    };
+    TracyVulkanContext m_tracy_vulkan_context{};
+#endif
+
 public:
     explicit RenderBackend(SDL_Window* window_handle);
     RenderBackend(const RenderBackend&) = delete;
