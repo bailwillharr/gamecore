@@ -124,24 +124,31 @@ public:
         vkUpdateDescriptorSets(device, 1, &write, 0, nullptr);
     }
 
-    const auto& getTexture() const { return m_texture; }
-    const auto& getPipeline() const { return m_pipeline; }
-
-    // call getTexture().isUploaded() before binding
-    VkDescriptorSet getDescriptorSet() const { return m_descriptor_set; }
-
-    void bind(VkCommandBuffer cmd, VkPipelineLayout pipeline_layout, VkSemaphore timeline_semaphore, uint64_t signal_value) const
+    // Binds pipeline and descriptor sets. Check isUploaded() first
+    void bind(VkCommandBuffer cmd, VkPipelineLayout pipeline_layout, VkSemaphore timeline_semaphore, uint64_t signal_value,
+              const RenderMaterial* last_used_material = nullptr) const
     {
         GC_ASSERT(cmd);
         GC_ASSERT(pipeline_layout);
         GC_ASSERT(timeline_semaphore);
         GC_ASSERT(m_pipeline->getHandle());
 
-        vkCmdBindPipeline(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, m_pipeline->getHandle());
-        m_pipeline->useResource(timeline_semaphore, signal_value);
+        if (!last_used_material || (last_used_material && last_used_material->m_pipeline != m_pipeline)) {
+            vkCmdBindPipeline(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, m_pipeline->getHandle());
+            m_pipeline->useResource(timeline_semaphore, signal_value);
+        }
 
-        vkCmdBindDescriptorSets(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, pipeline_layout, 0, 1, &m_descriptor_set, 0, nullptr);
-        m_texture->getImageView().useResource(timeline_semaphore, signal_value);
+        if (!last_used_material || (last_used_material && last_used_material->m_descriptor_set != m_descriptor_set)) {
+            vkCmdBindDescriptorSets(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, pipeline_layout, 0, 1, &m_descriptor_set, 0, nullptr);
+            m_texture->getImageView().useResource(timeline_semaphore, signal_value);
+        }
+    }
+
+    // Checks that all textures for this material are uploaded
+    bool isUploaded() const
+    {
+        GC_ASSERT(m_texture);
+        return m_texture->isUploaded();
     }
 };
 
@@ -174,7 +181,7 @@ public:
     }
 
     // Ensure isUploaded() returned true before calling this
-    void bind(VkCommandBuffer cmd, VkSemaphore timeline_semaphore, uint64_t signal_value)
+    void draw(VkCommandBuffer cmd, VkSemaphore timeline_semaphore, uint64_t signal_value)
     {
         GC_ASSERT(cmd);
         GC_ASSERT(timeline_semaphore);
@@ -183,10 +190,11 @@ public:
         const VkBuffer buffer = m_vertex_index_buffer.getHandle();
         vkCmdBindVertexBuffers(cmd, 0, 1, &buffer, &vertices_offset);
         vkCmdBindIndexBuffer(cmd, buffer, m_indices_offset, m_index_type);
+
+        vkCmdDrawIndexed(cmd, m_num_indices, 1, 0, 0, 0);
+
         m_vertex_index_buffer.useResource(timeline_semaphore, signal_value);
     }
-
-    uint32_t getIndexCount() const { return m_num_indices; }
 };
 
 enum class RenderSyncMode { VSYNC_ON_DOUBLE_BUFFERED, VSYNC_ON_TRIPLE_BUFFERED, VSYNC_ON_TRIPLE_BUFFERED_UNTHROTTLED, VSYNC_OFF };

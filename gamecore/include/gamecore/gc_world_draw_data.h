@@ -10,22 +10,19 @@ class RenderMaterial; // forward-dec
 class RenderMesh;     // forward-dec
 
 struct WorldDrawEntry {
-    glm::mat4 world_matrix{};
-    RenderMesh* mesh{};
+    glm::mat4 world_matrix;
+    RenderMesh* mesh;
+    RenderMaterial* material;
 };
 
 class WorldDrawData {
-    std::vector<WorldDrawEntry> m_draw_entries{}; // start simple
-    RenderMaterial* m_material{};
+    std::vector<WorldDrawEntry> m_draw_entries{};
 
 public:
-    void drawMesh(const glm::mat4& world_matrix, RenderMesh* mesh) { m_draw_entries.emplace_back(world_matrix, mesh); }
+    void drawMesh(const glm::mat4& world_matrix, RenderMesh* mesh, RenderMaterial* material) { m_draw_entries.emplace_back(world_matrix, mesh, material); }
     void reset() { m_draw_entries.clear(); }
 
-    void setMaterial(RenderMaterial* material) { m_material = material; }
-
     const auto& getDrawEntries() const { return m_draw_entries; }
-    auto getMaterial() const { return m_material; }
 };
 
 } // namespace gc

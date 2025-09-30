@@ -54,7 +54,7 @@ static void recreateDepthStencil(VkDevice device, VmaAllocator allocator, VkForm
     image_info.pQueueFamilyIndices = nullptr; // ingored
     image_info.initialLayout = VK_IMAGE_LAYOUT_UNDEFINED;
     VmaAllocationCreateInfo alloc_create_info{};
-    alloc_create_info.flags = VMA_ALLOCATION_CREATE_DEDICATED_MEMORY_BIT;
+    alloc_create_info.flags = 0;
     alloc_create_info.usage = VMA_MEMORY_USAGE_AUTO;
     alloc_create_info.priority = 1.0f;
     GC_CHECKVK(vmaCreateImage(allocator, &image_info, &alloc_create_info, &depth_stencil, &depth_stencil_allocation, nullptr));
@@ -107,7 +107,7 @@ static void recreateFramebufferImage(VkDevice device, VmaAllocator allocator, Vk
     image_info.pQueueFamilyIndices = nullptr; // ingored
     image_info.initialLayout = VK_IMAGE_LAYOUT_UNDEFINED;
     VmaAllocationCreateInfo alloc_create_info{};
-    alloc_create_info.flags = VMA_ALLOCATION_CREATE_DEDICATED_MEMORY_BIT;
+    alloc_create_info.flags = 0;
     alloc_create_info.usage = VMA_MEMORY_USAGE_AUTO_PREFER_DEVICE;
     alloc_create_info.priority = 1.0f;
     GC_CHECKVK(vmaCreateImage(allocator, &image_info, &alloc_create_info, &image, &allocation, nullptr));
@@ -210,7 +210,7 @@ RenderBackend::RenderBackend(SDL_Window* window_handle)
     // create main descriptor pool for long-lasting static resources
     {
         std::array<VkDescriptorPoolSize, 1> pool_sizes = {
-            {VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, 2},
+            {VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, 100},
         };
         VkDescriptorPoolCreateInfo pool_info = {};
         pool_info.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_POOL_CREATE_INFO;
@@ -490,23 +490,21 @@ void RenderBackend::submitFrame(bool window_resized, const WorldDrawData& world_
         scissor.extent = swapchain_extent;
         vkCmdSetScissor(stuff.cmd, 0, 1, &scissor);
 
-        // render provided draw_data here
-        // for now just record into primary command buffer. Might change later.
-        if (world_draw_data.getMaterial() && world_draw_data.getMaterial()->getTexture()->isUploaded()) {
+        // This is very fast. Might as well do it every frame.
+        const double aspect_ratio = static_cast<double>(m_swapchain.getExtent().width) / static_cast<double>(m_swapchain.getExtent().height);
+        glm::mat4 projection_matrix = glm::perspectiveLH_ZO(glm::radians(45.0), aspect_ratio, 0.1, 1000.0);
+        vkCmdPushConstants(stuff.cmd, m_pipeline_layout, VK_SHADER_STAGE_VERTEX_BIT, 64, 64, &projection_matrix);
 
-            world_draw_data.getMaterial()->bind(stuff.cmd, m_pipeline_layout, m_main_timeline_semaphore, m_main_timeline_value + 1);
+        const RenderMaterial* last_material{};
+        for (const auto& entry : world_draw_data.getDrawEntries()) {
+            GC_ASSERT(entry.mesh);
+            GC_ASSERT(entry.material);
 
-            // This is very fast. Might as well do it every frame.
-            const double aspect_ratio = static_cast<double>(m_swapchain.getExtent().width) / static_cast<double>(m_swapchain.getExtent().height);
-            glm::mat4 projection_matrix = glm::perspectiveLH_ZO(glm::radians(45.0), aspect_ratio, 0.1, 1000.0);
-            vkCmdPushConstants(stuff.cmd, m_pipeline_layout, VK_SHADER_STAGE_VERTEX_BIT, 64, 64, &projection_matrix);
-
-            for (const auto& entry : world_draw_data.getDrawEntries()) {
-                GC_ASSERT(entry.mesh);
-
+            if (entry.material->isUploaded() && entry.mesh->isUploaded()) {
                 vkCmdPushConstants(stuff.cmd, m_pipeline_layout, VK_SHADER_STAGE_VERTEX_BIT, 0, 64, &entry.world_matrix);
-                entry.mesh->bind(stuff.cmd, m_main_timeline_semaphore, m_main_timeline_value + 1);
-                vkCmdDrawIndexed(stuff.cmd, entry.mesh->getIndexCount(), 1, 0, 0, 0);
+                entry.material->bind(stuff.cmd, m_pipeline_layout, m_main_timeline_semaphore, m_main_timeline_value + 1, last_material);
+                entry.mesh->draw(stuff.cmd, m_main_timeline_semaphore, m_main_timeline_value + 1);
+                last_material = entry.material;
             }
         }
 

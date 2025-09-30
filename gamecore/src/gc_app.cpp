@@ -187,29 +187,6 @@ void App::run()
 
     FrameState frame_state{};
 
-    std::shared_ptr<GPUPipeline> pipeline{};
-    {
-        auto vert = content().findAsset(Name("fancy.vert"));
-        auto frag = content().findAsset(Name("fancy.frag"));
-        if (!vert.empty() && !frag.empty()) {
-            pipeline = std::make_shared<GPUPipeline>(renderBackend().createPipeline(vert, frag));
-        }
-        else {
-            GC_ERROR("Couldn't find cube.vert or cube.frag");
-        }
-    }
-
-    std::unique_ptr<RenderMaterial> material{};
-    {
-        auto image_data = content().findAsset(Name("nuke.jpg"));
-        if (!image_data.empty()) {
-            material = std::make_unique<RenderMaterial>(
-                renderBackend().createMaterial(std::make_shared<RenderTexture>(renderBackend().createTexture(image_data)), pipeline));
-        }
-    }
-
-    frame_state.draw_data.setMaterial(material.get());
-
     uint64_t frame_count{};
     std::array<double, 20> delta_times{};
     uint64_t frame_begin_stamp = SDL_GetTicksNS() - 16'666'667LL; // set first delta time to something reasonable
