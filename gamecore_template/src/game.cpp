@@ -26,7 +26,8 @@ void buildAndStartGame(gc::App& app)
     world.registerSystem<SpinSystem>();
     world.registerSystem<MouseMoveSystem>();
 
-    std::array<std::unique_ptr<gc::RenderMaterial>, 5> materials{};
+    std::array texture_names{gc::Name("box.jpg"), gc::Name("bricks.jpg"), gc::Name("fire.jpg"), gc::Name("nuke.jpg")};
+    std::array<std::unique_ptr<gc::RenderMaterial>, texture_names.size()> materials{};
     {
         std::shared_ptr<gc::GPUPipeline> pipeline{};
         {
@@ -36,11 +37,10 @@ void buildAndStartGame(gc::App& app)
                 pipeline = std::make_shared<gc::GPUPipeline>(render_backend.createPipeline(vert, frag));
             }
             else {
-                gc::abortGame("Couldn't find cube.vert or cube.frag");
+                gc::abortGame("Couldn't find fancy.vert or fancy.frag");
             }
         }
-        std::array<gc::Name, 5> texture_names{gc::Name("box.jpg"), gc::Name("bricks.jpg"), gc::Name("fire.jpg"), gc::Name("moss.png"), gc::Name("nuke.jpg")};
-        for (int i = 0; i < 5; ++i) {
+        for (int i = 0; i < texture_names.size(); ++i) {
             const gc::Name texture_name = texture_names[i];
             auto image_data = content.findAsset(texture_name);
             if (!image_data.empty()) {
@@ -63,7 +63,7 @@ void buildAndStartGame(gc::App& app)
         for (int y = 0; y < 6; ++y) {
             auto& cube = cubes[x * 6 + y];
             cube = world.createEntity(gc::Name(std::format("cube{}.{}", x, y)), parent, glm::vec3{x * 3.0f - 9.0f, y * 3.0f - 9.0f, 0.0f});
-            world.addComponent<gc::CubeComponent>(cube).setMesh(&cube_mesh).setMaterial(materials[rand() % 5].get());
+            world.addComponent<gc::CubeComponent>(cube).setMesh(&cube_mesh).setMaterial(materials[rand() % texture_names.size()].get());
             world.addComponent<SpinComponent>(cube).setAxis({1.0f, 0.0f, 0.0f}).setRadiansPerSecond(-2.0f);
         }
     }
