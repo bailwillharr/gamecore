@@ -66,44 +66,15 @@ App::App(const AppInitOptions& options)
 
     /* SUBSYSTEM INITIALISATION */
 
-    {
-        Stopwatch sw{};
-        m_jobs = std::make_unique<Jobs>(std::thread::hardware_concurrency());
-        GC_TRACE("Jobs subsystem init took: {}", sw);
-    }
-
-    {
-        Stopwatch sw{};
-        m_content = std::make_unique<Content>();
-        GC_TRACE("Content subsystem init took: {}", sw);
-    }
-
-    {
-        Stopwatch sw{};
-        WindowInitInfo window_init_info{};
-        window_init_info.vulkan_support = true;
-        window_init_info.resizable = false;
-        m_window = std::make_unique<Window>(window_init_info);
-        GC_TRACE("Window subsystem init took: {}", sw);
-    }
-
-    {
-        Stopwatch sw{};
-        m_render_backend = std::make_unique<RenderBackend>(m_window->getHandle());
-        GC_TRACE("RenderBackend subsystem init took: {}", sw);
-    }
-
-    {
-        Stopwatch sw{};
-        m_debug_ui = std::make_unique<DebugUI>(m_window->getHandle(), m_render_backend->getInfo(), m_save_directory / "imgui.ini");
-        GC_TRACE("DebugUI subsystem init took: {}", sw);
-    }
-
-    {
-        Stopwatch sw{};
-        m_world = std::make_unique<World>();
-        GC_TRACE("World subsystem init took: {}", sw);
-    }
+    m_jobs = std::make_unique<Jobs>(std::thread::hardware_concurrency());
+    m_content = std::make_unique<Content>();
+    WindowInitInfo window_init_info{};
+    window_init_info.vulkan_support = true;
+    window_init_info.resizable = false;
+    m_window = std::make_unique<Window>(window_init_info);
+    m_render_backend = std::make_unique<RenderBackend>(m_window->getHandle());
+    m_debug_ui = std::make_unique<DebugUI>(m_window->getHandle(), m_render_backend->getInfo(), m_save_directory / "imgui.ini");
+    m_world = std::make_unique<World>();
 
     GC_TRACE("Initialised Application");
 }
@@ -200,7 +171,7 @@ void App::run()
         delta_times[frame_count % delta_times.size()] = frame_state.delta_time;
         frame_state.average_frame_time = std::accumulate(delta_times.cbegin(), delta_times.cend(), 0.0) / static_cast<double>(delta_times.size());
         frame_state.window_state = &window().processEvents(DebugUI::windowEventInterceptor);
-
+         
         {
             ZoneScopedN("UI Logic");
             if (frame_state.window_state->getKeyDown(SDL_SCANCODE_ESCAPE)) {
@@ -213,16 +184,11 @@ void App::run()
                 m_debug_ui->active = !m_debug_ui->active;
                 window().setMouseCaptured(!m_debug_ui->active);
             }
-            if (frame_state.window_state->getKeyPress(SDL_SCANCODE_T)) {
-                if (auto comp = m_world->getComponent<TransformComponent>(0)) {
-                    comp->setPosition({1.0f, 1.0f, 1.0f});
-                }
-            }
         }
 
-        m_debug_ui->update(frame_state.average_frame_time);
-
         m_world->update(frame_state);
+
+        m_debug_ui->update(frame_state);
 
         renderBackend().submitFrame(frame_state.window_state->getResizedFlag(), frame_state.draw_data);
         frame_state.draw_data.reset();

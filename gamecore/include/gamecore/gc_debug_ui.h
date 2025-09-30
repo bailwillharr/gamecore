@@ -10,6 +10,7 @@ union SDL_Event;     // forward-dec
 namespace gc {
 
 struct RenderBackendInfo; // forward-dec
+struct FrameState;        // forward-dec
 
 class DebugUI {
     ImGuiContext* m_imgui_ctx{};
@@ -18,6 +19,7 @@ class DebugUI {
     // state variables
 
     bool m_show_demo{};
+    bool m_clear_draw_data{};
 
 public:
     bool active{};
@@ -33,7 +35,7 @@ public:
     DebugUI& operator=(DebugUI&&) = delete;
 
     // Call every frame after Window::processEvents() and before RenderBackend::submitFrame()
-    void update(double dt);
+    void update(FrameState& frame_state);
 
     static void windowEventInterceptor(SDL_Event& ev);
 };

@@ -18,6 +18,7 @@
 #include "gamecore/gc_logger.h"
 #include "gamecore/gc_vulkan_common.h"
 #include "gamecore/gc_render_backend.h"
+#include "gamecore/gc_frame_state.h"
 
 namespace gc {
 
@@ -89,20 +90,20 @@ DebugUI::~DebugUI()
     ImGui::DestroyContext(m_imgui_ctx);
 }
 
-void DebugUI::update(double dt)
+void DebugUI::update(FrameState& frame_state)
 {
     ZoneScoped;
 
     ImGui_ImplSDL3_NewFrame();
     ImGui_ImplVulkan_NewFrame();
     ImGui::NewFrame();
-    static int delay_ms{};
 
     if (this->active) {
         ImGui::Begin("Debug UI", nullptr);
-        ImGui::Text("Average frame time: %.3f ms (%d fps)", dt * 1000.0, static_cast<int>(std::round(1.0 / dt)));
+        ImGui::Text("Average frame time: %.3f ms (%d fps)", frame_state.average_frame_time * 1000.0,
+                    static_cast<int>(std::round(1.0 / frame_state.average_frame_time)));
+        ImGui::Checkbox("Disable world rendering", &m_clear_draw_data);
         ImGui::Checkbox("Show ImGui Demo", &m_show_demo);
-        ImGui::SliderInt("Game update delay", &delay_ms, 0, 100);
         ImGui::End();
 
         if (m_show_demo) {
@@ -110,9 +111,11 @@ void DebugUI::update(double dt)
         }
     }
 
-    SDL_DelayPrecise(static_cast<uint64_t>(delay_ms) * 1'000'000ULL);
-
     ImGui::Render();
+
+    if (m_clear_draw_data) {
+        frame_state.draw_data.reset();
+    }
 }
 
 void DebugUI::windowEventInterceptor(SDL_Event& ev)
