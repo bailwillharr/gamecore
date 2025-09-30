@@ -121,7 +121,7 @@ VulkanDevice::VulkanDevice()
             abortGame("System Vulkan version is unsupported! Found: {}, Required: {}", vulkanVersionToString(instance_version),
                       vulkanVersionToString(REQUIRED_VULKAN_VERSION));
         }
-        GC_DEBUG("Vulkan instance version: {}", vulkanVersionToString(instance_version));
+        GC_DEBUG("Vulkan instance version: {}, using: {}", vulkanVersionToString(instance_version), vulkanVersionToString(REQUIRED_VULKAN_VERSION));
     }
 
     { // create instance

@@ -137,8 +137,6 @@ std::span<const uint8_t> Content::findAsset(Name name) const
     }
     const PackageAssetInfo& asset_info = it->second;
 
-    //GC_ASSERT(asset_info.file_index < m_package_file_maps.size());
-
     const uint8_t* const asset_data = m_package_file_maps[asset_info.file_index].data() + asset_info.entry.offset;
     return std::span<const uint8_t>(asset_data, asset_info.entry.size);
 }

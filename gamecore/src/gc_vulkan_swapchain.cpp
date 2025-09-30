@@ -450,14 +450,14 @@ void VulkanSwapchain::recreateSwapchain()
 
     // Finally create swapchain
     const VkSwapchainKHR old_swapchain = m_swapchain;
-    // VkSwapchainPresentModesCreateInfoEXT swapchain_present_modes_info{};
-    // swapchain_present_modes_info.sType = VK_STRUCTURE_TYPE_SWAPCHAIN_PRESENT_MODES_CREATE_INFO_EXT;
-    // swapchain_present_modes_info.pNext = nullptr;
-    // swapchain_present_modes_info.presentModeCount = 1;
-    // swapchain_present_modes_info.pPresentModes = &m_present_mode;
+    VkSwapchainPresentModesCreateInfoEXT swapchain_present_modes_info{};
+    swapchain_present_modes_info.sType = VK_STRUCTURE_TYPE_SWAPCHAIN_PRESENT_MODES_CREATE_INFO_EXT;
+    swapchain_present_modes_info.pNext = nullptr;
+    swapchain_present_modes_info.presentModeCount = 1;
+    swapchain_present_modes_info.pPresentModes = &m_present_mode;
     VkSwapchainCreateInfoKHR sc_info{};
     sc_info.sType = VK_STRUCTURE_TYPE_SWAPCHAIN_CREATE_INFO_KHR;
-    sc_info.pNext = nullptr; // &swapchain_present_modes_info;
+    sc_info.pNext = &swapchain_present_modes_info;
     sc_info.flags = 0;
     sc_info.surface = m_surface;
     sc_info.minImageCount = min_image_count;

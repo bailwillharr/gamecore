@@ -8,15 +8,15 @@
 
 #include <gamecore/gc_render_backend.h>
 
-extern "C" static int getNumFaces(const SMikkTSpaceContext* pContext)
+static int getNumFaces(const SMikkTSpaceContext* pContext)
 {
     auto vertices = static_cast<const std::vector<gc::MeshVertex>*>(pContext->m_pUserData);
     return static_cast<int>(vertices->size() / 3);
 }
 
-extern "C" static int getNumVerticesOfFace(const SMikkTSpaceContext*, int) { return 3; }
+static int getNumVerticesOfFace(const SMikkTSpaceContext*, int) { return 3; }
 
-extern "C" static void getPosition(const SMikkTSpaceContext* pContext, float fvPosOut[], const int iFace, const int iVert)
+static void getPosition(const SMikkTSpaceContext* pContext, float fvPosOut[], const int iFace, const int iVert)
 {
     auto vertices = static_cast<const std::vector<gc::MeshVertex>*>(pContext->m_pUserData);
     const size_t i = static_cast<size_t>(iFace) * 3 + static_cast<size_t>(iVert);
@@ -26,7 +26,7 @@ extern "C" static void getPosition(const SMikkTSpaceContext* pContext, float fvP
     fvPosOut[2] = pos.z;
 }
 
-extern "C" static void getNormal(const SMikkTSpaceContext* pContext, float fvNormOut[], const int iFace, const int iVert)
+static void getNormal(const SMikkTSpaceContext* pContext, float fvNormOut[], const int iFace, const int iVert)
 {
     auto vertices = static_cast<const std::vector<gc::MeshVertex>*>(pContext->m_pUserData);
     const size_t i = static_cast<size_t>(iFace) * 3 + static_cast<size_t>(iVert);
@@ -36,7 +36,7 @@ extern "C" static void getNormal(const SMikkTSpaceContext* pContext, float fvNor
     fvNormOut[2] = norm.z;
 }
 
-extern "C" static void getTexCoord(const SMikkTSpaceContext* pContext, float fvTexcOut[], const int iFace, const int iVert)
+static void getTexCoord(const SMikkTSpaceContext* pContext, float fvTexcOut[], const int iFace, const int iVert)
 {
     auto vertices = static_cast<const std::vector<gc::MeshVertex>*>(pContext->m_pUserData);
     const size_t i = static_cast<size_t>(iFace) * 3 + static_cast<size_t>(iVert);
@@ -45,7 +45,7 @@ extern "C" static void getTexCoord(const SMikkTSpaceContext* pContext, float fvT
     fvTexcOut[1] = uv.y;
 }
 
-extern "C" static void setTSpaceBasic(const SMikkTSpaceContext* pContext, const float fvTangent[], const float fSign, const int iFace, const int iVert)
+static void setTSpaceBasic(const SMikkTSpaceContext* pContext, const float fvTangent[], const float fSign, const int iFace, const int iVert)
 {
     auto vertices = static_cast<std::vector<gc::MeshVertex>*>(pContext->m_pUserData);
     const size_t i = static_cast<size_t>(iFace) * 3 + static_cast<size_t>(iVert);
@@ -77,7 +77,7 @@ static std::vector<int> genTangents(std::vector<gc::MeshVertex>& vertices)
 
     // generate new vertex and index list without duplicates:
 
-    std::vector<int> remap_table(vertices.size());           // initialised to zeros
+    std::vector<int> remap_table(vertices.size());                // initialised to zeros
     std::vector<gc::MeshVertex> vertex_data_out(vertices.size()); // initialised to zeros
 
     const int new_vertex_count = WeldMesh(reinterpret_cast<int*>(remap_table.data()), reinterpret_cast<float*>(vertex_data_out.data()),

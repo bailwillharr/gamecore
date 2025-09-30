@@ -1,5 +1,7 @@
 #include "gamecore/gc_debug_ui.h"
 
+#include <cmath>
+
 #include <filesystem>
 
 #include <imgui.h>

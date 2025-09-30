@@ -15,6 +15,7 @@
 #include <string>
 #include <filesystem>
 #include <fstream>
+#include <unordered_map>
 
 #include "gamecore/gc_crc_table.h"
 #include "gamecore/gc_logger.h"
