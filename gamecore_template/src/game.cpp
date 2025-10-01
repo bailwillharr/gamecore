@@ -21,9 +21,12 @@ void buildAndStartGame(gc::App& app)
     gc::RenderBackend& render_backend = app.renderBackend();
     gc::Content& content = app.content();
 
-    // On Windows/NVIDIA, triple buffered gives horrible latency so use double buffering instead
+    // On Windows/NVIDIA, TRIPLE_BUFFERED gives horrible latency and TRIPLE_BUFFERED_UNTHROTTLED doesn't work properly so use double buffering instead
+#if WIN32
+    render_backend.setSyncMode(gc::RenderSyncMode::VSYNC_OFF);
+#else
     render_backend.setSyncMode(gc::RenderSyncMode::VSYNC_ON_TRIPLE_BUFFERED_UNTHROTTLED);
-    //render_backend.setSyncMode(gc::RenderSyncMode::VSYNC_OFF);
+#endif
 
     world.registerComponent<SpinComponent, gc::ComponentArrayType::SPARSE>();
     world.registerComponent<MouseMoveComponent, gc::ComponentArrayType::SPARSE>();
@@ -75,7 +78,9 @@ void buildAndStartGame(gc::App& app)
     const auto another_entity = world.createEntity(gc::Name("another entity"), gc::ENTITY_NONE, {0.0f, 0.0f, 10.0f});
     world.addComponent<SpinComponent>(another_entity);
     world.addComponent<MouseMoveComponent>(another_entity).sensitivity = 0.01f;
-    world.addComponent<gc::CubeComponent>(another_entity).setMesh(&sphere_mesh).setMaterial(materials[SDL_rand(static_cast<int32_t>(texture_names.size()))].get());
+    world.addComponent<gc::CubeComponent>(another_entity)
+        .setMesh(&sphere_mesh)
+        .setMaterial(materials[SDL_rand(static_cast<int32_t>(texture_names.size()))].get());
 
     win.setTitle("Hello world!");
     win.setIsResizable(true);

@@ -104,7 +104,7 @@ VulkanSwapchain::~VulkanSwapchain()
     SDL_Vulkan_DestroySurface(m_device.getInstance(), m_surface, nullptr);
 }
 
-bool VulkanSwapchain::acquireAndPresent(VkImage image_to_present, bool window_resized, VkSemaphore timeline_semaphore, uint64_t& value)
+bool VulkanSwapchain::acquireAndPresent(VkImage image_to_present, bool window_resized, VkSemaphore timeline_semaphore, uint64_t& value, [[maybe_unused]] TracyVkCtx tracy_ctx)
 {
 
     // Currently, if window_resized is true, this function trys to present anyway, and only recreates the swapchain after trying to vkQueuePresent()
@@ -170,19 +170,19 @@ bool VulkanSwapchain::acquireAndPresent(VkImage image_to_present, bool window_re
                              &m_resources_per_swapchain_image[image_index].command_buffer_finished)); // reset always as fences are created signaled
     m_resources_per_swapchain_image[image_index].image_acquired = image_acquired_semaphore;
 
+    GC_CHECKVK(vkResetCommandPool(m_device.getHandle(), m_resources_per_swapchain_image[image_index].copy_image_pool, 0));
+    const VkCommandBuffer cmd = m_resources_per_swapchain_image[image_index].copy_image_cmdbuf;
+
+    VkCommandBufferBeginInfo begin_info{};
+    begin_info.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO;
+    begin_info.flags = VK_COMMAND_BUFFER_USAGE_ONE_TIME_SUBMIT_BIT;
+    begin_info.pInheritanceInfo = nullptr;
+    GC_CHECKVK(vkBeginCommandBuffer(cmd, &begin_info));
+
     /* record command buffer */
     {
         ZoneScopedN("Record acquireAndPresent cmdbuf");
-
-        GC_CHECKVK(vkResetCommandPool(m_device.getHandle(), m_resources_per_swapchain_image[image_index].copy_image_pool, 0));
-
-        const VkCommandBuffer cmd = m_resources_per_swapchain_image[image_index].copy_image_cmdbuf;
-
-        VkCommandBufferBeginInfo begin_info{};
-        begin_info.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO;
-        begin_info.flags = VK_COMMAND_BUFFER_USAGE_ONE_TIME_SUBMIT_BIT;
-        begin_info.pInheritanceInfo = nullptr;
-        GC_CHECKVK(vkBeginCommandBuffer(cmd, &begin_info));
+        TracyVkZone(tracy_ctx, cmd, "copy to swapchain image");
 
         { // transition acquired swapchain image to TRANSFER_DST layout
             VkImageMemoryBarrier2 barrier{};
@@ -253,9 +253,9 @@ bool VulkanSwapchain::acquireAndPresent(VkImage image_to_present, bool window_re
             dep.pImageMemoryBarriers = &barrier;
             vkCmdPipelineBarrier2(cmd, &dep);
         }
-
-        GC_CHECKVK(vkEndCommandBuffer(cmd));
     }
+
+    GC_CHECKVK(vkEndCommandBuffer(cmd));
 
     /* submit */
     { /* Copy the parameter image to the retrieved swapchain image. */
@@ -286,7 +286,7 @@ bool VulkanSwapchain::acquireAndPresent(VkImage image_to_present, bool window_re
 
         VkCommandBufferSubmitInfo cmd_buf_info{};
         cmd_buf_info.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_SUBMIT_INFO;
-        cmd_buf_info.commandBuffer = m_resources_per_swapchain_image[image_index].copy_image_cmdbuf;
+        cmd_buf_info.commandBuffer = cmd;
 
         VkSubmitInfo2 submit_info{};
         submit_info.sType = VK_STRUCTURE_TYPE_SUBMIT_INFO_2;

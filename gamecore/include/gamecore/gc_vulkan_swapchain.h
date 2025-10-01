@@ -70,7 +70,7 @@ public:
     // The function will wait until timeline_semaphore reaches 'value' before copying image_to_present.
     // When the copy is complete, timeline_semaphore will be set to 'value' + 1.
     // This is the case even when the swapchain is recreated or cannot be recreated (typically because the window is minimised)
-    bool acquireAndPresent(VkImage image_to_present, bool window_resized, VkSemaphore timeline_semaphore, uint64_t& value);
+    bool acquireAndPresent(VkImage image_to_present, bool window_resized, VkSemaphore timeline_semaphore, uint64_t& value, TracyVkCtx tracy_ctx);
 
 private:
     void recreateSwapchain();

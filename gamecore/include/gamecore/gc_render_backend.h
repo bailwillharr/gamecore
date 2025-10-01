@@ -240,11 +240,9 @@ class RenderBackend {
     VkSemaphore m_transfer_timeline_semaphore{};
     uint64_t m_transfer_timeline_value{};
 
-    uint64_t m_present_finished_value{};
+    uint64_t m_framebuffer_copy_finished_value{};
 
     VkCommandPool m_transfer_cmd_pool{};
-
-#define TRACY_EMABLE
 
 #ifdef TRACY_ENABLE
     struct TracyVulkanContext {

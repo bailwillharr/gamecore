@@ -24,6 +24,7 @@
 #include "gamecore/gc_logger.h"
 #include "gamecore/gc_world_draw_data.h"
 #include "gamecore/gc_units.h"
+#include "gamecore/gc_render_world.h"
 
 namespace gc {
 
@@ -292,7 +293,7 @@ RenderBackend::RenderBackend(SDL_Window* window_handle)
 
     m_main_timeline_value = 0;
     m_transfer_timeline_value = 0;
-    m_present_finished_value = 0;
+    m_framebuffer_copy_finished_value = 0;
 
     {
         VkCommandPoolCreateInfo info{};
@@ -416,57 +417,51 @@ void RenderBackend::submitFrame(bool window_resized, const WorldDrawData& world_
     }
 
     {
-        /* Transition image to COLOR_ATTACHMENT_OPTIMAL layout */
-        {
-            VkImageMemoryBarrier2 barrier{};
-            barrier.sType = VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER_2;
-            barrier.srcStageMask = VK_PIPELINE_STAGE_2_NONE;
-            barrier.srcAccessMask = VK_ACCESS_2_NONE;
-            barrier.dstStageMask = VK_PIPELINE_STAGE_2_COLOR_ATTACHMENT_OUTPUT_BIT;
-            barrier.dstAccessMask = VK_ACCESS_2_COLOR_ATTACHMENT_WRITE_BIT;
-            barrier.oldLayout = VK_IMAGE_LAYOUT_UNDEFINED;
-            barrier.newLayout = VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL;
-            barrier.srcQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
-            barrier.dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
-            barrier.image = m_framebuffer_image;
-            barrier.subresourceRange.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT;
-            barrier.subresourceRange.baseMipLevel = 0;
-            barrier.subresourceRange.levelCount = 1;
-            barrier.subresourceRange.baseArrayLayer = 0;
-            barrier.subresourceRange.layerCount = 1;
-            VkDependencyInfo dep{};
-            dep.sType = VK_STRUCTURE_TYPE_DEPENDENCY_INFO;
-            dep.imageMemoryBarrierCount = 1;
-            dep.pImageMemoryBarriers = &barrier;
-            vkCmdPipelineBarrier2(stuff.cmd, &dep);
-        }
+        /* Transition framebuffer image to COLOR_ATTACHMENT_OPTIMAL layout */
+        std::array<VkImageMemoryBarrier2, 2> to_attachment_barriers{};
+        to_attachment_barriers[0].sType = VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER_2;
+        to_attachment_barriers[0].srcStageMask = VK_PIPELINE_STAGE_2_NONE;
+        to_attachment_barriers[0].srcAccessMask = VK_ACCESS_2_NONE;
+        to_attachment_barriers[0].dstStageMask = VK_PIPELINE_STAGE_2_COLOR_ATTACHMENT_OUTPUT_BIT;
+        to_attachment_barriers[0].dstAccessMask = VK_ACCESS_2_COLOR_ATTACHMENT_WRITE_BIT;
+        to_attachment_barriers[0].oldLayout = VK_IMAGE_LAYOUT_UNDEFINED;
+        to_attachment_barriers[0].newLayout = VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL;
+        to_attachment_barriers[0].srcQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
+        to_attachment_barriers[0].dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
+        to_attachment_barriers[0].image = m_framebuffer_image;
+        to_attachment_barriers[0].subresourceRange.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT;
+        to_attachment_barriers[0].subresourceRange.baseMipLevel = 0;
+        to_attachment_barriers[0].subresourceRange.levelCount = 1;
+        to_attachment_barriers[0].subresourceRange.baseArrayLayer = 0;
+        to_attachment_barriers[0].subresourceRange.layerCount = 1;
         /* Transition depth stencil buffer to VK_IMAGE_LAYOUT_DEPTH_STENCIL_ATTACHMENT_OPTIMAL layout */
-        {
-            VkImageMemoryBarrier2 barrier{};
-            barrier.sType = VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER_2;
-            barrier.srcStageMask = VK_PIPELINE_STAGE_2_LATE_FRAGMENT_TESTS_BIT;
-            barrier.srcAccessMask = VK_ACCESS_2_DEPTH_STENCIL_ATTACHMENT_WRITE_BIT;
-            barrier.dstStageMask = VK_PIPELINE_STAGE_2_EARLY_FRAGMENT_TESTS_BIT;
-            barrier.dstAccessMask = VK_ACCESS_2_DEPTH_STENCIL_ATTACHMENT_WRITE_BIT;
-            barrier.oldLayout = VK_IMAGE_LAYOUT_UNDEFINED;
-            barrier.newLayout = VK_IMAGE_LAYOUT_DEPTH_STENCIL_ATTACHMENT_OPTIMAL;
-            barrier.srcQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
-            barrier.dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
-            barrier.image = m_depth_stencil;
-            barrier.subresourceRange.aspectMask = VK_IMAGE_ASPECT_DEPTH_BIT | VK_IMAGE_ASPECT_STENCIL_BIT;
-            barrier.subresourceRange.baseMipLevel = 0;
-            barrier.subresourceRange.levelCount = 1;
-            barrier.subresourceRange.baseArrayLayer = 0;
-            barrier.subresourceRange.layerCount = 1;
-            VkDependencyInfo dep{};
-            dep.sType = VK_STRUCTURE_TYPE_DEPENDENCY_INFO;
-            dep.imageMemoryBarrierCount = 1;
-            dep.pImageMemoryBarriers = &barrier;
-            vkCmdPipelineBarrier2(stuff.cmd, &dep);
-        }
+        to_attachment_barriers[1].sType = VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER_2;
+        to_attachment_barriers[1].srcStageMask = VK_PIPELINE_STAGE_2_NONE;
+        to_attachment_barriers[1].srcAccessMask = VK_ACCESS_2_NONE;
+        to_attachment_barriers[1].dstStageMask = VK_PIPELINE_STAGE_2_EARLY_FRAGMENT_TESTS_BIT;
+        to_attachment_barriers[1].dstAccessMask = VK_ACCESS_2_DEPTH_STENCIL_ATTACHMENT_READ_BIT | VK_ACCESS_2_DEPTH_STENCIL_ATTACHMENT_WRITE_BIT;
+        to_attachment_barriers[1].oldLayout = VK_IMAGE_LAYOUT_UNDEFINED;
+        to_attachment_barriers[1].newLayout = VK_IMAGE_LAYOUT_DEPTH_STENCIL_ATTACHMENT_OPTIMAL;
+        to_attachment_barriers[1].srcQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
+        to_attachment_barriers[1].dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
+        to_attachment_barriers[1].image = m_depth_stencil;
+        to_attachment_barriers[1].subresourceRange.aspectMask = VK_IMAGE_ASPECT_DEPTH_BIT | VK_IMAGE_ASPECT_STENCIL_BIT;
+        to_attachment_barriers[1].subresourceRange.baseMipLevel = 0;
+        to_attachment_barriers[1].subresourceRange.levelCount = 1;
+        to_attachment_barriers[1].subresourceRange.baseArrayLayer = 0;
+        to_attachment_barriers[1].subresourceRange.layerCount = 1;
+        VkDependencyInfo dep{};
+        dep.sType = VK_STRUCTURE_TYPE_DEPENDENCY_INFO;
+        dep.imageMemoryBarrierCount = static_cast<uint32_t>(to_attachment_barriers.size());
+        dep.pImageMemoryBarriers = to_attachment_barriers.data();
+        vkCmdPipelineBarrier2(stuff.cmd, &dep);
     }
 
     {
+        ZoneScopedN("Record render commands");
+        ZoneValue(m_frame_count);
+        TracyVkZone(m_tracy_vulkan_context.ctx, stuff.cmd, "Render to framebuffer");
+
         VkRenderingAttachmentInfo color_attachment{};
         color_attachment.sType = VK_STRUCTURE_TYPE_RENDERING_ATTACHMENT_INFO;
         color_attachment.imageView = m_framebuffer_image_view;
@@ -498,12 +493,7 @@ void RenderBackend::submitFrame(bool window_resized, const WorldDrawData& world_
         info.pDepthAttachment = &depth_attachment;
         info.pStencilAttachment = nullptr;
         vkCmdBeginRendering(stuff.cmd, &info);
-    }
 
-    {
-        ZoneScopedN("Record draw commands");
-        ZoneValue(m_frame_count);
-        TracyVkZone(m_tracy_vulkan_context.ctx, stuff.cmd, "Record draw commands (GPU)");
         // Set viewport and scissor (dynamic states)
         const VkExtent2D swapchain_extent = m_swapchain.getExtent();
         VkViewport viewport = {};
@@ -520,33 +510,17 @@ void RenderBackend::submitFrame(bool window_resized, const WorldDrawData& world_
         vkCmdSetScissor(stuff.cmd, 0, 1, &scissor);
 
         // This is very fast. Might as well do it every frame.
-        const double aspect_ratio = static_cast<double>(m_swapchain.getExtent().width) / static_cast<double>(m_swapchain.getExtent().height);
-        glm::mat4 projection_matrix = glm::perspectiveLH_ZO(glm::radians(45.0), aspect_ratio, 0.1, 1000.0);
-        vkCmdPushConstants(stuff.cmd, m_pipeline_layout, VK_SHADER_STAGE_VERTEX_BIT, 64, 64, &projection_matrix);
-
-        const RenderMaterial* last_material{};
-        for (const auto& entry : world_draw_data.getDrawEntries()) {
-            GC_ASSERT(entry.mesh);
-            GC_ASSERT(entry.material);
-
-            if (entry.material->isUploaded() && entry.mesh->isUploaded()) {
-                vkCmdPushConstants(stuff.cmd, m_pipeline_layout, VK_SHADER_STAGE_VERTEX_BIT, 0, 64, &entry.world_matrix);
-                entry.material->bind(stuff.cmd, m_pipeline_layout, m_main_timeline_semaphore, m_main_timeline_value + 1, last_material);
-                entry.mesh->draw(stuff.cmd, m_main_timeline_semaphore, m_main_timeline_value + 1);
-                last_material = entry.material;
-            }
-        }
+        const float aspect_ratio = viewport.width / viewport.height;
+        const glm::mat4 projection_matrix = glm::perspectiveLH_ZO(glm::radians(45.0f), aspect_ratio, 0.1f, 1000.0f);
+        recordWorldRenderingCommands(projection_matrix, stuff.cmd, m_pipeline_layout, m_main_timeline_semaphore, m_main_timeline_value + 1, world_draw_data);
 
         ImGui_ImplVulkan_RenderDrawData(ImGui::GetDrawData(), stuff.cmd);
-    }
 
-    {
         vkCmdEndRendering(stuff.cmd);
     }
 
     /* Transition image to TRANSFER_SRC layout */
     {
-        TracyVkZone(m_tracy_vulkan_context.ctx, stuff.cmd, "Transition colour attachment for present (GPU)");
         VkImageMemoryBarrier2 barrier{};
         barrier.sType = VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER_2;
         barrier.srcStageMask = VK_PIPELINE_STAGE_2_COLOR_ATTACHMENT_OUTPUT_BIT;
@@ -585,19 +559,21 @@ void RenderBackend::submitFrame(bool window_resized, const WorldDrawData& world_
         cmd_info.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_SUBMIT_INFO;
         cmd_info.commandBuffer = stuff.cmd;
 
+        // Wait for the framebuffer image to finish being copied from to a swapchain image
         VkSemaphoreSubmitInfo wait_info{};
         wait_info.sType = VK_STRUCTURE_TYPE_SEMAPHORE_SUBMIT_INFO;
         wait_info.semaphore = m_main_timeline_semaphore;
-        wait_info.stageMask = VK_PIPELINE_STAGE_2_CLEAR_BIT;
-        wait_info.value = m_present_finished_value;
+        wait_info.stageMask = VK_PIPELINE_STAGE_2_COLOR_ATTACHMENT_OUTPUT_BIT;
+        wait_info.value = m_framebuffer_copy_finished_value;
 
         m_main_timeline_value += 1;
         stuff.command_buffer_available_value = m_main_timeline_value;
 
+        // Waited on by m_swapchain.acquireAndPresent()'s copy operation just after this queueSubmit
         VkSemaphoreSubmitInfo signal_info{};
         signal_info.sType = VK_STRUCTURE_TYPE_SEMAPHORE_SUBMIT_INFO;
         signal_info.semaphore = m_main_timeline_semaphore;
-        signal_info.stageMask = VK_PIPELINE_STAGE_2_CLEAR_BIT;
+        signal_info.stageMask = VK_PIPELINE_STAGE_2_COLOR_ATTACHMENT_OUTPUT_BIT;
         signal_info.value = m_main_timeline_value;
 
         VkSubmitInfo2 submit{};
@@ -611,9 +587,15 @@ void RenderBackend::submitFrame(bool window_resized, const WorldDrawData& world_
         GC_CHECKVK(vkQueueSubmit2(m_device.getMainQueue(), 1, &submit, VK_NULL_HANDLE));
     }
 
-    const bool swapchain_recreated = m_swapchain.acquireAndPresent(m_framebuffer_image, window_resized, m_main_timeline_semaphore, m_main_timeline_value);
+#ifdef TRACY_ENABLE
+    const TracyVkCtx tracy_ctx = m_tracy_vulkan_context.ctx;
+#else
+    const TracyVkCtx tracy_ctx{};
+#endif
+    const bool swapchain_recreated =
+        m_swapchain.acquireAndPresent(m_framebuffer_image, window_resized, m_main_timeline_semaphore, m_main_timeline_value, tracy_ctx);
 
-    m_present_finished_value = m_main_timeline_value;
+    m_framebuffer_copy_finished_value = m_main_timeline_value;
 
     if (swapchain_recreated) {
         GC_CHECKVK(
@@ -727,9 +709,9 @@ GPUPipeline RenderBackend::createPipeline(std::span<const uint8_t> vertex_spv, s
     rasterization_state.cullMode = VK_CULL_MODE_BACK_BIT;
     rasterization_state.frontFace = VK_FRONT_FACE_CLOCKWISE; // it is actually CCW but shader flips things
     rasterization_state.depthBiasEnable = VK_FALSE;
-    rasterization_state.depthBiasConstantFactor = 0.0f; // ignored
-    rasterization_state.depthBiasClamp = 0.0f;          // ignored
-    rasterization_state.depthBiasSlopeFactor = 0.0f;    // ignored
+    rasterization_state.depthBiasConstantFactor = 0.0f;      // ignored
+    rasterization_state.depthBiasClamp = 0.0f;               // ignored
+    rasterization_state.depthBiasSlopeFactor = 0.0f;         // ignored
 
     const VkFormat color_attachment_format = m_swapchain.getSurfaceFormat().format;
 
