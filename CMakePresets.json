@@ -135,7 +135,7 @@
       "cacheVariables": {
         "CMAKE_BUILD_TYPE": "RelWithDebInfo",
         "GC_DEV_BUILD": "ON",
-		"GC_PROFILING": "OFF"
+		    "GC_PROFILING": "OFF"
       },
       "condition": {
         "type": "equals",
@@ -152,7 +152,7 @@
         "CMAKE_BUILD_TYPE": "Release",
         "CMAKE_INTERPROCEDURAL_OPTIMIZATION": "ON",
         "GC_DEV_BUILD": "OFF",
-		"GC_PROFILING": "OFF"
+		    "GC_PROFILING": "OFF"
       },
       "condition": {
         "type": "equals",

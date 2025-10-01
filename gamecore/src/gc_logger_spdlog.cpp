@@ -6,6 +6,7 @@
 
 #include <spdlog/logger.h>
 #include <spdlog/sinks/stdout_color_sinks.h>
+#include <spdlog/sinks/basic_file_sink.h>
 
 #include "gamecore/gc_abort.h"
 #include "gamecore/gc_threading.h"
@@ -26,9 +27,19 @@ LoggerSpdlog::~LoggerSpdlog() { GC_TRACE("Destroying LoggerSpdlog..."); }
 void LoggerSpdlog::incrementFrameNumber()
 {
     if (!isMainThread()) {
-        gc::abortGame("Attempt to call LoggerSpdlog::incrementFrameNumber() from another thread!");
+        gc::abortGame("Cannot call LoggerSpdlog::incrementFrameNumber() from another thread!");
     }
     m_frame_number.fetch_add(1LL, std::memory_order_relaxed);
+}
+
+void LoggerSpdlog::setLogFile(const std::filesystem::path& file)
+{
+    if (!isMainThread()) {
+        gc::abortGame("Cannot call LoggerSpdlog::setLogFile() from another thread.");
+    }
+    if (m_spdlogger->sinks().size() == 1) {
+        m_spdlogger->sinks().emplace_back(std::make_shared<spdlog::sinks::basic_file_sink_mt>(file.string()));
+    }
 }
 
 void LoggerSpdlog::log(std::string_view message, LogLevel level)

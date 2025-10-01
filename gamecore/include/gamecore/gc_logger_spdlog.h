@@ -27,6 +27,8 @@ public:
 
     void incrementFrameNumber() override;
 
+    void setLogFile(const std::filesystem::path& file) override;
+
     void log(std::string_view message, LogLevel level) override;
 };
 

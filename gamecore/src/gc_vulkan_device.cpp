@@ -17,6 +17,7 @@
 
 namespace gc {
 
+#ifdef GC_GC_VULKAN_VALIDATION
 static VkBool32 vulkanMessageCallback(VkDebugUtilsMessageSeverityFlagBitsEXT message_severity, [[maybe_unused]] VkDebugUtilsMessageTypeFlagsEXT message_types,
                                       const VkDebugUtilsMessengerCallbackDataEXT* callback_data, [[maybe_unused]] void* user_data)
 {
@@ -43,6 +44,7 @@ static VkBool32 vulkanMessageCallback(VkDebugUtilsMessageSeverityFlagBitsEXT mes
     GC_WARN("Vulkan debug callback said: {} {}", message_type, callback_data->pMessage);
     return VK_FALSE;
 }
+#endif
 
 static std::vector<VkQueueFamilyProperties> getQueueFamilyProperties(VkPhysicalDevice physical_device)
 {
@@ -146,16 +148,6 @@ VulkanDevice::VulkanDevice()
         instance_extensions.push_back(VK_KHR_GET_SURFACE_CAPABILITIES_2_EXTENSION_NAME);
         instance_extensions.push_back(VK_EXT_SURFACE_MAINTENANCE_1_EXTENSION_NAME);
 
-        VkDebugUtilsMessengerCreateInfoEXT debug_messenger_info{};
-        debug_messenger_info.sType = VK_STRUCTURE_TYPE_DEBUG_UTILS_MESSENGER_CREATE_INFO_EXT;
-        debug_messenger_info.messageSeverity = VK_DEBUG_UTILS_MESSAGE_SEVERITY_WARNING_BIT_EXT | VK_DEBUG_UTILS_MESSAGE_SEVERITY_ERROR_BIT_EXT;
-        debug_messenger_info.messageType =
-            VK_DEBUG_UTILS_MESSAGE_TYPE_GENERAL_BIT_EXT | VK_DEBUG_UTILS_MESSAGE_TYPE_VALIDATION_BIT_EXT | VK_DEBUG_UTILS_MESSAGE_TYPE_PERFORMANCE_BIT_EXT;
-        debug_messenger_info.pfnUserCallback = vulkanMessageCallback;
-        debug_messenger_info.pUserData = nullptr;
-
-        [[maybe_unused]] const char* const khronos_validation_layer_name = "VK_LAYER_KHRONOS_validation";
-
         VkApplicationInfo app_info{};
         app_info.sType = VK_STRUCTURE_TYPE_APPLICATION_INFO;
         app_info.pApplicationName = "Gamecore Game";
@@ -170,10 +162,17 @@ VulkanDevice::VulkanDevice()
         instance_info.enabledExtensionCount = static_cast<uint32_t>(instance_extensions.size());
         instance_info.ppEnabledExtensionNames = instance_extensions.data();
 #ifdef GC_VULKAN_VALIDATION
+        VkDebugUtilsMessengerCreateInfoEXT debug_messenger_info{};
+        debug_messenger_info.sType = VK_STRUCTURE_TYPE_DEBUG_UTILS_MESSENGER_CREATE_INFO_EXT;
+        debug_messenger_info.messageSeverity = VK_DEBUG_UTILS_MESSAGE_SEVERITY_WARNING_BIT_EXT | VK_DEBUG_UTILS_MESSAGE_SEVERITY_ERROR_BIT_EXT;
+        debug_messenger_info.messageType =
+            VK_DEBUG_UTILS_MESSAGE_TYPE_GENERAL_BIT_EXT | VK_DEBUG_UTILS_MESSAGE_TYPE_VALIDATION_BIT_EXT | VK_DEBUG_UTILS_MESSAGE_TYPE_PERFORMANCE_BIT_EXT;
+        debug_messenger_info.pfnUserCallback = vulkanMessageCallback;
+        debug_messenger_info.pUserData = nullptr;
         instance_info.pNext = &debug_messenger_info;
         instance_info.enabledLayerCount = 1;
+        const char* const khronos_validation_layer_name = "VK_LAYER_KHRONOS_validation";
         instance_info.ppEnabledLayerNames = &khronos_validation_layer_name;
-
         GC_DEBUG("Using Vulkan validation layers.");
 #endif
 
@@ -237,8 +236,13 @@ VulkanDevice::VulkanDevice()
                                                       .pQueuePriorities = queue_priorities.data()});
 
         constexpr std::array REQUIRED_EXTENSION_NAMES{VK_KHR_SWAPCHAIN_EXTENSION_NAME, VK_EXT_SWAPCHAIN_MAINTENANCE_1_EXTENSION_NAME};
-        constexpr std::array OPTIONAL_EXTENSION_NAMES{VK_EXT_MEMORY_PRIORITY_EXTENSION_NAME, VK_EXT_MEMORY_BUDGET_EXTENSION_NAME,
-                                                      VK_EXT_CALIBRATED_TIMESTAMPS_EXTENSION_NAME};
+        constexpr std::array OPTIONAL_EXTENSION_NAMES{
+            VK_EXT_MEMORY_PRIORITY_EXTENSION_NAME,
+            VK_EXT_MEMORY_BUDGET_EXTENSION_NAME,
+#ifdef TRACY_ENABLE
+            VK_EXT_CALIBRATED_TIMESTAMPS_EXTENSION_NAME,
+#endif
+        };
 
         // First only add optional extension names and then remove any which are unsupported.
         // Then add required extensions without checking for compatibility and create the device.

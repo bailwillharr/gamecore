@@ -37,6 +37,23 @@ App* App::s_app = nullptr;
 App::App(const AppInitOptions& options)
 {
 
+    /* Get save directory(In $XDG_DATA_HOME on Linux and in % appdata % on Windows) */
+    const char* user_dir = SDL_GetPrefPath(options.author.c_str(), options.name.c_str());
+    if (user_dir) {
+        m_save_directory = std::filesystem::path(user_dir);
+        SDL_free(const_cast<char*>(user_dir));
+        GC_INFO("Save directory: {}", m_save_directory.string());
+    }
+    else {
+        GC_ERROR("SDL_GetPrefPath() error: {}", SDL_GetError());
+        GC_ERROR("Failed to get save directory! Falling back to current working directory.");
+        m_save_directory = std::filesystem::current_path();
+    }
+
+    Logger::instance().setLogFile(m_save_directory / "logfile.txt");
+
+    GC_INFO("STARTING GAME");
+
     /* Register some information for the program */
     {
         bool set_prop_success = true;
@@ -49,19 +66,6 @@ App::App(const AppInitOptions& options)
             // not a big deal if these fail
             GC_WARN("Failed setting one or more SDL App Metadata properties");
         }
-    }
-
-    /* Get save directory(In $XDG_DATA_HOME on Linux and in % appdata % on Windows) */
-    const char* user_dir = SDL_GetPrefPath(options.author.c_str(), options.name.c_str());
-    if (user_dir) {
-        m_save_directory = std::filesystem::path(user_dir);
-        SDL_free(const_cast<char*>(user_dir));
-        GC_INFO("Save directory: {}", m_save_directory.string());
-    }
-    else {
-        GC_ERROR("SDL_GetPrefPath() error: {}", SDL_GetError());
-        GC_ERROR("Failed to get save directory! Falling back to current working directory.");
-        m_save_directory = std::filesystem::current_path();
     }
 
     /* SUBSYSTEM INITIALISATION */
@@ -108,6 +112,7 @@ void App::shutdown()
         delete s_app;
         s_app = nullptr;
         SDL_Quit();
+        GC_INFO("SHUT DOWN GAME");
     }
     else {
         abortGame("App::shutdown() called when App is already shutdown!");

@@ -2,6 +2,7 @@
 
 #include <string_view>
 #include <format>
+#include <filesystem>
 
 /* Logger macros that cut TRACE and DEBUG from release builds */
 #ifdef GC_LOG_TRACE
@@ -30,6 +31,7 @@ public:
     virtual ~Logger();
 
     virtual void incrementFrameNumber();
+    virtual void setLogFile(const std::filesystem::path&);
 
     void trace(std::string_view message);
     void debug(std::string_view message);

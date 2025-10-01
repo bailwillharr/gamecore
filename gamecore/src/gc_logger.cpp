@@ -13,6 +13,8 @@ Logger::~Logger() {}
 
 void Logger::incrementFrameNumber() {}
 
+void Logger::setLogFile(const std::filesystem::path&) {}
+
 void Logger::trace(std::string_view message) { log(message, LogLevel::LVL_TRACE); }
 
 void Logger::debug(std::string_view message) { log(message, LogLevel::LVL_DEBUG); }
