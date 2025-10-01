@@ -224,7 +224,7 @@ RenderBackend::RenderBackend(SDL_Window* window_handle)
         }
         pool_info.poolSizeCount = static_cast<uint32_t>(pool_sizes.size());
         pool_info.pPoolSizes = pool_sizes.data();
-        GC_CHECKVK(vkCreateDescriptorPool(m_device.getHandle(), &pool_info, nullptr, &m_main_desciptor_pool));
+        GC_CHECKVK(vkCreateDescriptorPool(m_device.getHandle(), &pool_info, nullptr, &m_main_descriptor_pool));
     }
 
     // create descriptor set layout
@@ -372,7 +372,7 @@ RenderBackend::~RenderBackend()
     vkDestroyPipelineLayout(m_device.getHandle(), m_pipeline_layout, nullptr);
 
     vkDestroyDescriptorSetLayout(m_device.getHandle(), m_descriptor_set_layout, nullptr);
-    vkDestroyDescriptorPool(m_device.getHandle(), m_main_desciptor_pool, nullptr);
+    vkDestroyDescriptorPool(m_device.getHandle(), m_main_descriptor_pool, nullptr);
     vkDestroySampler(m_device.getHandle(), m_sampler, nullptr);
 }
 
@@ -972,7 +972,7 @@ RenderTexture RenderBackend::createTexture(std::span<const uint8_t> r8g8b8a8_pak
 
 RenderMaterial RenderBackend::createMaterial(const std::shared_ptr<RenderTexture>& texture, const std::shared_ptr<GPUPipeline>& pipeline)
 {
-    return RenderMaterial(m_device.getHandle(), m_main_desciptor_pool, m_descriptor_set_layout, texture, pipeline);
+    return RenderMaterial(m_device.getHandle(), m_main_descriptor_pool, m_descriptor_set_layout, texture, pipeline);
 }
 
 RenderMesh RenderBackend::createMesh(std::span<const MeshVertex> vertices, std::span<const uint16_t> indices)

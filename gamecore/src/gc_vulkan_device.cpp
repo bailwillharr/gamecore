@@ -17,7 +17,7 @@
 
 namespace gc {
 
-#ifdef GC_GC_VULKAN_VALIDATION
+#ifdef GC_VULKAN_VALIDATION
 static VkBool32 vulkanMessageCallback(VkDebugUtilsMessageSeverityFlagBitsEXT message_severity, [[maybe_unused]] VkDebugUtilsMessageTypeFlagsEXT message_types,
                                       const VkDebugUtilsMessengerCallbackDataEXT* callback_data, [[maybe_unused]] void* user_data)
 {

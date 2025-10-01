@@ -208,7 +208,7 @@ class RenderBackend {
 
     // global descriptor pool
     VkSampler m_sampler{};
-    VkDescriptorPool m_main_desciptor_pool{};
+    VkDescriptorPool m_main_descriptor_pool{};
     VkDescriptorSetLayout m_descriptor_set_layout{};
 
     // pipeline layout for most 3D rendering
@@ -283,7 +283,7 @@ public:
         info.physical_device = m_device.getPhysicalDevice();
         info.main_queue = m_device.getMainQueue();
         info.main_queue_family_index = m_device.getQueueFamilyIndex();
-        info.main_descriptor_pool = m_main_desciptor_pool;
+        info.main_descriptor_pool = m_main_descriptor_pool;
         info.framebuffer_format = m_swapchain.getSurfaceFormat().format;
         info.depth_stencil_format = m_depth_stencil_format;
         return info;
