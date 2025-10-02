@@ -14,6 +14,7 @@ void recordWorldRenderingCommands(const glm::mat4& projection_matrix, VkCommandB
 {
 
     vkCmdPushConstants(cmd, world_pipeline_layout, VK_SHADER_STAGE_VERTEX_BIT, 64, 64, &projection_matrix);
+    vkCmdPushConstants(cmd, world_pipeline_layout, VK_SHADER_STAGE_VERTEX_BIT, 128, sizeof(glm::vec3), &draw_data.getLightPos());
 
     const RenderMaterial* last_material{};
     for (const auto& entry : draw_data.getDrawEntries()) {

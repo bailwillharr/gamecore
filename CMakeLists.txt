@@ -7,8 +7,9 @@ set(CMAKE_CONFIGURATION_TYPES "Debug;Release;RelWithDebInfo")
 # Enable link-time optimisation for release builds
 # Compiler options such as compiler warnings, treating warnings as errors,
 # are defined per project/target
+# Disable RTTI
 if(MSVC)
-    set(CMAKE_CXX_FLAGS "/DWIN32 /D_WINDOWS /D_HAS_EXCEPTIONS=1 /EHsc")
+    set(CMAKE_CXX_FLAGS "/DWIN32 /D_WINDOWS /D_HAS_EXCEPTIONS=1 /EHsc /GR-")
     set(CMAKE_CXX_FLAGS_DEBUG "/Ob0 /Od /RTC1")
     set(CMAKE_CXX_FLAGS_RELEASE "/O2 /Ob2 /Oi /Ot /arch:AVX2 /DNDEBUG /GL")
     set(CMAKE_CXX_FLAGS_REL_WITH_DEB_INFO "/O2 /Ob1 /DNDEBUG")

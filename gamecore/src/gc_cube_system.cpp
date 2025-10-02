@@ -18,6 +18,9 @@ void CubeSystem::onUpdate(FrameState& frame_state)
     m_world.forEach<TransformComponent, CubeComponent>([&]([[maybe_unused]] Entity entity, TransformComponent& t, CubeComponent& c) {
         if (c.m_visible && c.m_mesh && c.m_material) {
             frame_state.draw_data.drawMesh(t.getWorldMatrix(), c.m_mesh, c.m_material);
+            if (t.name == Name("light")) {
+                frame_state.draw_data.setLightPos(t.getPosition());
+            }
         }
     });
 }

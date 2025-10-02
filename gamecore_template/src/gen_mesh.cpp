@@ -166,7 +166,7 @@ gc::RenderMesh genCuboidMesh(gc::RenderBackend& render_backend, float x, float y
     return render_backend.createMesh(vertices, indices);
 }
 
-gc::RenderMesh genSphereMesh(gc::RenderBackend& render_backend, float r, int detail, bool wind_inside, bool flip_normals)
+gc::RenderMesh genSphereMesh(gc::RenderBackend& render_backend, float r, int detail, bool flip_normals)
 {
     using namespace glm;
 
@@ -178,6 +178,8 @@ gc::RenderMesh genSphereMesh(gc::RenderBackend& render_backend, float r, int det
         // theta goes north-to-south
         float theta = i * angle_step;
         float theta2 = theta + angle_step;
+        const float v2 = theta / glm::two_pi<float>();
+        const float v1 = theta2 / glm::two_pi<float>();
         for (int j = 0; j < detail / 2; j++) {
             // phi goes west-to-east
             float phi = j * angle_step;
@@ -188,44 +190,23 @@ gc::RenderMesh genSphereMesh(gc::RenderBackend& render_backend, float r, int det
             vec3 top_right{r * sin(phi2) * cos(theta), r * cos(phi2), r * sin(phi2) * sin(theta)};
             vec3 bottom_right{r * sin(phi2) * cos(theta2), r * cos(phi2), r * sin(phi2) * sin(theta2)};
 
-            if (wind_inside == false) {
-                // tris are visible from outside the sphere
+            const float u1 = phi / glm::pi<float>();
+            const float u2 = phi2 / glm::pi<float>();
 
-                // triangle 1
-                vertices.push_back({top_left, {}, {}, {0.0f, 0.0f}});
-                vertices.push_back({bottom_left, {}, {}, {0.0f, 1.0f}});
-                vertices.push_back({bottom_right, {}, {}, {1.0f, 1.0f}});
-                // triangle 2
-                vertices.push_back({top_right, {}, {}, {1.0f, 0.0f}});
-                vertices.push_back({top_left, {}, {}, {0.0f, 0.0f}});
-                vertices.push_back({bottom_right, {}, {}, {1.0f, 1.0f}});
-            }
-            else {
-                // tris are visible from inside the sphere
-
-                // triangle 1
-                vertices.push_back({bottom_right, {}, {}, {1.0f, 1.0f}});
-                vertices.push_back({bottom_left, {}, {}, {0.0f, 1.0f}});
-                vertices.push_back({top_left, {}, {}, {0.0f, 0.0f}});
-
-                // triangle 2
-                vertices.push_back({bottom_right, {}, {}, {1.0f, 1.0f}});
-                vertices.push_back({top_left, {}, {}, {0.0f, 0.0f}});
-                vertices.push_back({top_right, {}, {}, {1.0f, 0.0f}});
-            }
-
-            vec3 vector1 = (vertices.end() - 1)->position - (vertices.end() - 2)->position;
-            vec3 vector2 = (vertices.end() - 2)->position - (vertices.end() - 3)->position;
-            vec3 norm = normalize(cross(vector2, vector1));
-
-            // NORMALS HAVE BEEN FIXED
-
-            if (flip_normals) norm = -norm;
-
-            if (j == (detail / 2) - 1) norm = -norm;
+            // triangle 1
+            vertices.push_back({top_left, {}, {}, {u1, v2}});
+            vertices.push_back({bottom_left, {}, {}, {u1, v1}});
+            vertices.push_back({bottom_right, {}, {}, {u2, v1}});
+            // triangle 2
+            vertices.push_back({top_left, {}, {}, {u1, v2}});
+            vertices.push_back({bottom_right, {}, {}, {u2, v1}});
+            vertices.push_back({top_right, {}, {}, {u2, v2}});
 
             for (auto it = vertices.end() - 6; it != vertices.end(); ++it) {
-                it->normal = norm;
+                it->normal = normalize(it->position);
+                if (flip_normals) {
+                    it->normal = -it->normal;
+                }
             }
         }
     }

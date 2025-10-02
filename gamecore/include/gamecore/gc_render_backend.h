@@ -20,6 +20,7 @@
 
 #pragma once
 
+#include <array>
 #include <vector>
 #include <span>
 #include <memory>
@@ -89,19 +90,27 @@ struct MeshVertex {
 };
 
 class RenderMaterial {
-    const std::shared_ptr<RenderTexture> m_texture{};
+    const std::shared_ptr<RenderTexture> m_base_color_texture{};
+    const std::shared_ptr<RenderTexture> m_occlusion_roughness_metallic_texture{};
+    const std::shared_ptr<RenderTexture> m_normal_texture{};
     const std::shared_ptr<GPUPipeline> m_pipeline{};
     VkDescriptorSet m_descriptor_set{};
 
 public:
     RenderMaterial(VkDevice device, VkDescriptorPool descriptor_pool, VkDescriptorSetLayout descriptor_set_layout,
-                   const std::shared_ptr<RenderTexture>& texture, const std::shared_ptr<GPUPipeline>& pipeline)
-        : m_texture(texture), m_pipeline(pipeline)
+                   const std::shared_ptr<RenderTexture>& base_color_texture, const std::shared_ptr<RenderTexture>& occlusion_roughness_metallic_texture,
+                   const std::shared_ptr<RenderTexture>& normal_texture, const std::shared_ptr<GPUPipeline>& pipeline)
+        : m_base_color_texture(base_color_texture),
+          m_occlusion_roughness_metallic_texture(occlusion_roughness_metallic_texture),
+          m_normal_texture(normal_texture),
+          m_pipeline(pipeline)
     {
         GC_ASSERT(device);
         GC_ASSERT(descriptor_pool);
         GC_ASSERT(descriptor_set_layout);
-        GC_ASSERT(m_texture);
+        GC_ASSERT(m_base_color_texture);
+        GC_ASSERT(m_occlusion_roughness_metallic_texture);
+        GC_ASSERT(m_normal_texture);
         GC_ASSERT(m_pipeline);
 
         VkDescriptorSetAllocateInfo info{};
@@ -110,18 +119,41 @@ public:
         info.descriptorSetCount = 1;
         info.pSetLayouts = &descriptor_set_layout;
         GC_CHECKVK(vkAllocateDescriptorSets(device, &info, &m_descriptor_set));
-        VkDescriptorImageInfo descriptor_image_info{};
-        descriptor_image_info.imageView = m_texture->getImageView().getHandle();
-        descriptor_image_info.imageLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
-        VkWriteDescriptorSet write{};
-        write.sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
-        write.dstSet = m_descriptor_set;
-        write.dstBinding = 0;
-        write.dstArrayElement = 0;
-        write.descriptorCount = 1;
-        write.descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
-        write.pImageInfo = &descriptor_image_info;
-        vkUpdateDescriptorSets(device, 1, &write, 0, nullptr);
+
+        std::array<VkDescriptorImageInfo, 3> descriptor_image_infos{};
+        std::array<VkWriteDescriptorSet, 3> writes{};
+
+        descriptor_image_infos[0].imageView = m_base_color_texture->getImageView().getHandle();
+        descriptor_image_infos[0].imageLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
+        writes[0].sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
+        writes[0].dstSet = m_descriptor_set;
+        writes[0].dstBinding = 0;
+        writes[0].dstArrayElement = 0;
+        writes[0].descriptorCount = 1;
+        writes[0].descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
+        writes[0].pImageInfo = &descriptor_image_infos[0];
+
+        descriptor_image_infos[1].imageView = m_occlusion_roughness_metallic_texture->getImageView().getHandle();
+        descriptor_image_infos[1].imageLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
+        writes[1].sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
+        writes[1].dstSet = m_descriptor_set;
+        writes[1].dstBinding = 1;
+        writes[1].dstArrayElement = 0;
+        writes[1].descriptorCount = 1;
+        writes[1].descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
+        writes[1].pImageInfo = &descriptor_image_infos[1];
+
+        descriptor_image_infos[2].imageView = m_normal_texture->getImageView().getHandle();
+        descriptor_image_infos[2].imageLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
+        writes[2].sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
+        writes[2].dstSet = m_descriptor_set;
+        writes[2].dstBinding = 2;
+        writes[2].dstArrayElement = 0;
+        writes[2].descriptorCount = 1;
+        writes[2].descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
+        writes[2].pImageInfo = &descriptor_image_infos[2];
+
+        vkUpdateDescriptorSets(device, static_cast<uint32_t>(writes.size()), writes.data(), 0, nullptr);
     }
 
     // Binds pipeline and descriptor sets. Check isUploaded() first
@@ -140,15 +172,18 @@ public:
 
         if (!last_used_material || (last_used_material && last_used_material->m_descriptor_set != m_descriptor_set)) {
             vkCmdBindDescriptorSets(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, pipeline_layout, 0, 1, &m_descriptor_set, 0, nullptr);
-            m_texture->getImageView().useResource(timeline_semaphore, signal_value);
+            m_base_color_texture->getImageView().useResource(timeline_semaphore, signal_value);
+            m_occlusion_roughness_metallic_texture->getImageView().useResource(timeline_semaphore, signal_value);
+            m_normal_texture->getImageView().useResource(timeline_semaphore, signal_value);
         }
     }
 
     // Checks that all textures for this material are uploaded
     bool isUploaded() const
     {
-        GC_ASSERT(m_texture);
-        return m_texture->isUploaded();
+        GC_ASSERT(m_base_color_texture);
+        GC_ASSERT(m_occlusion_roughness_metallic_texture);
+        return m_base_color_texture->isUploaded() && m_occlusion_roughness_metallic_texture->isUploaded();
     }
 };
 
@@ -271,8 +306,10 @@ public:
     void cleanupGPUResources();
 
     GPUPipeline createPipeline(std::span<const uint8_t> vertex_spv, std::span<const uint8_t> fragment_spv);
-    RenderTexture createTexture(std::span<const uint8_t> r8g8b8a8_pak);
-    RenderMaterial createMaterial(const std::shared_ptr<RenderTexture>& texture, const std::shared_ptr<GPUPipeline>& pipeline);
+    RenderTexture createTexture(std::span<const uint8_t> r8g8b8a8_pak, bool srgb);
+    RenderMaterial createMaterial(const std::shared_ptr<RenderTexture>& base_color_texture,
+                                  const std::shared_ptr<RenderTexture>& occlusion_roughness_metallic_texture,
+                                  const std::shared_ptr<RenderTexture>& normal_texture, const std::shared_ptr<GPUPipeline>& pipeline);
     RenderMesh createMesh(std::span<const MeshVertex> vertices, std::span<const uint16_t> indices);
 
     RenderBackendInfo getInfo() const

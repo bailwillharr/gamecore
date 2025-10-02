@@ -28,6 +28,81 @@
 
 namespace gc {
 
+static uint32_t getMipLevels(uint32_t width, uint32_t height) { return static_cast<uint32_t>(std::floor(std::log2(std::max(width, height)))) + 1; }
+
+// THe original image (mip level 0) should be TRANSFER_SRC image layout, the rest should be TRANSFER_DST
+// At the end, will transition all mip levels to SHADER_READ_ONLY_OPTIMAL
+static void generateMipMaps(VkCommandBuffer cmd, VkImage image, uint32_t width, uint32_t height)
+{
+    VkImageBlit region{};
+    region.srcSubresource.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT;
+    region.srcSubresource.baseArrayLayer = 0;
+    region.srcSubresource.layerCount = 1;
+    region.srcOffsets[0] = {0, 0, 0};
+    region.dstSubresource.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT;
+    region.dstSubresource.baseArrayLayer = 0;
+    region.dstSubresource.layerCount = 1;
+    region.dstOffsets[1] = {0, 0, 0};
+
+    std::array<VkImageMemoryBarrier2, 2> barriers{};
+    barriers[0].sType = VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER_2;
+    barriers[0].srcStageMask = VK_PIPELINE_STAGE_2_BLIT_BIT;
+    barriers[0].srcAccessMask = VK_ACCESS_2_TRANSFER_READ_BIT;
+    barriers[0].dstStageMask = VK_PIPELINE_STAGE_2_FRAGMENT_SHADER_BIT;
+    barriers[0].dstAccessMask = VK_ACCESS_2_SHADER_SAMPLED_READ_BIT;
+    barriers[0].oldLayout = VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL;
+    barriers[0].newLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
+    barriers[0].srcQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
+    barriers[0].dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
+    barriers[0].image = image;
+    barriers[0].subresourceRange.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT;
+    barriers[0].subresourceRange.levelCount = 1;
+    barriers[0].subresourceRange.baseArrayLayer = 0;
+    barriers[0].subresourceRange.layerCount = 1;
+    barriers[1] = barriers[0];
+    barriers[1].srcStageMask = VK_PIPELINE_STAGE_2_BLIT_BIT;
+    barriers[1].srcAccessMask = VK_ACCESS_2_TRANSFER_WRITE_BIT;
+    barriers[1].dstStageMask = VK_PIPELINE_STAGE_2_BLIT_BIT;
+    barriers[1].dstAccessMask = VK_ACCESS_2_TRANSFER_READ_BIT;
+    barriers[1].oldLayout = VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL;
+    barriers[1].newLayout = VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL;
+    VkDependencyInfo dep{};
+    dep.sType = VK_STRUCTURE_TYPE_DEPENDENCY_INFO;
+    dep.imageMemoryBarrierCount = static_cast<uint32_t>(barriers.size());
+    dep.pImageMemoryBarriers = barriers.data();
+
+    uint32_t level_width = width;
+    uint32_t level_height = height;
+    uint32_t mip_dst_index = 0;
+    while (level_width > 1 && level_height > 1) {
+        const uint32_t src_width = level_width;
+        const uint32_t src_height = level_height;
+        level_width = (level_width > 1) ? level_width / 2 : 1;
+        level_height = (level_height > 1) ? level_height / 2 : 1;
+        ++mip_dst_index;
+        const uint32_t mip_src_index = mip_dst_index - 1;
+
+        // blit mip_src_index to mip_dst_index
+        region.srcSubresource.mipLevel = mip_src_index;
+        region.srcOffsets[1] = {static_cast<int>(src_width), static_cast<int>(src_height), 1};
+        region.dstSubresource.mipLevel = mip_dst_index;
+        region.dstOffsets[1] = {static_cast<int>(level_width), static_cast<int>(level_height), 1};
+        vkCmdBlitImage(cmd, image, VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL, image, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, 1, &region, VK_FILTER_LINEAR);
+
+        // barrier for mip_src_index TRANSFER_SRC_OPTIMAL -> SHADER_READ_ONLY_OPTIMAL
+        barriers[0].subresourceRange.baseMipLevel = mip_src_index;
+        // barrier for mip_dst_index TRANSFER_DST_OPTIMAL -> TRANSFER_SRC_OPTIMAL
+        barriers[1].subresourceRange.baseMipLevel = mip_dst_index;
+        if (level_width == 1 && level_height == 1) {
+            // last mip level won't be blitted from so make it SHADER_READ_ONLY_OPTIMAL
+            barriers[1].dstStageMask = VK_PIPELINE_STAGE_2_FRAGMENT_SHADER_BIT;
+            barriers[1].dstAccessMask = VK_ACCESS_2_SHADER_SAMPLED_READ_BIT;
+            barriers[1].newLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
+        }
+        vkCmdPipelineBarrier2(cmd, &dep);
+    }
+}
+
 static void recreateDepthStencil(VkDevice device, VmaAllocator allocator, VkFormat format, VkExtent2D extent, VkImage& depth_stencil,
                                  VmaAllocation& depth_stencil_allocation, VkImageView& depth_stencil_view)
 {
@@ -202,6 +277,7 @@ RenderBackend::RenderBackend(SDL_Window* window_handle)
         info.addressModeW = VK_SAMPLER_ADDRESS_MODE_REPEAT;
         info.mipLodBias = 0.0f;
         info.anisotropyEnable = VK_FALSE;
+        //info.maxAnisotropy = 16.0f;
         info.compareEnable = VK_FALSE;
         info.minLod = 0.0f;
         info.maxLod = VK_LOD_CLAMP_NONE;
@@ -229,16 +305,26 @@ RenderBackend::RenderBackend(SDL_Window* window_handle)
 
     // create descriptor set layout
     {
-        VkDescriptorSetLayoutBinding binding{};
-        binding.binding = 0;
-        binding.descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
-        binding.descriptorCount = 1;
-        binding.stageFlags = VK_SHADER_STAGE_FRAGMENT_BIT;
-        binding.pImmutableSamplers = &m_sampler;
+        std::array<VkDescriptorSetLayoutBinding, 3> bindings{};
+        bindings[0].binding = 0;
+        bindings[0].descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
+        bindings[0].descriptorCount = 1;
+        bindings[0].stageFlags = VK_SHADER_STAGE_FRAGMENT_BIT;
+        bindings[0].pImmutableSamplers = &m_sampler;
+        bindings[1].binding = 1;
+        bindings[1].descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
+        bindings[1].descriptorCount = 1;
+        bindings[1].stageFlags = VK_SHADER_STAGE_FRAGMENT_BIT;
+        bindings[1].pImmutableSamplers = &m_sampler;
+        bindings[2].binding = 2;
+        bindings[2].descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
+        bindings[2].descriptorCount = 1;
+        bindings[2].stageFlags = VK_SHADER_STAGE_FRAGMENT_BIT;
+        bindings[2].pImmutableSamplers = &m_sampler;
         VkDescriptorSetLayoutCreateInfo info{};
         info.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_LAYOUT_CREATE_INFO;
-        info.bindingCount = 1;
-        info.pBindings = &binding;
+        info.bindingCount = static_cast<uint32_t>(bindings.size()); // base color texture and occlusion-roughness-metallic texture
+        info.pBindings = bindings.data();
         GC_CHECKVK(vkCreateDescriptorSetLayout(m_device.getHandle(), &info, nullptr, &m_descriptor_set_layout));
     }
 
@@ -246,7 +332,8 @@ RenderBackend::RenderBackend(SDL_Window* window_handle)
     {
         VkPushConstantRange push_constant_range{};
         push_constant_range.offset = 0;
-        push_constant_range.size = 128; // Guaranteed minimum size https://registry.khronos.org/vulkan/specs/latest/html/vkspec.html#limits-minmax
+        //push_constant_range.size = 128; // Guaranteed minimum size https://registry.khronos.org/vulkan/specs/latest/html/vkspec.html#limits-minmax
+        push_constant_range.size = 128 + 16; // for light position vec3
         push_constant_range.stageFlags = VK_SHADER_STAGE_VERTEX_BIT;
         VkPipelineLayoutCreateInfo info{};
         info.sType = VK_STRUCTURE_TYPE_PIPELINE_LAYOUT_CREATE_INFO;
@@ -798,7 +885,7 @@ GPUPipeline RenderBackend::createPipeline(std::span<const uint8_t> vertex_spv, s
     return GPUPipeline(m_delete_queue, handle);
 }
 
-RenderTexture RenderBackend::createTexture(std::span<const uint8_t> r8g8b8a8_pak)
+RenderTexture RenderBackend::createTexture(std::span<const uint8_t> r8g8b8a8_pak, bool srgb)
 {
     ZoneScoped;
 
@@ -811,6 +898,8 @@ RenderTexture RenderBackend::createTexture(std::span<const uint8_t> r8g8b8a8_pak
     const uint8_t* const bitmap_data_start = r8g8b8a8_pak.data() + 2 * sizeof(uint32_t);
 
     GC_TRACE("creating texture with size: {}x{}", width, height);
+
+    const uint32_t mip_levels = getMipLevels(width, height);
 
     VkBufferCreateInfo buffer_info{};
     buffer_info.sType = VK_STRUCTURE_TYPE_BUFFER_CREATE_INFO;
@@ -836,15 +925,15 @@ RenderTexture RenderBackend::createTexture(std::span<const uint8_t> r8g8b8a8_pak
     image_info.sType = VK_STRUCTURE_TYPE_IMAGE_CREATE_INFO;
     image_info.flags = 0;
     image_info.imageType = VK_IMAGE_TYPE_2D;
-    image_info.format = VK_FORMAT_R8G8B8A8_SRGB; // supported by all conforming drivers
+    image_info.format = srgb ? VK_FORMAT_R8G8B8A8_SRGB : VK_FORMAT_R8G8B8A8_UNORM; // supported by all conforming drivers
     image_info.extent.width = width;
     image_info.extent.height = height;
     image_info.extent.depth = 1;
-    image_info.mipLevels = 1;
+    image_info.mipLevels = mip_levels;
     image_info.arrayLayers = 1;
     image_info.samples = VK_SAMPLE_COUNT_1_BIT;
     image_info.tiling = VK_IMAGE_TILING_OPTIMAL;
-    image_info.usage = VK_IMAGE_USAGE_TRANSFER_DST_BIT | VK_IMAGE_USAGE_SAMPLED_BIT;
+    image_info.usage = VK_IMAGE_USAGE_TRANSFER_DST_BIT | VK_IMAGE_USAGE_TRANSFER_SRC_BIT | VK_IMAGE_USAGE_SAMPLED_BIT;
     image_info.sharingMode = VK_SHARING_MODE_EXCLUSIVE;
     VmaAllocationCreateInfo alloc_info{};
     alloc_info.flags = 0;
@@ -904,13 +993,39 @@ RenderTexture RenderBackend::createTexture(std::span<const uint8_t> r8g8b8a8_pak
         region.imageExtent = image_info.extent;
         vkCmdCopyBufferToImage(cmd, gpu_staging_buffer.getHandle(), image, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, 1, &region);
 
-        barrier.srcStageMask = VK_PIPELINE_STAGE_2_COPY_BIT;
-        barrier.srcAccessMask = VK_ACCESS_2_TRANSFER_WRITE_BIT;
-        barrier.dstStageMask = VK_PIPELINE_STAGE_2_FRAGMENT_SHADER_BIT;
-        barrier.dstAccessMask = VK_ACCESS_2_SHADER_SAMPLED_READ_BIT;
-        barrier.oldLayout = VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL;
-        barrier.newLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
-        vkCmdPipelineBarrier2(cmd, &dependency);
+        if (mip_levels > 1) {
+            barrier.srcStageMask = VK_PIPELINE_STAGE_2_COPY_BIT;
+            barrier.srcAccessMask = VK_ACCESS_2_TRANSFER_WRITE_BIT;
+            barrier.dstStageMask = VK_PIPELINE_STAGE_2_BLIT_BIT;
+            barrier.dstAccessMask = VK_ACCESS_2_TRANSFER_READ_BIT;
+            barrier.oldLayout = VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL;
+            barrier.newLayout = VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL;
+            barrier.subresourceRange.baseMipLevel = 0;
+            barrier.subresourceRange.levelCount = 1;
+            vkCmdPipelineBarrier2(cmd, &dependency);
+            barrier.srcStageMask = VK_PIPELINE_STAGE_2_NONE;
+            barrier.srcAccessMask = VK_ACCESS_2_NONE;
+            barrier.dstStageMask = VK_PIPELINE_STAGE_2_BLIT_BIT;
+            barrier.dstAccessMask = VK_ACCESS_2_TRANSFER_WRITE_BIT;
+            barrier.oldLayout = VK_IMAGE_LAYOUT_UNDEFINED;
+            barrier.newLayout = VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL;
+            barrier.subresourceRange.baseMipLevel = 1;
+            barrier.subresourceRange.levelCount = mip_levels - 1;
+            vkCmdPipelineBarrier2(cmd, &dependency);
+
+            generateMipMaps(cmd, image, width, height);
+        }
+        else {
+            barrier.srcStageMask = VK_PIPELINE_STAGE_2_COPY_BIT;
+            barrier.srcAccessMask = VK_ACCESS_2_TRANSFER_WRITE_BIT;
+            barrier.dstStageMask = VK_PIPELINE_STAGE_2_FRAGMENT_SHADER_BIT;
+            barrier.dstAccessMask = VK_ACCESS_2_SHADER_SAMPLED_READ_BIT;
+            barrier.oldLayout = VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL;
+            barrier.newLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
+            barrier.subresourceRange.baseMipLevel = 0;
+            barrier.subresourceRange.levelCount = 1;
+            vkCmdPipelineBarrier2(cmd, &dependency);
+        }
 
         GC_CHECKVK(vkEndCommandBuffer(cmd));
 
@@ -921,7 +1036,12 @@ RenderTexture RenderBackend::createTexture(std::span<const uint8_t> r8g8b8a8_pak
         signal_info.sType = VK_STRUCTURE_TYPE_SEMAPHORE_SUBMIT_INFO;
         signal_info.semaphore = m_transfer_timeline_semaphore;
         signal_info.value = ++m_transfer_timeline_value;
-        signal_info.stageMask = VK_PIPELINE_STAGE_2_COPY_BIT;
+        if (mip_levels > 1) {
+            signal_info.stageMask = VK_PIPELINE_STAGE_2_BLIT_BIT;
+        }
+        else {
+            signal_info.stageMask = VK_PIPELINE_STAGE_2_COPY_BIT;
+        }
         VkSubmitInfo2 submit_info{};
         submit_info.sType = VK_STRUCTURE_TYPE_SUBMIT_INFO_2;
         submit_info.waitSemaphoreInfoCount = 0;
@@ -961,7 +1081,7 @@ RenderTexture RenderBackend::createTexture(std::span<const uint8_t> r8g8b8a8_pak
     view_info.components.a = VK_COMPONENT_SWIZZLE_IDENTITY;
     view_info.subresourceRange.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT;
     view_info.subresourceRange.baseMipLevel = 0;
-    view_info.subresourceRange.levelCount = 1;
+    view_info.subresourceRange.levelCount = mip_levels;
     view_info.subresourceRange.baseArrayLayer = 0;
     view_info.subresourceRange.layerCount = 1;
     VkImageView image_view{};
@@ -970,9 +1090,12 @@ RenderTexture RenderBackend::createTexture(std::span<const uint8_t> r8g8b8a8_pak
     return RenderTexture(GPUImageView(m_delete_queue, image_view, gpu_image));
 };
 
-RenderMaterial RenderBackend::createMaterial(const std::shared_ptr<RenderTexture>& texture, const std::shared_ptr<GPUPipeline>& pipeline)
+RenderMaterial RenderBackend::createMaterial(const std::shared_ptr<RenderTexture>& base_color_texture,
+                                             const std::shared_ptr<RenderTexture>& occlusion_roughness_metallic_texture,
+                                             const std::shared_ptr<RenderTexture>& normal_texture, const std::shared_ptr<GPUPipeline>& pipeline)
 {
-    return RenderMaterial(m_device.getHandle(), m_main_descriptor_pool, m_descriptor_set_layout, texture, pipeline);
+    return RenderMaterial(m_device.getHandle(), m_main_descriptor_pool, m_descriptor_set_layout, base_color_texture, occlusion_roughness_metallic_texture,
+                          normal_texture, pipeline);
 }
 
 RenderMesh RenderBackend::createMesh(std::span<const MeshVertex> vertices, std::span<const uint16_t> indices)
