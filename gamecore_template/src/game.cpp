@@ -1,5 +1,6 @@
 #include "game.h"
 
+#include "gamecore/gc_ecs.h"
 #include "gen_mesh.h"
 #include "spin.h"
 #include "mouse_move.h"
@@ -157,8 +158,10 @@ void buildAndStartGame(gc::App& app)
     floor_switchcomp.primary_material = materials[materials.size() - 2].get();
     floor_switchcomp.secondary_material = materials[materials.size() - 1].get();
 
+    auto light_pivot = world.createEntity(gc::Name("light_pivot"), gc::ENTITY_NONE, {0.0f, 0.5f, 20.0f});
+    world.addComponent<SpinComponent>(light_pivot).setAxis({0.0f, 1.0f, 0.0f}).setRadiansPerSecond((0.2f));
     auto light_mesh = genSphereMesh(render_backend, 0.5f, 16, true);
-    const auto light = world.createEntity(gc::Name("light"), gc::ENTITY_NONE, {0.0f, 0.5f, 20.0f});
+    const auto light = world.createEntity(gc::Name("light"), light_pivot, {0.0f, 0.5f, -10.0f});
     world.addComponent<gc::CubeComponent>(light).setMesh(&light_mesh).setMaterial(materials[2].get());
 
     win.setTitle("Hello world!");

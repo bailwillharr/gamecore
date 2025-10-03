@@ -30,8 +30,8 @@ void main() {
 	const vec3 N = normalize(vec3(texture(materialSetNormalSampler, fragUV)) * 2.0 - 1.0);
 	//const vec3 N = vec3(0.0, 0.0, 1.0);
 
-	const vec3 light_colour = vec3(1.0, 1.0, 1.0);
-	const float light_intensity = 2.2 * 100.0;
+	const vec3 light_colour = normalize(vec3(1.0, 0.8, 0.6));
+	const float light_intensity = 2.2 * 10.0;
 
 	const float roughness_2 = roughness * roughness;
 

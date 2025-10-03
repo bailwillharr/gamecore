@@ -1,9 +1,8 @@
-#pragma once
+#include "gamecore/gc_render_world.h"
 
 #include <mat4x4.hpp>
 
 #include "gamecore/gc_vulkan_common.h"
-#include "gamecore/gc_render_world.h"
 #include "gamecore/gc_world_draw_data.h"
 #include "gamecore/gc_render_backend.h"
 

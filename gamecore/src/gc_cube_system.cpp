@@ -19,7 +19,7 @@ void CubeSystem::onUpdate(FrameState& frame_state)
         if (c.m_visible && c.m_mesh && c.m_material) {
             frame_state.draw_data.drawMesh(t.getWorldMatrix(), c.m_mesh, c.m_material);
             if (t.name == Name("light")) {
-                frame_state.draw_data.setLightPos(t.getPosition());
+                frame_state.draw_data.setLightPos(t.getWorldPosition());
             }
         }
     });
