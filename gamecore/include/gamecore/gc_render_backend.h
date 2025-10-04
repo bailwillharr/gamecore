@@ -34,6 +34,9 @@
 #include "gamecore/gc_vulkan_allocator.h"
 #include "gamecore/gc_vulkan_swapchain.h"
 #include "gamecore/gc_gpu_resources.h"
+#include "gamecore/gc_render_texture.h"
+#include "gamecore/gc_render_material.h"
+#include "gamecore/gc_render_mesh.h"
 
 struct SDL_Window; // forward-dec
 
@@ -51,185 +54,6 @@ struct RenderBackendInfo {
     VkDescriptorPool main_descriptor_pool;
     VkFormat framebuffer_format;
     VkFormat depth_stencil_format;
-};
-
-class RenderTexture {
-
-    GPUImageView m_image_view;
-    mutable bool m_uploaded;
-
-public:
-    explicit RenderTexture(GPUImageView&& image_view) : m_image_view(std::move(image_view)), m_uploaded(false) {}
-    RenderTexture(const RenderTexture&) = delete;
-    RenderTexture(RenderTexture&& other) noexcept : m_image_view(std::move(other.m_image_view)), m_uploaded(other.m_uploaded) {}
-
-    RenderTexture& operator=(const RenderTexture&) = delete;
-    RenderTexture& operator=(RenderTexture&&) = delete;
-
-    bool isUploaded() const
-    {
-        if (m_uploaded) {
-            return true;
-        }
-        // if the backing image is no longer in use by the queue, assuming the backing image was just created, this means the image is uploaded.
-        if (m_image_view.getImage()->isFree()) {
-            m_uploaded = true;
-            return true;
-        }
-        return false;
-    }
-
-    GPUImageView& getImageView() { return m_image_view; }
-};
-
-struct MeshVertex {
-    glm::vec3 position;
-    glm::vec3 normal;
-    glm::vec4 tangent;
-    glm::vec2 uv;
-};
-
-class RenderMaterial {
-    const std::shared_ptr<RenderTexture> m_base_color_texture{};
-    const std::shared_ptr<RenderTexture> m_occlusion_roughness_metallic_texture{};
-    const std::shared_ptr<RenderTexture> m_normal_texture{};
-    const std::shared_ptr<GPUPipeline> m_pipeline{};
-    VkDescriptorSet m_descriptor_set{};
-
-public:
-    RenderMaterial(VkDevice device, VkDescriptorPool descriptor_pool, VkDescriptorSetLayout descriptor_set_layout,
-                   const std::shared_ptr<RenderTexture>& base_color_texture, const std::shared_ptr<RenderTexture>& occlusion_roughness_metallic_texture,
-                   const std::shared_ptr<RenderTexture>& normal_texture, const std::shared_ptr<GPUPipeline>& pipeline)
-        : m_base_color_texture(base_color_texture),
-          m_occlusion_roughness_metallic_texture(occlusion_roughness_metallic_texture),
-          m_normal_texture(normal_texture),
-          m_pipeline(pipeline)
-    {
-        GC_ASSERT(device);
-        GC_ASSERT(descriptor_pool);
-        GC_ASSERT(descriptor_set_layout);
-        GC_ASSERT(m_base_color_texture);
-        GC_ASSERT(m_occlusion_roughness_metallic_texture);
-        GC_ASSERT(m_normal_texture);
-        GC_ASSERT(m_pipeline);
-
-        VkDescriptorSetAllocateInfo info{};
-        info.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_ALLOCATE_INFO;
-        info.descriptorPool = descriptor_pool;
-        info.descriptorSetCount = 1;
-        info.pSetLayouts = &descriptor_set_layout;
-        GC_CHECKVK(vkAllocateDescriptorSets(device, &info, &m_descriptor_set));
-
-        std::array<VkDescriptorImageInfo, 3> descriptor_image_infos{};
-        std::array<VkWriteDescriptorSet, 3> writes{};
-
-        descriptor_image_infos[0].imageView = m_base_color_texture->getImageView().getHandle();
-        descriptor_image_infos[0].imageLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
-        writes[0].sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
-        writes[0].dstSet = m_descriptor_set;
-        writes[0].dstBinding = 0;
-        writes[0].dstArrayElement = 0;
-        writes[0].descriptorCount = 1;
-        writes[0].descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
-        writes[0].pImageInfo = &descriptor_image_infos[0];
-
-        descriptor_image_infos[1].imageView = m_occlusion_roughness_metallic_texture->getImageView().getHandle();
-        descriptor_image_infos[1].imageLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
-        writes[1].sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
-        writes[1].dstSet = m_descriptor_set;
-        writes[1].dstBinding = 1;
-        writes[1].dstArrayElement = 0;
-        writes[1].descriptorCount = 1;
-        writes[1].descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
-        writes[1].pImageInfo = &descriptor_image_infos[1];
-
-        descriptor_image_infos[2].imageView = m_normal_texture->getImageView().getHandle();
-        descriptor_image_infos[2].imageLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
-        writes[2].sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
-        writes[2].dstSet = m_descriptor_set;
-        writes[2].dstBinding = 2;
-        writes[2].dstArrayElement = 0;
-        writes[2].descriptorCount = 1;
-        writes[2].descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
-        writes[2].pImageInfo = &descriptor_image_infos[2];
-
-        vkUpdateDescriptorSets(device, static_cast<uint32_t>(writes.size()), writes.data(), 0, nullptr);
-    }
-
-    // Binds pipeline and descriptor sets. Check isUploaded() first
-    void bind(VkCommandBuffer cmd, VkPipelineLayout pipeline_layout, VkSemaphore timeline_semaphore, uint64_t signal_value,
-              const RenderMaterial* last_used_material = nullptr) const
-    {
-        GC_ASSERT(cmd);
-        GC_ASSERT(pipeline_layout);
-        GC_ASSERT(timeline_semaphore);
-        GC_ASSERT(m_pipeline->getHandle());
-
-        if (!last_used_material || (last_used_material && last_used_material->m_pipeline != m_pipeline)) {
-            vkCmdBindPipeline(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, m_pipeline->getHandle());
-            m_pipeline->useResource(timeline_semaphore, signal_value);
-        }
-
-        if (!last_used_material || (last_used_material && last_used_material->m_descriptor_set != m_descriptor_set)) {
-            vkCmdBindDescriptorSets(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, pipeline_layout, 0, 1, &m_descriptor_set, 0, nullptr);
-            m_base_color_texture->getImageView().useResource(timeline_semaphore, signal_value);
-            m_occlusion_roughness_metallic_texture->getImageView().useResource(timeline_semaphore, signal_value);
-            m_normal_texture->getImageView().useResource(timeline_semaphore, signal_value);
-        }
-    }
-
-    // Checks that all textures for this material are uploaded
-    bool isUploaded() const
-    {
-        GC_ASSERT(m_base_color_texture);
-        GC_ASSERT(m_occlusion_roughness_metallic_texture);
-        return m_base_color_texture->isUploaded() && m_occlusion_roughness_metallic_texture->isUploaded();
-    }
-};
-
-class RenderMesh {
-    GPUBuffer m_vertex_index_buffer;
-    const VkDeviceSize m_indices_offset;
-    const VkIndexType m_index_type;
-    const uint32_t m_num_indices;
-    mutable bool m_uploaded{false};
-
-public:
-    RenderMesh(GPUBuffer&& vertex_index_buffer, VkDeviceSize indices_offset, VkIndexType index_type, uint32_t num_indices)
-        : m_vertex_index_buffer(std::move(vertex_index_buffer)), m_indices_offset(indices_offset), m_index_type(index_type), m_num_indices(num_indices)
-    {
-        GC_ASSERT(m_indices_offset > 0ULL);
-        GC_ASSERT(m_index_type == VK_INDEX_TYPE_UINT16 || m_index_type == VK_INDEX_TYPE_UINT32);
-    }
-
-    bool isUploaded() const
-    {
-        if (m_uploaded) {
-            return true;
-        }
-        // if the buffer is no longer in use by the queue, assuming the buffer was just created, this means the buffer is uploaded.
-        if (m_vertex_index_buffer.isFree()) {
-            m_uploaded = true;
-            return true;
-        }
-        return false;
-    }
-
-    // Ensure isUploaded() returned true before calling this
-    void draw(VkCommandBuffer cmd, VkSemaphore timeline_semaphore, uint64_t signal_value)
-    {
-        GC_ASSERT(cmd);
-        GC_ASSERT(timeline_semaphore);
-
-        const VkDeviceSize vertices_offset{0};
-        const VkBuffer buffer = m_vertex_index_buffer.getHandle();
-        vkCmdBindVertexBuffers(cmd, 0, 1, &buffer, &vertices_offset);
-        vkCmdBindIndexBuffer(cmd, buffer, m_indices_offset, m_index_type);
-
-        vkCmdDrawIndexed(cmd, m_num_indices, 1, 0, 0, 0);
-
-        m_vertex_index_buffer.useResource(timeline_semaphore, signal_value);
-    }
 };
 
 enum class RenderSyncMode { VSYNC_ON_DOUBLE_BUFFERED, VSYNC_ON_TRIPLE_BUFFERED, VSYNC_ON_TRIPLE_BUFFERED_UNTHROTTLED, VSYNC_OFF };
@@ -257,6 +81,8 @@ class RenderBackend {
     VkImageView m_depth_stencil_view{};
     VmaAllocation m_depth_stencil_allocation{};
     VkFormat m_depth_stencil_format{};
+
+    VkSampleCountFlagBits m_msaa_samples{};
 
     uint64_t m_frame_count{};
 

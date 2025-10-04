@@ -25,6 +25,7 @@
 #include "gamecore/gc_world_draw_data.h"
 #include "gamecore/gc_units.h"
 #include "gamecore/gc_render_world.h"
+#include "gamecore/gc_vulkan_utils.h"
 
 namespace gc {
 
@@ -103,8 +104,8 @@ static void generateMipMaps(VkCommandBuffer cmd, VkImage image, uint32_t width, 
     }
 }
 
-static void recreateDepthStencil(VkDevice device, VmaAllocator allocator, VkFormat format, VkExtent2D extent, VkImage& depth_stencil,
-                                 VmaAllocation& depth_stencil_allocation, VkImageView& depth_stencil_view)
+static void recreateDepthStencil(VkDevice device, VmaAllocator allocator, VkFormat format, VkExtent2D extent, VkSampleCountFlagBits msaa_samples,
+                                 VkImage& depth_stencil, VmaAllocation& depth_stencil_allocation, VkImageView& depth_stencil_view)
 {
     if (depth_stencil_view) {
         vkDestroyImageView(device, depth_stencil_view, nullptr);
@@ -113,51 +114,13 @@ static void recreateDepthStencil(VkDevice device, VmaAllocator allocator, VkForm
         vmaDestroyImage(allocator, depth_stencil, depth_stencil_allocation);
     }
 
-    VkImageCreateInfo image_info{};
-    image_info.sType = VK_STRUCTURE_TYPE_IMAGE_CREATE_INFO;
-    image_info.pNext = nullptr;
-    image_info.flags = 0;
-    image_info.imageType = VK_IMAGE_TYPE_2D;
-    image_info.format = format;
-    image_info.extent.width = extent.width;
-    image_info.extent.height = extent.height;
-    image_info.extent.depth = 1;
-    image_info.mipLevels = 1;
-    image_info.arrayLayers = 1;
-    image_info.samples = VK_SAMPLE_COUNT_1_BIT;
-    image_info.tiling = VK_IMAGE_TILING_OPTIMAL;
-    image_info.usage = VK_IMAGE_USAGE_DEPTH_STENCIL_ATTACHMENT_BIT;
-    image_info.sharingMode = VK_SHARING_MODE_EXCLUSIVE;
-    image_info.queueFamilyIndexCount = 0;     // ignored
-    image_info.pQueueFamilyIndices = nullptr; // ingored
-    image_info.initialLayout = VK_IMAGE_LAYOUT_UNDEFINED;
-    VmaAllocationCreateInfo alloc_create_info{};
-    alloc_create_info.flags = 0;
-    alloc_create_info.usage = VMA_MEMORY_USAGE_AUTO;
-    alloc_create_info.priority = 1.0f;
-    GC_CHECKVK(vmaCreateImage(allocator, &image_info, &alloc_create_info, &depth_stencil, &depth_stencil_allocation, nullptr));
-
-    VkImageViewCreateInfo view_info{};
-    view_info.sType = VK_STRUCTURE_TYPE_IMAGE_VIEW_CREATE_INFO;
-    view_info.pNext = nullptr;
-    view_info.flags = 0;
-    view_info.image = depth_stencil;
-    view_info.viewType = VK_IMAGE_VIEW_TYPE_2D;
-    view_info.format = format;
-    view_info.components.r = VK_COMPONENT_SWIZZLE_IDENTITY;
-    view_info.components.g = VK_COMPONENT_SWIZZLE_IDENTITY;
-    view_info.components.b = VK_COMPONENT_SWIZZLE_IDENTITY;
-    view_info.components.a = VK_COMPONENT_SWIZZLE_IDENTITY;
-    view_info.subresourceRange.aspectMask = VK_IMAGE_ASPECT_DEPTH_BIT | VK_IMAGE_ASPECT_STENCIL_BIT;
-    view_info.subresourceRange.baseMipLevel = 0;
-    view_info.subresourceRange.levelCount = 1;
-    view_info.subresourceRange.baseArrayLayer = 0;
-    view_info.subresourceRange.layerCount = 1;
-    GC_CHECKVK(vkCreateImageView(device, &view_info, nullptr, &depth_stencil_view));
+    std::tie(depth_stencil, depth_stencil_allocation) =
+        vkutils::createImage(allocator, format, extent.width, extent.height, 1, msaa_samples, VK_IMAGE_USAGE_DEPTH_STENCIL_ATTACHMENT_BIT, 1.0f);
+    depth_stencil_view = vkutils::createImageView(device, depth_stencil, format, VK_IMAGE_ASPECT_DEPTH_BIT | VK_IMAGE_ASPECT_STENCIL_BIT, 1);
 }
 
-static void recreateFramebufferImage(VkDevice device, VmaAllocator allocator, VkFormat format, VkExtent2D extent, VkImage& image, VmaAllocation& allocation,
-                                     VkImageView& view)
+static void recreateFramebufferImage(VkDevice device, VmaAllocator allocator, VkFormat format, VkExtent2D extent, VkSampleCountFlagBits msaa_samples,
+                                     VkImage& image, VmaAllocation& allocation, VkImageView& view)
 {
     if (view != VK_NULL_HANDLE) {
         vkDestroyImageView(device, view, nullptr);
@@ -166,56 +129,12 @@ static void recreateFramebufferImage(VkDevice device, VmaAllocator allocator, Vk
         vmaDestroyImage(allocator, image, allocation);
     }
 
-    VkImageCreateInfo image_info{};
-    image_info.sType = VK_STRUCTURE_TYPE_IMAGE_CREATE_INFO;
-    image_info.pNext = nullptr;
-    image_info.flags = 0;
-    image_info.imageType = VK_IMAGE_TYPE_2D;
-    image_info.format = format;
-    image_info.extent.width = extent.width;
-    image_info.extent.height = extent.height;
-    image_info.extent.depth = 1;
-    image_info.mipLevels = 1;
-    image_info.arrayLayers = 1;
-    image_info.samples = VK_SAMPLE_COUNT_1_BIT;
-    image_info.tiling = VK_IMAGE_TILING_OPTIMAL;
-    image_info.usage = VK_IMAGE_USAGE_TRANSFER_SRC_BIT | VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT;
-    image_info.sharingMode = VK_SHARING_MODE_EXCLUSIVE;
-    image_info.queueFamilyIndexCount = 0;     // ignored
-    image_info.pQueueFamilyIndices = nullptr; // ingored
-    image_info.initialLayout = VK_IMAGE_LAYOUT_UNDEFINED;
-    VmaAllocationCreateInfo alloc_create_info{};
-    alloc_create_info.flags = 0;
-    alloc_create_info.usage = VMA_MEMORY_USAGE_AUTO_PREFER_DEVICE;
-    alloc_create_info.priority = 1.0f;
-    GC_CHECKVK(vmaCreateImage(allocator, &image_info, &alloc_create_info, &image, &allocation, nullptr));
-
-    VkImageViewCreateInfo view_info{};
-    view_info.sType = VK_STRUCTURE_TYPE_IMAGE_VIEW_CREATE_INFO;
-    view_info.image = image;
-    view_info.viewType = VK_IMAGE_VIEW_TYPE_2D;
-    view_info.format = image_info.format;
-    view_info.components.r = VK_COMPONENT_SWIZZLE_IDENTITY;
-    view_info.components.g = VK_COMPONENT_SWIZZLE_IDENTITY;
-    view_info.components.b = VK_COMPONENT_SWIZZLE_IDENTITY;
-    view_info.components.a = VK_COMPONENT_SWIZZLE_IDENTITY;
-    view_info.subresourceRange.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT;
-    view_info.subresourceRange.baseArrayLayer = 0;
-    view_info.subresourceRange.layerCount = 1;
-    view_info.subresourceRange.baseMipLevel = 0;
-    view_info.subresourceRange.levelCount = 1;
-    GC_CHECKVK(vkCreateImageView(device, &view_info, nullptr, &view));
+    std::tie(image, allocation) = vkutils::createImage(allocator, format, extent.width, extent.height, 1, msaa_samples,
+                                                       VK_IMAGE_USAGE_TRANSFER_SRC_BIT | VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT, 1.0f);
+    view = vkutils::createImageView(device, image, format, VK_IMAGE_ASPECT_COLOR_BIT, 1);
 }
 
-static uint32_t getAppropriateFramesInFlight(uint32_t swapchain_image_count)
-{
-    if (swapchain_image_count > 2) {
-        return 2;
-    }
-    else {
-        return 1;
-    }
-}
+static uint32_t getAppropriateFramesInFlight(uint32_t swapchain_image_count) { return (swapchain_image_count > 2) ? 2 : 1; }
 
 static void printGPUMemoryStats(VmaAllocator allocator, VkPhysicalDevice physical_device)
 {
@@ -243,25 +162,6 @@ static void printGPUMemoryStats(VmaAllocator allocator, VkPhysicalDevice physica
     }
 }
 
-[[maybe_unused]] static void delayCommandBuffer(VkCommandBuffer cmd, VkImage image, size_t iters)
-{
-    for (size_t i = 0; i < iters; ++i) {
-        VkClearColorValue color{};
-        color.float32[0] = 0.5f;
-        color.float32[1] = 0.8f;
-        color.float32[2] = 0.3f;
-        color.float32[3] = 1.0f;
-        VkImageSubresourceRange range{};
-        range.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT;
-        range.baseMipLevel = 0;
-        range.levelCount = 1;
-        range.baseArrayLayer = 0;
-        range.layerCount = 1;
-        vkCmdClearColorImage(cmd, image, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, &color, 1, &range);
-        // vkCmdPipelineBarrier(cmd, VK_PIPELINE_STAGE_TRANSFER_BIT, VK_PIPELINE_STAGE_TRANSFER_BIT, 0, 0, nullptr, 0, nullptr, 0, nullptr);
-    }
-}
-
 RenderBackend::RenderBackend(SDL_Window* window_handle)
     : m_device(), m_allocator(m_device), m_swapchain(m_device, window_handle), m_delete_queue(m_device.getHandle(), m_allocator.getHandle())
 {
@@ -277,11 +177,11 @@ RenderBackend::RenderBackend(SDL_Window* window_handle)
         info.addressModeW = VK_SAMPLER_ADDRESS_MODE_REPEAT;
         info.mipLodBias = 0.0f;
         info.anisotropyEnable = VK_FALSE;
-        //info.maxAnisotropy = 16.0f;
+        // info.maxAnisotropy = 16.0f;
         info.compareEnable = VK_FALSE;
         info.minLod = 0.0f;
         info.maxLod = VK_LOD_CLAMP_NONE;
-        info.borderColor = VK_BORDER_COLOR_FLOAT_OPAQUE_WHITE;
+        info.borderColor = VK_BORDER_COLOR_FLOAT_TRANSPARENT_BLACK;
         info.unnormalizedCoordinates = VK_FALSE;
         GC_CHECKVK(vkCreateSampler(m_device.getHandle(), &info, nullptr, &m_sampler));
     }
@@ -332,7 +232,7 @@ RenderBackend::RenderBackend(SDL_Window* window_handle)
     {
         VkPushConstantRange push_constant_range{};
         push_constant_range.offset = 0;
-        //push_constant_range.size = 128; // Guaranteed minimum size https://registry.khronos.org/vulkan/specs/latest/html/vkspec.html#limits-minmax
+        // push_constant_range.size = 128; // Guaranteed minimum size https://registry.khronos.org/vulkan/specs/latest/html/vkspec.html#limits-minmax
         push_constant_range.size = 128 + 16; // for light position vec3
         push_constant_range.stageFlags = VK_SHADER_STAGE_VERTEX_BIT;
         VkPipelineLayoutCreateInfo info{};
@@ -357,10 +257,36 @@ RenderBackend::RenderBackend(SDL_Window* window_handle)
         }
     }
 
+    // choose number of MSAA samples to use
+    {
+        const auto& limits = m_device.getProperties().props.properties.limits;
+        const auto check_support = [](const VkPhysicalDeviceLimits& limits, VkSampleCountFlagBits sample_count) {
+            if (!(limits.framebufferColorSampleCounts & sample_count)) {
+                return false;
+            }
+            if (!(limits.framebufferDepthSampleCounts & sample_count)) {
+                return false;
+            }
+            if (!(limits.framebufferStencilSampleCounts & sample_count)) {
+                return false;
+            }
+            return true;
+        };
+        m_msaa_samples = VK_SAMPLE_COUNT_1_BIT;
+        m_msaa_samples = check_support(limits, VK_SAMPLE_COUNT_2_BIT) ? VK_SAMPLE_COUNT_2_BIT : m_msaa_samples;
+        m_msaa_samples = check_support(limits, VK_SAMPLE_COUNT_4_BIT) ? VK_SAMPLE_COUNT_4_BIT : m_msaa_samples;
+        m_msaa_samples = check_support(limits, VK_SAMPLE_COUNT_8_BIT) ? VK_SAMPLE_COUNT_8_BIT : m_msaa_samples;
+        m_msaa_samples = check_support(limits, VK_SAMPLE_COUNT_16_BIT) ? VK_SAMPLE_COUNT_16_BIT : m_msaa_samples;
+        m_msaa_samples = check_support(limits, VK_SAMPLE_COUNT_32_BIT) ? VK_SAMPLE_COUNT_32_BIT : m_msaa_samples;
+        m_msaa_samples = check_support(limits, VK_SAMPLE_COUNT_64_BIT) ? VK_SAMPLE_COUNT_64_BIT : m_msaa_samples;
+        m_msaa_samples = VK_SAMPLE_COUNT_1_BIT;
+        GC_DEBUG("Using {} MSAA samples", static_cast<int>(m_msaa_samples));
+    }
+
     { /* This stuff must be done every time the swapchain is recreated */
-        recreateDepthStencil(m_device.getHandle(), m_allocator.getHandle(), m_depth_stencil_format, m_swapchain.getExtent(), m_depth_stencil,
+        recreateDepthStencil(m_device.getHandle(), m_allocator.getHandle(), m_depth_stencil_format, m_swapchain.getExtent(), m_msaa_samples, m_depth_stencil,
                              m_depth_stencil_allocation, m_depth_stencil_view);
-        recreateFramebufferImage(m_device.getHandle(), m_allocator.getHandle(), m_swapchain.getSurfaceFormat().format, m_swapchain.getExtent(),
+        recreateFramebufferImage(m_device.getHandle(), m_allocator.getHandle(), m_swapchain.getSurfaceFormat().format, m_swapchain.getExtent(), m_msaa_samples,
                                  m_framebuffer_image, m_framebuffer_image_allocation, m_framebuffer_image_view);
     }
 
@@ -416,6 +342,7 @@ RenderBackend::RenderBackend(SDL_Window* window_handle)
 #endif
 
     // m_main_timeline_semaphore and the frame in flight command pools will be created when submitFrame() is called for the first time.
+    m_fif.reserve(2);
 
     GC_TRACE("Initialised RenderBackend");
 }
@@ -596,7 +523,6 @@ void RenderBackend::submitFrame(bool window_resized, const WorldDrawData& world_
         scissor.extent = swapchain_extent;
         vkCmdSetScissor(stuff.cmd, 0, 1, &scissor);
 
-        // This is very fast. Might as well do it every frame.
         const float aspect_ratio = viewport.width / viewport.height;
         const glm::mat4 projection_matrix = glm::perspectiveLH_ZO(glm::radians(45.0f), aspect_ratio, 0.1f, 1000.0f);
         recordWorldRenderingCommands(projection_matrix, stuff.cmd, m_pipeline_layout, m_main_timeline_semaphore, m_main_timeline_value + 1, world_draw_data);
@@ -631,9 +557,7 @@ void RenderBackend::submitFrame(bool window_resized, const WorldDrawData& world_
         vkCmdPipelineBarrier2(stuff.cmd, &dep);
     }
 
-    {
-        TracyVkCollect(m_tracy_vulkan_context.ctx, stuff.cmd);
-    }
+    TracyVkCollect(m_tracy_vulkan_context.ctx, stuff.cmd);
 
     GC_CHECKVK(vkEndCommandBuffer(stuff.cmd));
 
@@ -687,9 +611,9 @@ void RenderBackend::submitFrame(bool window_resized, const WorldDrawData& world_
     if (swapchain_recreated) {
         GC_CHECKVK(
             vkQueueWaitIdle(m_device.getMainQueue())); // if window was just un-minimised, acquireAndPresent() will be using the framebuffer image right now.
-        recreateDepthStencil(m_device.getHandle(), m_allocator.getHandle(), m_depth_stencil_format, m_swapchain.getExtent(), m_depth_stencil,
+        recreateDepthStencil(m_device.getHandle(), m_allocator.getHandle(), m_depth_stencil_format, m_swapchain.getExtent(), m_msaa_samples, m_depth_stencil,
                              m_depth_stencil_allocation, m_depth_stencil_view);
-        recreateFramebufferImage(m_device.getHandle(), m_allocator.getHandle(), m_swapchain.getSurfaceFormat().format, m_swapchain.getExtent(),
+        recreateFramebufferImage(m_device.getHandle(), m_allocator.getHandle(), m_swapchain.getSurfaceFormat().format, m_swapchain.getExtent(), m_msaa_samples,
                                  m_framebuffer_image, m_framebuffer_image_allocation, m_framebuffer_image_view);
         m_requested_frames_in_flight = getAppropriateFramesInFlight(m_swapchain.getImageCount());
     }
@@ -1097,7 +1021,6 @@ RenderMaterial RenderBackend::createMaterial(const std::shared_ptr<RenderTexture
     return RenderMaterial(m_device.getHandle(), m_main_descriptor_pool, m_descriptor_set_layout, base_color_texture, occlusion_roughness_metallic_texture,
                           normal_texture, pipeline);
 }
-
 RenderMesh RenderBackend::createMesh(std::span<const MeshVertex> vertices, std::span<const uint16_t> indices)
 {
     GC_ASSERT(vertices.size() <= static_cast<size_t>(std::numeric_limits<decltype(indices)::value_type>::max()));
@@ -1232,7 +1155,7 @@ void RenderBackend::recreateFramesInFlightResources()
 {
     GC_TRACE("Recreating frames in flight resources. FIF count {}", m_requested_frames_in_flight);
 
-    // wait for any work on the queue used for rendering and presentation is finished.
+    // wait for any work on the queue used for rendering and presentation to finish.
     GC_CHECKVK(vkQueueWaitIdle(m_device.getMainQueue()));
 
     for (const auto& stuff : m_fif) {

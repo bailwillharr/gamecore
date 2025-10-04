@@ -14,7 +14,6 @@ set(SRC_FILES
   "src/gc_logger_spdlog.cpp"
   "src/gc_jobs.cpp"
   "src/gc_content.cpp"
-
   "src/gc_units.cpp"
   "src/gc_window.cpp"
   "src/gc_vulkan_device.cpp"
@@ -22,6 +21,7 @@ set(SRC_FILES
   "src/gc_vk_mem_alloc_impl.cpp"
   "src/gc_asio_impl.cpp"
   "src/gc_render_backend.cpp"
+  "src/gc_render_mesh.cpp"
   "src/gc_render_world.cpp"
   "src/gc_vulkan_swapchain.cpp"
   "src/gc_configuration.cpp"
@@ -32,6 +32,7 @@ set(SRC_FILES
   "src/gc_transform_system.cpp"
   "src/gc_cube_system.cpp"
   "src/gc_threading.cpp"
+  "src/gc_vulkan_utils.cpp"
 )
 
 # Public API includes
@@ -55,6 +56,9 @@ set(INCLUDE_FILES
   "include/gamecore/gc_vulkan_device.h"
   "include/gamecore/gc_vulkan_allocator.h"
   "include/gamecore/gc_render_backend.h"
+  "include/gamecore/gc_render_texture.h"
+  "include/gamecore/gc_render_material.h"
+  "include/gamecore/gc_render_mesh.h"
   "include/gamecore/gc_render_world.h"
   "include/gamecore/gc_vulkan_swapchain.h"
   "include/gamecore/gc_configuration.h"
@@ -66,12 +70,12 @@ set(INCLUDE_FILES
   "include/gamecore/gc_transform_system.h"
   "include/gamecore/gc_world_draw_data.h"
   "include/gamecore/gc_gpu_resources.h"
-  "include/gamecore/gc_vulkan_pipeline_layout_manager.h"
   "include/gamecore/gc_cube_component.h"
   "include/gamecore/gc_cube_system.h"
   "include/gamecore/gc_frame_state.h"
   "include/gamecore/gc_format_specialisations.h"
   "include/gamecore/gc_threading.h"
+  "include/gamecore/gc_vulkan_utils.h"
 )
 
 # gamecore is a static library
