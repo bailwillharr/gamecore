@@ -518,7 +518,7 @@ void RenderBackend::submitFrame(bool window_resized, const WorldDrawData& world_
         const glm::mat4 projection_matrix = glm::perspectiveLH_ZO(glm::radians(45.0f), aspect_ratio, 0.1f, 1000.0f);
         recordWorldRenderingCommands(projection_matrix, stuff.cmd, m_pipeline_layout, m_main_timeline_semaphore, m_main_timeline_value + 1, world_draw_data);
 
-        // ImGui_ImplVulkan_RenderDrawData(ImGui::GetDrawData(), stuff.cmd);
+        ImGui_ImplVulkan_RenderDrawData(ImGui::GetDrawData(), stuff.cmd);
 
         vkCmdEndRendering(stuff.cmd);
     }
@@ -708,9 +708,9 @@ GPUPipeline RenderBackend::createPipeline(std::span<const uint8_t> vertex_spv, s
     rasterization_state.cullMode = VK_CULL_MODE_BACK_BIT;
     rasterization_state.frontFace = VK_FRONT_FACE_CLOCKWISE; // it is actually CCW but shader flips things
     rasterization_state.depthBiasEnable = VK_FALSE;
-    rasterization_state.depthBiasConstantFactor = 0.0f;      // ignored
-    rasterization_state.depthBiasClamp = 0.0f;               // ignored
-    rasterization_state.depthBiasSlopeFactor = 0.0f;         // ignored
+    rasterization_state.depthBiasConstantFactor = 0.0f; // ignored
+    rasterization_state.depthBiasClamp = 0.0f;          // ignored
+    rasterization_state.depthBiasSlopeFactor = 0.0f;    // ignored
 
     const VkFormat color_attachment_format = m_swapchain.getSurfaceFormat().format;
 
