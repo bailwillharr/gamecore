@@ -25,7 +25,6 @@ class VulkanSwapchain {
     VkSurfaceKHR m_surface = VK_NULL_HANDLE;
 
     VkSurfaceFormatKHR m_surface_format{};
-    VkFormat m_depth_stencil_format{};
     VkPresentModeKHR m_present_mode{};
     VkExtent2D m_extent{};
 

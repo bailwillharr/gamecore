@@ -54,6 +54,7 @@ struct RenderBackendInfo {
     VkDescriptorPool main_descriptor_pool;
     VkFormat framebuffer_format;
     VkFormat depth_stencil_format;
+    VkSampleCountFlagBits msaa_samples;
 };
 
 enum class RenderSyncMode { VSYNC_ON_DOUBLE_BUFFERED, VSYNC_ON_TRIPLE_BUFFERED, VSYNC_ON_TRIPLE_BUFFERED_UNTHROTTLED, VSYNC_OFF };
@@ -73,18 +74,24 @@ class RenderBackend {
     // pipeline layout for most 3D rendering
     VkPipelineLayout m_pipeline_layout{};
 
-    VkImage m_framebuffer_image{};
-    VmaAllocation m_framebuffer_image_allocation{};
-    VkImageView m_framebuffer_image_view{};
-
-    VkImage m_depth_stencil{};
-    VkImageView m_depth_stencil_view{};
-    VmaAllocation m_depth_stencil_allocation{};
-    VkFormat m_depth_stencil_format{};
-
     VkSampleCountFlagBits m_msaa_samples{};
 
     uint64_t m_frame_count{};
+
+    // Images:
+
+    VkImage m_color_attachment_image{};
+    VmaAllocation m_color_attachment_allocation{};
+    VkImageView m_color_attachment_image_view{};
+
+    VkFormat m_depth_stencil_attachment_format{};
+    VkImage m_depth_stencil_attachment_image{};
+    VmaAllocation m_depth_stencil_attachment_allocation{};
+    VkImageView m_depth_stencil_attachment_view{};
+
+    VkImage m_framebuffer_image{};
+    VmaAllocation m_framebuffer_image_allocation{};
+    VkImageView m_framebuffer_image_view{};
 
     /* Important synchronisation objects */
     /* If the number of frames-in-flight changes, everything here is reset */
@@ -95,15 +102,13 @@ class RenderBackend {
     };
     std::vector<FIFStuff> m_fif{};
     int m_requested_frames_in_flight{};
-
     VkSemaphore m_main_timeline_semaphore{};
     uint64_t m_main_timeline_value{};
-    VkSemaphore m_transfer_timeline_semaphore{};
-    uint64_t m_transfer_timeline_value{};
-
-    uint64_t m_framebuffer_copy_finished_value{};
+    uint64_t m_framebuffer_copy_finished_value{}; // there;s only one framebuffer so it's not in FIFStuff
 
     VkCommandPool m_transfer_cmd_pool{};
+    VkSemaphore m_transfer_timeline_semaphore{};
+    uint64_t m_transfer_timeline_value{};
 
 #ifdef TRACY_ENABLE
     struct TracyVulkanContext {
@@ -148,7 +153,8 @@ public:
         info.main_queue_family_index = m_device.getQueueFamilyIndex();
         info.main_descriptor_pool = m_main_descriptor_pool;
         info.framebuffer_format = m_swapchain.getSurfaceFormat().format;
-        info.depth_stencil_format = m_depth_stencil_format;
+        info.depth_stencil_format = m_depth_stencil_attachment_format;
+        info.msaa_samples = m_msaa_samples;
         return info;
     }
 
@@ -159,7 +165,10 @@ public:
 private:
     void recreateFramesInFlightResources();
 
-    /* Call this before input polling and logic to reduce latency at the cost of stalling GPU */
+    // Call this when the swapchain is resized
+    void recreateRenderImages();
+
+    // Call this before input polling and logic to reduce latency at the cost of stalling GPU
     void waitForFrameReady();
 };
 

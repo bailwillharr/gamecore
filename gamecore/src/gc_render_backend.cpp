@@ -31,7 +31,7 @@ namespace gc {
 
 static uint32_t getMipLevels(uint32_t width, uint32_t height) { return static_cast<uint32_t>(std::floor(std::log2(std::max(width, height)))) + 1; }
 
-// THe original image (mip level 0) should be TRANSFER_SRC image layout, the rest should be TRANSFER_DST
+// The original image (mip level 0) should be TRANSFER_SRC image layout, the rest should be TRANSFER_DST
 // At the end, will transition all mip levels to SHADER_READ_ONLY_OPTIMAL
 static void generateMipMaps(VkCommandBuffer cmd, VkImage image, uint32_t width, uint32_t height)
 {
@@ -104,34 +104,28 @@ static void generateMipMaps(VkCommandBuffer cmd, VkImage image, uint32_t width, 
     }
 }
 
-static void recreateDepthStencil(VkDevice device, VmaAllocator allocator, VkFormat format, VkExtent2D extent, VkSampleCountFlagBits msaa_samples,
-                                 VkImage& depth_stencil, VmaAllocation& depth_stencil_allocation, VkImageView& depth_stencil_view)
+static VkSampleCountFlagBits getMaxSupportedSampleCount(const VkPhysicalDeviceLimits& limits)
 {
-    if (depth_stencil_view) {
-        vkDestroyImageView(device, depth_stencil_view, nullptr);
-    }
-    if (depth_stencil) {
-        vmaDestroyImage(allocator, depth_stencil, depth_stencil_allocation);
-    }
-
-    std::tie(depth_stencil, depth_stencil_allocation) =
-        vkutils::createImage(allocator, format, extent.width, extent.height, 1, msaa_samples, VK_IMAGE_USAGE_DEPTH_STENCIL_ATTACHMENT_BIT, 1.0f);
-    depth_stencil_view = vkutils::createImageView(device, depth_stencil, format, VK_IMAGE_ASPECT_DEPTH_BIT | VK_IMAGE_ASPECT_STENCIL_BIT, 1);
-}
-
-static void recreateFramebufferImage(VkDevice device, VmaAllocator allocator, VkFormat format, VkExtent2D extent, VkSampleCountFlagBits msaa_samples,
-                                     VkImage& image, VmaAllocation& allocation, VkImageView& view)
-{
-    if (view != VK_NULL_HANDLE) {
-        vkDestroyImageView(device, view, nullptr);
-    }
-    if (image != VK_NULL_HANDLE) {
-        vmaDestroyImage(allocator, image, allocation);
-    }
-
-    std::tie(image, allocation) = vkutils::createImage(allocator, format, extent.width, extent.height, 1, msaa_samples,
-                                                       VK_IMAGE_USAGE_TRANSFER_SRC_BIT | VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT, 1.0f);
-    view = vkutils::createImageView(device, image, format, VK_IMAGE_ASPECT_COLOR_BIT, 1);
+    const auto check_support = [](const VkPhysicalDeviceLimits& limits, VkSampleCountFlagBits sample_count) {
+        if (!(limits.framebufferColorSampleCounts & sample_count)) {
+            return false;
+        }
+        if (!(limits.framebufferDepthSampleCounts & sample_count)) {
+            return false;
+        }
+        if (!(limits.framebufferStencilSampleCounts & sample_count)) {
+            return false;
+        }
+        return true;
+    };
+    VkSampleCountFlagBits msaa_samples = VK_SAMPLE_COUNT_1_BIT;
+    msaa_samples = check_support(limits, VK_SAMPLE_COUNT_2_BIT) ? VK_SAMPLE_COUNT_2_BIT : msaa_samples;
+    msaa_samples = check_support(limits, VK_SAMPLE_COUNT_4_BIT) ? VK_SAMPLE_COUNT_4_BIT : msaa_samples;
+    msaa_samples = check_support(limits, VK_SAMPLE_COUNT_8_BIT) ? VK_SAMPLE_COUNT_8_BIT : msaa_samples;
+    msaa_samples = check_support(limits, VK_SAMPLE_COUNT_16_BIT) ? VK_SAMPLE_COUNT_16_BIT : msaa_samples;
+    msaa_samples = check_support(limits, VK_SAMPLE_COUNT_32_BIT) ? VK_SAMPLE_COUNT_32_BIT : msaa_samples;
+    msaa_samples = check_support(limits, VK_SAMPLE_COUNT_64_BIT) ? VK_SAMPLE_COUNT_64_BIT : msaa_samples;
+    return msaa_samples;
 }
 
 static uint32_t getAppropriateFramesInFlight(uint32_t swapchain_image_count) { return (swapchain_image_count > 2) ? 2 : 1; }
@@ -250,7 +244,7 @@ RenderBackend::RenderBackend(SDL_Window* window_handle)
         vkGetPhysicalDeviceFormatProperties(m_device.getPhysicalDevice(), VK_FORMAT_D24_UNORM_S8_UINT,
                                             &depth_format_props); // NVIDIA Best practices recommend this
         if (depth_format_props.optimalTilingFeatures & VK_FORMAT_FEATURE_DEPTH_STENCIL_ATTACHMENT_BIT) {
-            m_depth_stencil_format = VK_FORMAT_D24_UNORM_S8_UINT;
+            m_depth_stencil_attachment_format = VK_FORMAT_D24_UNORM_S8_UINT;
         }
         else {
             abortGame("Failed to find suitable depth-buffer image format!");
@@ -258,37 +252,10 @@ RenderBackend::RenderBackend(SDL_Window* window_handle)
     }
 
     // choose number of MSAA samples to use
-    {
-        const auto& limits = m_device.getProperties().props.properties.limits;
-        const auto check_support = [](const VkPhysicalDeviceLimits& limits, VkSampleCountFlagBits sample_count) {
-            if (!(limits.framebufferColorSampleCounts & sample_count)) {
-                return false;
-            }
-            if (!(limits.framebufferDepthSampleCounts & sample_count)) {
-                return false;
-            }
-            if (!(limits.framebufferStencilSampleCounts & sample_count)) {
-                return false;
-            }
-            return true;
-        };
-        m_msaa_samples = VK_SAMPLE_COUNT_1_BIT;
-        m_msaa_samples = check_support(limits, VK_SAMPLE_COUNT_2_BIT) ? VK_SAMPLE_COUNT_2_BIT : m_msaa_samples;
-        m_msaa_samples = check_support(limits, VK_SAMPLE_COUNT_4_BIT) ? VK_SAMPLE_COUNT_4_BIT : m_msaa_samples;
-        m_msaa_samples = check_support(limits, VK_SAMPLE_COUNT_8_BIT) ? VK_SAMPLE_COUNT_8_BIT : m_msaa_samples;
-        m_msaa_samples = check_support(limits, VK_SAMPLE_COUNT_16_BIT) ? VK_SAMPLE_COUNT_16_BIT : m_msaa_samples;
-        m_msaa_samples = check_support(limits, VK_SAMPLE_COUNT_32_BIT) ? VK_SAMPLE_COUNT_32_BIT : m_msaa_samples;
-        m_msaa_samples = check_support(limits, VK_SAMPLE_COUNT_64_BIT) ? VK_SAMPLE_COUNT_64_BIT : m_msaa_samples;
-        m_msaa_samples = VK_SAMPLE_COUNT_1_BIT;
-        GC_DEBUG("Using {} MSAA samples", static_cast<int>(m_msaa_samples));
-    }
+    m_msaa_samples = getMaxSupportedSampleCount(m_device.getProperties().props.properties.limits);
+    GC_DEBUG("Using {} MSAA samples", static_cast<int>(m_msaa_samples));
 
-    { /* This stuff must be done every time the swapchain is recreated */
-        recreateDepthStencil(m_device.getHandle(), m_allocator.getHandle(), m_depth_stencil_format, m_swapchain.getExtent(), m_msaa_samples, m_depth_stencil,
-                             m_depth_stencil_allocation, m_depth_stencil_view);
-        recreateFramebufferImage(m_device.getHandle(), m_allocator.getHandle(), m_swapchain.getSurfaceFormat().format, m_swapchain.getExtent(), m_msaa_samples,
-                                 m_framebuffer_image, m_framebuffer_image_allocation, m_framebuffer_image_view);
-    }
+    recreateRenderImages();
 
     m_requested_frames_in_flight = getAppropriateFramesInFlight(m_swapchain.getImageCount());
 
@@ -379,9 +346,10 @@ RenderBackend::~RenderBackend()
 
     vkDestroyImageView(m_device.getHandle(), m_framebuffer_image_view, nullptr);
     vmaDestroyImage(m_allocator.getHandle(), m_framebuffer_image, m_framebuffer_image_allocation);
-
-    vkDestroyImageView(m_device.getHandle(), m_depth_stencil_view, nullptr);
-    vmaDestroyImage(m_allocator.getHandle(), m_depth_stencil, m_depth_stencil_allocation);
+    vkDestroyImageView(m_device.getHandle(), m_color_attachment_image_view, nullptr);
+    vmaDestroyImage(m_allocator.getHandle(), m_color_attachment_image, m_color_attachment_allocation);
+    vkDestroyImageView(m_device.getHandle(), m_depth_stencil_attachment_view, nullptr);
+    vmaDestroyImage(m_allocator.getHandle(), m_depth_stencil_attachment_image, m_depth_stencil_attachment_allocation);
 
     vkDestroyPipelineLayout(m_device.getHandle(), m_pipeline_layout, nullptr);
 
@@ -431,8 +399,8 @@ void RenderBackend::submitFrame(bool window_resized, const WorldDrawData& world_
     }
 
     {
-        /* Transition framebuffer image to COLOR_ATTACHMENT_OPTIMAL layout */
-        std::array<VkImageMemoryBarrier2, 2> to_attachment_barriers{};
+        /* Transition color attachment image to COLOR_ATTACHMENT_OPTIMAL layout */
+        std::array<VkImageMemoryBarrier2, 3> to_attachment_barriers{};
         to_attachment_barriers[0].sType = VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER_2;
         to_attachment_barriers[0].srcStageMask = VK_PIPELINE_STAGE_2_NONE;
         to_attachment_barriers[0].srcAccessMask = VK_ACCESS_2_NONE;
@@ -442,13 +410,13 @@ void RenderBackend::submitFrame(bool window_resized, const WorldDrawData& world_
         to_attachment_barriers[0].newLayout = VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL;
         to_attachment_barriers[0].srcQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
         to_attachment_barriers[0].dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
-        to_attachment_barriers[0].image = m_framebuffer_image;
+        to_attachment_barriers[0].image = m_color_attachment_image;
         to_attachment_barriers[0].subresourceRange.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT;
         to_attachment_barriers[0].subresourceRange.baseMipLevel = 0;
         to_attachment_barriers[0].subresourceRange.levelCount = 1;
         to_attachment_barriers[0].subresourceRange.baseArrayLayer = 0;
         to_attachment_barriers[0].subresourceRange.layerCount = 1;
-        /* Transition depth stencil buffer to VK_IMAGE_LAYOUT_DEPTH_STENCIL_ATTACHMENT_OPTIMAL layout */
+        /* Transition depth stencil attachment image to VK_IMAGE_LAYOUT_DEPTH_STENCIL_ATTACHMENT_OPTIMAL layout */
         to_attachment_barriers[1].sType = VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER_2;
         to_attachment_barriers[1].srcStageMask = VK_PIPELINE_STAGE_2_NONE;
         to_attachment_barriers[1].srcAccessMask = VK_ACCESS_2_NONE;
@@ -458,12 +426,28 @@ void RenderBackend::submitFrame(bool window_resized, const WorldDrawData& world_
         to_attachment_barriers[1].newLayout = VK_IMAGE_LAYOUT_DEPTH_STENCIL_ATTACHMENT_OPTIMAL;
         to_attachment_barriers[1].srcQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
         to_attachment_barriers[1].dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
-        to_attachment_barriers[1].image = m_depth_stencil;
+        to_attachment_barriers[1].image = m_depth_stencil_attachment_image;
         to_attachment_barriers[1].subresourceRange.aspectMask = VK_IMAGE_ASPECT_DEPTH_BIT | VK_IMAGE_ASPECT_STENCIL_BIT;
         to_attachment_barriers[1].subresourceRange.baseMipLevel = 0;
         to_attachment_barriers[1].subresourceRange.levelCount = 1;
         to_attachment_barriers[1].subresourceRange.baseArrayLayer = 0;
         to_attachment_barriers[1].subresourceRange.layerCount = 1;
+        /* Transition framebuffer image to COLOR_ATTACHMENT_OPTIMAL_LAYUOUT */
+        to_attachment_barriers[2].sType = VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER_2;
+        to_attachment_barriers[2].srcStageMask = VK_PIPELINE_STAGE_2_NONE;
+        to_attachment_barriers[2].srcAccessMask = VK_ACCESS_2_NONE;
+        to_attachment_barriers[2].dstStageMask = VK_PIPELINE_STAGE_2_COLOR_ATTACHMENT_OUTPUT_BIT;
+        to_attachment_barriers[2].dstAccessMask = VK_ACCESS_2_COLOR_ATTACHMENT_WRITE_BIT;
+        to_attachment_barriers[2].oldLayout = VK_IMAGE_LAYOUT_UNDEFINED;
+        to_attachment_barriers[2].newLayout = VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL;
+        to_attachment_barriers[2].srcQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
+        to_attachment_barriers[2].dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
+        to_attachment_barriers[2].image = m_framebuffer_image;
+        to_attachment_barriers[2].subresourceRange.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT;
+        to_attachment_barriers[2].subresourceRange.baseMipLevel = 0;
+        to_attachment_barriers[2].subresourceRange.levelCount = 1;
+        to_attachment_barriers[2].subresourceRange.baseArrayLayer = 0;
+        to_attachment_barriers[2].subresourceRange.layerCount = 1;
         VkDependencyInfo dep{};
         dep.sType = VK_STRUCTURE_TYPE_DEPENDENCY_INFO;
         dep.imageMemoryBarrierCount = static_cast<uint32_t>(to_attachment_barriers.size());
@@ -478,18 +462,20 @@ void RenderBackend::submitFrame(bool window_resized, const WorldDrawData& world_
 
         VkRenderingAttachmentInfo color_attachment{};
         color_attachment.sType = VK_STRUCTURE_TYPE_RENDERING_ATTACHMENT_INFO;
-        color_attachment.imageView = m_framebuffer_image_view;
+        color_attachment.imageView = m_color_attachment_image_view;
         color_attachment.imageLayout = VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL;
-        color_attachment.resolveMode = VK_RESOLVE_MODE_NONE;
+        color_attachment.resolveMode = VK_RESOLVE_MODE_AVERAGE_BIT;
+        color_attachment.resolveImageView = m_framebuffer_image_view;
+        color_attachment.resolveImageLayout = VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL;
         color_attachment.loadOp = VK_ATTACHMENT_LOAD_OP_CLEAR;
-        color_attachment.storeOp = VK_ATTACHMENT_STORE_OP_STORE;
+        color_attachment.storeOp = VK_ATTACHMENT_STORE_OP_DONT_CARE;
         color_attachment.clearValue.color.float32[0] = 0.0f;
         color_attachment.clearValue.color.float32[1] = 0.0f;
         color_attachment.clearValue.color.float32[2] = 0.0f;
         color_attachment.clearValue.color.float32[3] = 0.0f;
         VkRenderingAttachmentInfo depth_attachment{};
         depth_attachment.sType = VK_STRUCTURE_TYPE_RENDERING_ATTACHMENT_INFO;
-        depth_attachment.imageView = m_depth_stencil_view;
+        depth_attachment.imageView = m_depth_stencil_attachment_view;
         depth_attachment.imageLayout = VK_IMAGE_LAYOUT_DEPTH_STENCIL_ATTACHMENT_OPTIMAL;
         depth_attachment.resolveMode = VK_RESOLVE_MODE_NONE;
         depth_attachment.loadOp = VK_ATTACHMENT_LOAD_OP_CLEAR;
@@ -611,10 +597,7 @@ void RenderBackend::submitFrame(bool window_resized, const WorldDrawData& world_
     if (swapchain_recreated) {
         GC_CHECKVK(
             vkQueueWaitIdle(m_device.getMainQueue())); // if window was just un-minimised, acquireAndPresent() will be using the framebuffer image right now.
-        recreateDepthStencil(m_device.getHandle(), m_allocator.getHandle(), m_depth_stencil_format, m_swapchain.getExtent(), m_msaa_samples, m_depth_stencil,
-                             m_depth_stencil_allocation, m_depth_stencil_view);
-        recreateFramebufferImage(m_device.getHandle(), m_allocator.getHandle(), m_swapchain.getSurfaceFormat().format, m_swapchain.getExtent(), m_msaa_samples,
-                                 m_framebuffer_image, m_framebuffer_image_allocation, m_framebuffer_image_view);
+        recreateRenderImages();
         m_requested_frames_in_flight = getAppropriateFramesInFlight(m_swapchain.getImageCount());
     }
 
@@ -732,12 +715,12 @@ GPUPipeline RenderBackend::createPipeline(std::span<const uint8_t> vertex_spv, s
     rendering_info.viewMask = 0;
     rendering_info.colorAttachmentCount = 1;
     rendering_info.pColorAttachmentFormats = &color_attachment_format;
-    rendering_info.depthAttachmentFormat = m_depth_stencil_format;
-    rendering_info.stencilAttachmentFormat = m_depth_stencil_format;
+    rendering_info.depthAttachmentFormat = m_depth_stencil_attachment_format;
+    rendering_info.stencilAttachmentFormat = m_depth_stencil_attachment_format;
 
     VkPipelineMultisampleStateCreateInfo multisample_state{};
     multisample_state.sType = VK_STRUCTURE_TYPE_PIPELINE_MULTISAMPLE_STATE_CREATE_INFO;
-    multisample_state.rasterizationSamples = VK_SAMPLE_COUNT_1_BIT;
+    multisample_state.rasterizationSamples = m_msaa_samples;
     multisample_state.sampleShadingEnable = VK_FALSE;
     multisample_state.minSampleShading = 1.0f;          // ignored
     multisample_state.pSampleMask = nullptr;            // ignored
@@ -1149,6 +1132,35 @@ void RenderBackend::waitIdle()
 {
     /* ensure GPU is not using any command buffers etc. */
     GC_CHECKVK(vkDeviceWaitIdle(m_device.getHandle()));
+}
+
+void RenderBackend::recreateRenderImages()
+{
+    if (m_framebuffer_image) {
+        vkDestroyImageView(m_device.getHandle(), m_framebuffer_image_view, nullptr);
+        vmaDestroyImage(m_allocator.getHandle(), m_framebuffer_image, m_framebuffer_image_allocation);
+        vkDestroyImageView(m_device.getHandle(), m_color_attachment_image_view, nullptr);
+        vmaDestroyImage(m_allocator.getHandle(), m_color_attachment_image, m_color_attachment_allocation);
+        vkDestroyImageView(m_device.getHandle(), m_depth_stencil_attachment_view, nullptr);
+        vmaDestroyImage(m_allocator.getHandle(), m_depth_stencil_attachment_image, m_depth_stencil_attachment_allocation);
+    }
+
+    const VkFormat swapchain_format = m_swapchain.getSurfaceFormat().format;
+    const auto [width, height] = m_swapchain.getExtent();
+
+    std::tie(m_color_attachment_image, m_color_attachment_allocation) =
+        vkutils::createImage(m_allocator.getHandle(), swapchain_format, width, height, 1, m_msaa_samples, VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT, 1.0f);
+    m_color_attachment_image_view = vkutils::createImageView(m_device.getHandle(), m_color_attachment_image, swapchain_format, VK_IMAGE_ASPECT_COLOR_BIT, 1);
+
+    std::tie(m_depth_stencil_attachment_image, m_depth_stencil_attachment_allocation) = vkutils::createImage(
+        m_allocator.getHandle(), m_depth_stencil_attachment_format, width, height, 1, m_msaa_samples, VK_IMAGE_USAGE_DEPTH_STENCIL_ATTACHMENT_BIT, 1.0f);
+    m_depth_stencil_attachment_view = vkutils::createImageView(m_device.getHandle(), m_depth_stencil_attachment_image, m_depth_stencil_attachment_format,
+                                                               VK_IMAGE_ASPECT_DEPTH_BIT | VK_IMAGE_ASPECT_STENCIL_BIT, 1);
+
+    std::tie(m_framebuffer_image, m_framebuffer_image_allocation) =
+        vkutils::createImage(m_allocator.getHandle(), swapchain_format, width, height, 1, VK_SAMPLE_COUNT_1_BIT,
+                             VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT | VK_IMAGE_USAGE_TRANSFER_SRC_BIT, 1.0f);
+    m_framebuffer_image_view = vkutils::createImageView(m_device.getHandle(), m_framebuffer_image, swapchain_format, VK_IMAGE_ASPECT_COLOR_BIT, 1);
 }
 
 void RenderBackend::recreateFramesInFlightResources()

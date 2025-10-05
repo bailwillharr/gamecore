@@ -69,7 +69,7 @@ DebugUI::DebugUI(SDL_Window* window, const RenderBackendInfo& render_backend_inf
         info.MinImageCount = 2;
         info.ImageCount = info.MinImageCount;
 
-        info.MSAASamples = VK_SAMPLE_COUNT_1_BIT;
+        info.MSAASamples = render_backend_info.msaa_samples;
         info.UseDynamicRendering = true;
         info.PipelineRenderingCreateInfo = rendering_info;
         if (!ImGui_ImplVulkan_Init(&info)) {
