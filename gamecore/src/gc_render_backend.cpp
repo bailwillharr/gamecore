@@ -104,7 +104,7 @@ static void generateMipMaps(VkCommandBuffer cmd, VkImage image, uint32_t width, 
     }
 }
 
-static VkSampleCountFlagBits getMaxSupportedSampleCount(const VkPhysicalDeviceLimits& limits)
+static VkSampleCountFlagBits getMaxSupportedSampleCount(const VkPhysicalDeviceLimits& limits, VkSampleCountFlagBits max)
 {
     const auto check_support = [](const VkPhysicalDeviceLimits& limits, VkSampleCountFlagBits sample_count) {
         if (!(limits.framebufferColorSampleCounts & sample_count)) {
@@ -125,6 +125,7 @@ static VkSampleCountFlagBits getMaxSupportedSampleCount(const VkPhysicalDeviceLi
     msaa_samples = check_support(limits, VK_SAMPLE_COUNT_16_BIT) ? VK_SAMPLE_COUNT_16_BIT : msaa_samples;
     msaa_samples = check_support(limits, VK_SAMPLE_COUNT_32_BIT) ? VK_SAMPLE_COUNT_32_BIT : msaa_samples;
     msaa_samples = check_support(limits, VK_SAMPLE_COUNT_64_BIT) ? VK_SAMPLE_COUNT_64_BIT : msaa_samples;
+    msaa_samples = (msaa_samples > max) ? max : msaa_samples;
     return msaa_samples;
 }
 
@@ -252,8 +253,12 @@ RenderBackend::RenderBackend(SDL_Window* window_handle)
     }
 
     // choose number of MSAA samples to use
-    m_msaa_samples = getMaxSupportedSampleCount(m_device.getProperties().props.properties.limits);
-    GC_DEBUG("Using {} MSAA samples", static_cast<int>(m_msaa_samples));
+    if (m_device.getProperties().props.properties.deviceType == VK_PHYSICAL_DEVICE_TYPE_DISCRETE_GPU) {
+        m_msaa_samples = getMaxSupportedSampleCount(m_device.getProperties().props.properties.limits, VK_SAMPLE_COUNT_8_BIT);
+    }
+    else {
+        m_msaa_samples = getMaxSupportedSampleCount(m_device.getProperties().props.properties.limits, VK_SAMPLE_COUNT_2_BIT); // MSAA is very slow on Intel iGPU
+    }
 
     recreateRenderImages();
 
@@ -513,7 +518,7 @@ void RenderBackend::submitFrame(bool window_resized, const WorldDrawData& world_
         const glm::mat4 projection_matrix = glm::perspectiveLH_ZO(glm::radians(45.0f), aspect_ratio, 0.1f, 1000.0f);
         recordWorldRenderingCommands(projection_matrix, stuff.cmd, m_pipeline_layout, m_main_timeline_semaphore, m_main_timeline_value + 1, world_draw_data);
 
-        ImGui_ImplVulkan_RenderDrawData(ImGui::GetDrawData(), stuff.cmd);
+        // ImGui_ImplVulkan_RenderDrawData(ImGui::GetDrawData(), stuff.cmd);
 
         vkCmdEndRendering(stuff.cmd);
     }
@@ -1149,17 +1154,19 @@ void RenderBackend::recreateRenderImages()
     const auto [width, height] = m_swapchain.getExtent();
 
     std::tie(m_color_attachment_image, m_color_attachment_allocation) =
-        vkutils::createImage(m_allocator.getHandle(), swapchain_format, width, height, 1, m_msaa_samples, VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT, 1.0f);
+        vkutils::createImage(m_allocator.getHandle(), swapchain_format, width, height, 1, m_msaa_samples,
+                             VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT | VK_IMAGE_USAGE_TRANSIENT_ATTACHMENT_BIT, 1.0f, true);
     m_color_attachment_image_view = vkutils::createImageView(m_device.getHandle(), m_color_attachment_image, swapchain_format, VK_IMAGE_ASPECT_COLOR_BIT, 1);
 
-    std::tie(m_depth_stencil_attachment_image, m_depth_stencil_attachment_allocation) = vkutils::createImage(
-        m_allocator.getHandle(), m_depth_stencil_attachment_format, width, height, 1, m_msaa_samples, VK_IMAGE_USAGE_DEPTH_STENCIL_ATTACHMENT_BIT, 1.0f);
+    std::tie(m_depth_stencil_attachment_image, m_depth_stencil_attachment_allocation) =
+        vkutils::createImage(m_allocator.getHandle(), m_depth_stencil_attachment_format, width, height, 1, m_msaa_samples,
+                             VK_IMAGE_USAGE_DEPTH_STENCIL_ATTACHMENT_BIT | VK_IMAGE_USAGE_TRANSIENT_ATTACHMENT_BIT, 1.0f, true);
     m_depth_stencil_attachment_view = vkutils::createImageView(m_device.getHandle(), m_depth_stencil_attachment_image, m_depth_stencil_attachment_format,
                                                                VK_IMAGE_ASPECT_DEPTH_BIT | VK_IMAGE_ASPECT_STENCIL_BIT, 1);
 
     std::tie(m_framebuffer_image, m_framebuffer_image_allocation) =
         vkutils::createImage(m_allocator.getHandle(), swapchain_format, width, height, 1, VK_SAMPLE_COUNT_1_BIT,
-                             VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT | VK_IMAGE_USAGE_TRANSFER_SRC_BIT, 1.0f);
+                             VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT | VK_IMAGE_USAGE_TRANSFER_SRC_BIT, 1.0f, true);
     m_framebuffer_image_view = vkutils::createImageView(m_device.getHandle(), m_framebuffer_image, swapchain_format, VK_IMAGE_ASPECT_COLOR_BIT, 1);
 }
 

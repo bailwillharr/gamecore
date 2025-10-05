@@ -127,7 +127,7 @@ public:
 
     RenderBackend operator=(const RenderBackend&) = delete;
 
-    /* configure renderer */
+    // configure renderer
     void setSyncMode(RenderSyncMode mode);
 
     /* Renders to framebuffer and presents framebuffer to the screen */

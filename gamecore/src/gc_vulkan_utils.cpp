@@ -3,7 +3,7 @@
 namespace gc::vkutils {
 
 std::pair<VkImage, VmaAllocation> createImage(VmaAllocator allocator, VkFormat format, uint32_t width, uint32_t height, uint32_t mip_levels,
-                                              VkSampleCountFlagBits msaa_samples, VkImageUsageFlags usage, float priority)
+                                              VkSampleCountFlagBits msaa_samples, VkImageUsageFlags usage, float priority, bool dedicated)
 {
     VkImageCreateInfo image_info{};
     image_info.sType = VK_STRUCTURE_TYPE_IMAGE_CREATE_INFO;
@@ -24,9 +24,10 @@ std::pair<VkImage, VmaAllocation> createImage(VmaAllocator allocator, VkFormat f
     image_info.pQueueFamilyIndices = nullptr; // ingored
     image_info.initialLayout = VK_IMAGE_LAYOUT_UNDEFINED;
     VmaAllocationCreateInfo alloc_create_info{};
-    alloc_create_info.flags = 0;
+    alloc_create_info.flags = dedicated ? VMA_ALLOCATION_CREATE_DEDICATED_MEMORY_BIT : 0;
     alloc_create_info.usage = VMA_MEMORY_USAGE_AUTO;
-    alloc_create_info.priority = priority;
+    alloc_create_info.preferredFlags = (usage & VK_IMAGE_USAGE_TRANSIENT_ATTACHMENT_BIT) ? VK_MEMORY_PROPERTY_LAZILY_ALLOCATED_BIT : 0;
+    alloc_create_info.priority = priority; 
     VkImage image{};
     VmaAllocation allocation{};
     GC_CHECKVK(vmaCreateImage(allocator, &image_info, &alloc_create_info, &image, &allocation, nullptr));
