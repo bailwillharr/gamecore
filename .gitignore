@@ -15,3 +15,5 @@ compile_commands.json
 runme
 *.log
 *.lnk
+/content/*.gcpak
+/content/*.txt
