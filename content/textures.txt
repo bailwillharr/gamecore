@@ -1,8 +1,0 @@
-48018fc5 box.jpg
-73c18145 bricks-mortar-albedo.png
-e37e7222 bricks-mortar-normal.png
-4f4287f9 bricks-mortar-orm.png
-b832c4f0 bricks.jpg
-83f43062 fire.jpg
-5c42b1f0 moss.png
-d4b68e3e nuke.jpg
