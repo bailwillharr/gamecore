@@ -128,7 +128,7 @@ void buildAndStartGame(gc::App& app)
     // camera
     auto camera = world.createEntity(gc::Name("camera"), gc::ENTITY_NONE, {0.0f, 0.0f, 0.0f});
     world.addComponent<gc::CameraComponent>(camera).setFOV(glm::radians(45.0f)).setActive(true);
-    world.addComponent<MouseMoveComponent>(camera).setMoveSpeed(10.0f).setSensitivity(1e-3f);
+    world.addComponent<MouseMoveComponent>(camera).setMoveSpeed(25.0f).setAcceleration(50.0f).setSensitivity(1e-3f);
 
     win.setTitle("Hello world!");
     win.setIsResizable(true);

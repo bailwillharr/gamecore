@@ -37,16 +37,34 @@ void MouseMoveSystem::onUpdate(gc::FrameState& frame_state)
             mr.m_pitch = 0.0f;
         }
 
-        const glm::quat rotation = glm::angleAxis(-mr.m_yaw, glm::vec3{0.0f, 0.0f, 1.0f}) * glm::angleAxis(mr.m_pitch, glm::vec3{1.0f, 0.0f, 0.0f});
+        const glm::quat pitch = glm::angleAxis(mr.m_pitch, glm::vec3{1.0f, 0.0f, 0.0f});
+        const glm::quat yaw = glm::angleAxis(-mr.m_yaw, glm::vec3{0.0f, 0.0f, 1.0f});
+        const glm::quat rotation = yaw * pitch;
 
-        glm::vec3 position = t.getPosition();
-        glm::vec3 forward = rotation * glm::vec3{0.0f, 0.0f, -1.0f};
-        glm::vec3 right = rotation * glm::vec3{1.0f, 0.0f, 0.0f};
-        glm::vec3 move_direction = move_forward_vector * forward + move_right_vector * right;
+        // Don't use pitch for these vectors as W and S should go forward and back not up and down too
+        const glm::vec3 forward = yaw * glm::vec3{0.0f, 1.0f, 0.0f};
+        const glm::vec3 right = yaw * glm::vec3{1.0f, 0.0f, 0.0f};
+        const glm::vec2 move_direction = move_forward_vector * forward + move_right_vector * right; // discards Z component
         if (glm::dot(move_direction, move_direction) > 0.0f) {
-            position += glm::normalize(move_direction) * static_cast<float>(frame_state.delta_time) * mr.m_move_speed;
+            mr.m_current_velocity += glm::normalize(move_direction) * mr.m_acceleration * static_cast<float>(frame_state.delta_time);
+            const float length2 = glm::dot(mr.m_current_velocity, mr.m_current_velocity);
+            if (length2 > mr.m_move_speed * mr.m_move_speed) {
+                // clamp velocity magnitude to m_move_speed
+                mr.m_current_velocity = glm::normalize(mr.m_current_velocity) * mr.m_move_speed;
+            }
+        }
+        else if (glm::dot(mr.m_current_velocity, mr.m_current_velocity) != 0.0f) {
+            // no input. decelerate
+            glm::vec2 prev_velocity = mr.m_current_velocity;
+            mr.m_current_velocity -= glm::normalize(mr.m_current_velocity) * mr.m_acceleration * static_cast<float>(frame_state.delta_time);
+            if (glm::dot(prev_velocity, mr.m_current_velocity) < 0.0f) { // if signs are different
+                mr.m_current_velocity = {0.0f, 0.0f};
+            }
         }
 
+        glm::vec3 position = t.getPosition();
+        position += glm::vec3(mr.m_current_velocity * static_cast<float>(frame_state.delta_time), 0.0f);
+        frame_state.current_velocity = mr.m_current_velocity;
         t.setRotation(rotation);
         t.setPosition(position);
     });

@@ -1,0 +1,13 @@
+Positive Z is the up direction
+Negative Y is the forward direction
+Positive X is the right direction
+This is a right-handed Z-up coordinate system, matching Blender and 3DS Max.
+
+Cameras work a bit differently:
+Their forward direction is -Z (so by default a camera is facing down in world space)
+Their right direction is +X
+Their up direction is +Y
+
+In Vulkan, UV coordinates start at the top-left of an image.
+For meshes in this engine, the vertex shader flips the V coordinate so that UVs start at the bottom-left.
+This is to match the convention of virtually all assets available and is what Blender and 3DS Max use.

@@ -1,5 +1,8 @@
 #pragma once
 
+#include <vec2.hpp>
+#include <gtc/constants.hpp>
+
 #include <gamecore/gc_ecs.h>
 
 class MouseMoveSystem; // forward-dec
@@ -7,9 +10,11 @@ class MouseMoveSystem; // forward-dec
 class MouseMoveComponent {
     friend class MouseMoveSystem;
     float m_sensitivity{0.01f};
-    float m_move_speed{1.0f};
+    float m_move_speed{1.0f}; // max speed in m/s
+    float m_acceleration{1.0f}; // m/s/s
+    glm::vec2 m_current_velocity{0.0f, 0.0f}; // m/s {+x, +y} world space
     float m_yaw{0.0f};   // along Z axis
-    float m_pitch{0.0f}; // along X axis
+    float m_pitch{glm::half_pi<float>()}; // along X axis
 public:
     MouseMoveComponent& setSensitivity(float sensitivity)
     {
@@ -19,6 +24,11 @@ public:
     MouseMoveComponent& setMoveSpeed(float move_speed)
     {
         m_move_speed = move_speed;
+        return *this;
+    }
+    MouseMoveComponent& setAcceleration(float acceleration)
+    {
+        m_acceleration = acceleration;
         return *this;
     }
 };
