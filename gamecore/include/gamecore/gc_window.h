@@ -77,6 +77,8 @@ public:
     const glm::vec2& getMouseMotion() const;
     const bool getIsMouseCaptured() const;
 
+    const glm::ivec2& getWindowSize() const { return m_window_size; }
+
     bool getIsFullscreen() const;
     bool getResizedFlag() const;
 };

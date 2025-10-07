@@ -8,12 +8,13 @@
 
 namespace gc {
 
-void recordWorldRenderingCommands(const glm::mat4& projection_matrix, VkCommandBuffer cmd, VkPipelineLayout world_pipeline_layout,
+void recordWorldRenderingCommands(VkCommandBuffer cmd, VkPipelineLayout world_pipeline_layout,
                                   VkSemaphore timeline_semaphore, uint64_t signal_value, const WorldDrawData& draw_data)
 {
 
-    vkCmdPushConstants(cmd, world_pipeline_layout, VK_SHADER_STAGE_VERTEX_BIT, 64, 64, &projection_matrix);
-    vkCmdPushConstants(cmd, world_pipeline_layout, VK_SHADER_STAGE_VERTEX_BIT, 128, sizeof(glm::vec3), &draw_data.getLightPos());
+    vkCmdPushConstants(cmd, world_pipeline_layout, VK_SHADER_STAGE_VERTEX_BIT, 64, 64, &draw_data.getViewMatrix());
+    vkCmdPushConstants(cmd, world_pipeline_layout, VK_SHADER_STAGE_VERTEX_BIT, 128, 64, &draw_data.getProjectionMatrix());
+    vkCmdPushConstants(cmd, world_pipeline_layout, VK_SHADER_STAGE_VERTEX_BIT, 192, sizeof(glm::vec3), &draw_data.getLightPos());
 
     const RenderMaterial* last_material{};
     for (const auto& entry : draw_data.getDrawEntries()) {

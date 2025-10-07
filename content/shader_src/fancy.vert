@@ -2,6 +2,7 @@
 
 layout(push_constant) uniform PushConstants {
     mat4 world_transform;
+	mat4 view;
 	mat4 projection;
 	vec3 light_pos;
 } pc;
@@ -15,10 +16,11 @@ layout(location = 0) out vec2 fragUV; // for looking up textures
 layout(location = 1) out vec3 fragPosTangentSpace; // finding view vector
 layout(location = 2) out vec3 fragViewPosTangentSpace; // finding view vector
 layout(location = 3) out vec3 fragLightPosTangentSpace; // point light
+layout(location = 4) out vec3 fragLightDirTangentSpace; // directional light
 
 void main() {
 	vec4 worldPosition = pc.world_transform * vec4(inPosition, 1.0);
-	gl_Position = pc.projection * worldPosition;
+	gl_Position = pc.projection * pc.view * worldPosition;
 	
 	mat3 normal_matrix = transpose(inverse(mat3(pc.world_transform)));
 
@@ -27,10 +29,12 @@ void main() {
 	vec3 B = cross(T, N) * inTangent.w;
 	mat3 worldToTangentSpace = transpose(mat3(T, B, N));
 	
-	fragUV = inUV;
+	fragUV.x = inUV.x;
+	fragUV.y = 1.0 - inUV.y; // pbr textures treat V=0 as bottom
 	fragPosTangentSpace = worldToTangentSpace * vec3(worldPosition);
-	fragViewPosTangentSpace = worldToTangentSpace * vec3(0.0, 0.0, 0.0);
+	fragViewPosTangentSpace = worldToTangentSpace * vec3(inverse(pc.view) * vec4(0.0, 0.0, 0.0, 1.0));
 	fragLightPosTangentSpace = worldToTangentSpace * pc.light_pos;
+	fragLightDirTangentSpace = worldToTangentSpace * normalize(vec3(0.5, 0.3, 1.0));
 
-	gl_Position.y *= -1.0;
+//	gl_Position.y *= -1.0;
 }

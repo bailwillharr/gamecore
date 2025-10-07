@@ -11,9 +11,6 @@
 #include <tracy/TracyVulkan.hpp>
 
 #include <backends/imgui_impl_vulkan.h>
-#include <vulkan/vulkan_core.h>
-
-#include <ext/matrix_clip_space.hpp>
 
 #include "gamecore/gc_gpu_resources.h"
 #include "gamecore/gc_vulkan_common.h"
@@ -228,7 +225,7 @@ RenderBackend::RenderBackend(SDL_Window* window_handle)
         VkPushConstantRange push_constant_range{};
         push_constant_range.offset = 0;
         // push_constant_range.size = 128; // Guaranteed minimum size https://registry.khronos.org/vulkan/specs/latest/html/vkspec.html#limits-minmax
-        push_constant_range.size = 128 + 16; // for light position vec3
+        push_constant_range.size = 64 + 64 + 64 + 16; // mat4, mat4, mat4, vec3
         push_constant_range.stageFlags = VK_SHADER_STAGE_VERTEX_BIT;
         VkPipelineLayoutCreateInfo info{};
         info.sType = VK_STRUCTURE_TYPE_PIPELINE_LAYOUT_CREATE_INFO;
@@ -514,9 +511,7 @@ void RenderBackend::submitFrame(bool window_resized, const WorldDrawData& world_
         scissor.extent = swapchain_extent;
         vkCmdSetScissor(stuff.cmd, 0, 1, &scissor);
 
-        const float aspect_ratio = viewport.width / viewport.height;
-        const glm::mat4 projection_matrix = glm::perspectiveLH_ZO(glm::radians(45.0f), aspect_ratio, 0.1f, 1000.0f);
-        recordWorldRenderingCommands(projection_matrix, stuff.cmd, m_pipeline_layout, m_main_timeline_semaphore, m_main_timeline_value + 1, world_draw_data);
+        recordWorldRenderingCommands(stuff.cmd, m_pipeline_layout, m_main_timeline_semaphore, m_main_timeline_value + 1, world_draw_data);
 
         ImGui_ImplVulkan_RenderDrawData(ImGui::GetDrawData(), stuff.cmd);
 
@@ -706,7 +701,7 @@ GPUPipeline RenderBackend::createPipeline(std::span<const uint8_t> vertex_spv, s
     rasterization_state.polygonMode = VK_POLYGON_MODE_FILL;
     rasterization_state.lineWidth = 1.0f;
     rasterization_state.cullMode = VK_CULL_MODE_BACK_BIT;
-    rasterization_state.frontFace = VK_FRONT_FACE_CLOCKWISE; // it is actually CCW but shader flips things
+    rasterization_state.frontFace = VK_FRONT_FACE_COUNTER_CLOCKWISE;
     rasterization_state.depthBiasEnable = VK_FALSE;
     rasterization_state.depthBiasConstantFactor = 0.0f; // ignored
     rasterization_state.depthBiasClamp = 0.0f;          // ignored

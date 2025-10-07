@@ -137,6 +137,8 @@ public:
     void cleanupGPUResources();
 
     GPUPipeline createPipeline(std::span<const uint8_t> vertex_spv, std::span<const uint8_t> fragment_spv);
+
+    // Memory layout of textures is upside down
     RenderTexture createTexture(std::span<const uint8_t> r8g8b8a8_pak, bool srgb);
     RenderMaterial createMaterial(const std::shared_ptr<RenderTexture>& base_color_texture,
                                   const std::shared_ptr<RenderTexture>& occlusion_roughness_metallic_texture,

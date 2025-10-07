@@ -5,8 +5,10 @@
 #include "gamecore/gc_logger.h"
 #include "gamecore/gc_transform_component.h"
 #include "gamecore/gc_cube_component.h"
+#include "gamecore/gc_camera_component.h"
 #include "gamecore/gc_transform_system.h"
 #include "gamecore/gc_cube_system.h"
+#include "gamecore/gc_camera_system.h"
 
 namespace gc {
 
@@ -14,8 +16,10 @@ World::World()
 {
     registerComponent<TransformComponent, ComponentArrayType::DENSE>();
     registerComponent<CubeComponent, ComponentArrayType::DENSE>();
+    registerComponent<CameraComponent, ComponentArrayType::SPARSE>();
     registerSystem<TransformSystem>();
     registerSystem<CubeSystem>();
+    registerSystem<CameraSystem>();
     GC_TRACE("Initialised World");
 }
 

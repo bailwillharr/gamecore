@@ -11,71 +11,104 @@ layout(location = 0) in vec2 fragUV; // for looking up textures
 layout(location = 1) in vec3 fragPosTangentSpace; // finding view vector
 layout(location = 2) in vec3 fragViewPosTangentSpace; // finding view vector
 layout(location = 3) in vec3 fragLightPosTangentSpace; // point light
+layout(location = 4) in vec3 fragLightDirTangentSpace; // directional light
 
 layout(location = 0) out vec4 outColor;
 
-float GGXDist(float alpha_2, float N_dot_H) {
-	const float num = alpha_2 * max(N_dot_H, 0.0);
-	const float den = PI * pow(N_dot_H * N_dot_H * (alpha_2 - 1) + 1, 2.0);
-	return num / den;
+vec3 fresnelSchlick(float cosTheta, vec3 F0)
+{
+    // Schlick approximation
+    return F0 + (1.0 - F0) * pow(1.0 - cosTheta, 5.0);
+}
+
+float distributionGGX(vec3 N, vec3 H, float roughness)
+{
+    float a      = roughness*roughness;
+    float a2     = a*a;
+    float NdotH  = max(dot(N, H), 0.0);
+    float NdotH2 = NdotH*NdotH;
+
+    float num   = a2;
+    float denom = (NdotH2 * (a2 - 1.0) + 1.0);
+    denom = 3.141592 * denom * denom;
+
+    return num / denom;
+}
+
+float geometrySchlickGGX(float NdotV, float roughness)
+{
+    float r = roughness + 1.0;
+    float k = (r*r) / 8.0;
+
+    return NdotV / (NdotV * (1.0 - k) + k);
+}
+
+float geometrySmith(vec3 N, vec3 V, vec3 L, float roughness)
+{
+    float NdotV = max(dot(N, V), 0.0);
+    float NdotL = max(dot(N, L), 0.0);
+    float ggxV = geometrySchlickGGX(NdotV, roughness);
+    float ggxL = geometrySchlickGGX(NdotL, roughness);
+    return ggxV * ggxL;
+}
+
+vec3 BRDF_PBR(vec3 N, vec3 V, vec3 L, vec3 albedo, float metallic, float roughness)
+{
+    vec3 H = normalize(V + L);
+    
+    // Fresnel
+    vec3 F0 = mix(vec3(0.04), albedo, metallic); // F0 = 0.04 for dielectrics, albedo for metals
+    vec3 F  = fresnelSchlick(max(dot(H, V), 0.0), F0);
+
+    // Distribution & Geometry
+    float D = distributionGGX(N, H, roughness);
+    float G = geometrySmith(N, V, L, roughness);
+
+    // Specular
+    float NdotL = max(dot(N, L), 0.0);
+    float NdotV = max(dot(N, V), 0.0);
+    vec3 spec = (D * G * F) / max(4.0 * NdotV * NdotL, 0.001);
+
+    // Diffuse
+    vec3 kD = (1.0 - F) * (1.0 - metallic);  // remove diffuse for metals
+
+    float LdotH = max(dot(L, H), 0.0);
+    float R_R = 2.0 * roughness * LdotH * LdotH;
+	float one_minus_L_dot_N = 1.0 - NdotL;
+	float one_minus_V_dot_N = 1.0 - NdotV;
+	float F_L = one_minus_L_dot_N * one_minus_L_dot_N * one_minus_L_dot_N * one_minus_L_dot_N * one_minus_L_dot_N;
+	float F_V = one_minus_V_dot_N * one_minus_V_dot_N * one_minus_V_dot_N * one_minus_V_dot_N * one_minus_V_dot_N;
+	vec3 f_retro_reflection = albedo * PI_INV * R_R * (F_L + F_V + F_L*F_V*(R_R - 1.0) );
+	vec3 diffuse_brdf = albedo * PI_INV * (1.0 - 0.5 * F_L) * (1.0 - 0.5 * F_V) + f_retro_reflection;
+    vec3 diffuse = kD * diffuse_brdf;
+
+    // Final
+    return (diffuse + spec) * NdotL;
 }
 
 void main() {
 
-	const vec3 base_color = vec3(texture(materialSetBaseColorSampler, fragUV));
+	const vec3 BASE_COLOR = vec3(texture(materialSetBaseColorSampler, fragUV));
 	const vec3 orm = vec3(texture(materialSetORMSampler, fragUV));
-	const float ao = orm.r;
-	const float roughness = orm.g;
-	const float metallic = orm.b;
+	const float AO = orm.r;
+	const float ROUGHNESS = orm.g;
+	const float METALLIC = orm.b;
+	
 	const vec3 N = normalize(vec3(texture(materialSetNormalSampler, fragUV)) * 2.0 - 1.0);
-	//const vec3 N = vec3(0.0, 0.0, 1.0);
+	const vec3 V = normalize(fragViewPosTangentSpace - fragPosTangentSpace);
 
 	const vec3 light_colour = normalize(vec3(1.0, 0.8, 0.6));
-	const float light_intensity = 2.2 * 10.0;
-
-	const float roughness_2 = roughness * roughness;
-
+	const float light_intensity = 2.2 * 25.0;
 	const vec3 light_vec = fragLightPosTangentSpace - fragPosTangentSpace;
 	const float light_distance = length(light_vec);
 	const float attenuation = 1.0 / (0.5 + 0.2 * light_distance + 0.05 * light_distance * light_distance);
+	const vec3 point_light = light_colour * light_intensity * attenuation;
 
-	const vec3 V = normalize(fragViewPosTangentSpace - fragPosTangentSpace);
-	const vec3 L = normalize(light_vec);
-	const vec3 H = normalize(V + L);
+	vec3 L = normalize(light_vec);
+	vec3 hdr_color = BRDF_PBR(N, V, L, BASE_COLOR, METALLIC, ROUGHNESS) * point_light;
 
-	const float L_dot_H = max(dot(L, H), 0.000001); // same as V dot H
-	const float L_dot_N = max(dot(L, N), 0.000001);
-	const float V_dot_N = max(dot(V, N), 0.000001);
-	const float H_dot_N = max(dot(H, N), 0.000001);
+    L = normalize(fragLightDirTangentSpace);
+    hdr_color += BRDF_PBR(N, V, L, BASE_COLOR, METALLIC, ROUGHNESS) * vec3(1.0, 0.9, 1.0) * 1.0;
 
-    float R_R = 2.0 * roughness * L_dot_H * L_dot_H;
-	float one_minus_L_dot_N = 1.0 - L_dot_N;
-	float one_minus_V_dot_N = 1.0 - V_dot_N;
-	float F_L = one_minus_L_dot_N * one_minus_L_dot_N * one_minus_L_dot_N * one_minus_L_dot_N * one_minus_L_dot_N;
-	float F_V = one_minus_V_dot_N * one_minus_V_dot_N * one_minus_V_dot_N * one_minus_V_dot_N * one_minus_V_dot_N;
-	vec3 f_lambert = base_color * PI_INV;
-	vec3 f_retro_reflection = base_color * PI_INV * R_R * (F_L + F_V + F_L*F_V*(R_R - 1.0) );
-    //vec3 diffuse_brdf = base_color * PI_INV * 
-	//	(1.0 + (F90 - 1.0) * (one_minus_L_dot_N * one_minus_L_dot_N * one_minus_L_dot_N * one_minus_L_dot_N * one_minus_L_dot_N)) *
-	//	(1.0 + (F90 - 1.0) * (one_minus_V_dot_N * one_minus_V_dot_N * one_minus_V_dot_N * one_minus_V_dot_N * one_minus_V_dot_N));
-	vec3 diffuse_brdf = base_color * PI_INV * (1.0 - 0.5 * F_L) * (1.0 - 0.5 * F_V) + f_retro_reflection;
-	const float vis = ( max(L_dot_H, 0.0) / ( L_dot_N + sqrt(roughness_2 + (1 - roughness_2) * L_dot_N * L_dot_N) ) ) *
-	( max(L_dot_H, 0.0) / ( V_dot_N + sqrt(roughness_2 + (1 - roughness_2) * V_dot_N * V_dot_N) ) );
-
-	const vec3 specular_brdf = vec3(vis * GGXDist(roughness_2, H_dot_N));
-
-	const vec3 dielectric_brdf = mix(diffuse_brdf, specular_brdf, 0.04 + (1 - 0.04) * pow(1 - abs(L_dot_H), 5));
-
-	const vec3 metal_brdf = specular_brdf * (base_color + (1 - base_color) * pow(1 - L_dot_H, 5.0) );
-	
-	const vec3 brdf = mix(dielectric_brdf, metal_brdf, metallic);
-	
-	vec3 lighting = brdf * light_colour * attenuation * light_intensity * L_dot_N;
-
-	//const vec3 ambient_light = vec3(0.1, 0.1, 0.1) * 2.4 * 0.3;
-	//lighting += (ambient_light * ao * diffuse_brdf);
-
-	// tone mapping
-	const vec3 hdr_color = lighting;
 	outColor = vec4(hdr_color / (hdr_color + 1.0), 1.0);
 }

@@ -49,9 +49,6 @@ set_property(TARGET ${PROJECT_NAME} PROPERTY CXX_EXTENSIONS OFF)
 
 target_link_libraries(${PROJECT_NAME} PRIVATE gamecore)
 
-target_link_libraries(${PROJECT_NAME} PUBLIC mikktspace)
-target_link_libraries(${PROJECT_NAME} PUBLIC weldmesh)
-
 if(WIN32)
     add_custom_command(
         TARGET ${PROJECT_NAME} POST_BUILD

@@ -157,6 +157,7 @@ cpmaddpackage(
 add_library(glm INTERFACE)
 add_library(glm::glm ALIAS glm)
 target_include_directories(glm SYSTEM INTERFACE ${glm_SOURCE_DIR})
+target_compile_definitions(glm INTERFACE GLM_ENABLE_EXPERIMENTAL)
 
 # ImGui
 cpmaddpackage(

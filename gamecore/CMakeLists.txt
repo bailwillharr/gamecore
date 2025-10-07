@@ -33,6 +33,7 @@ set(SRC_FILES
   "src/gc_cube_system.cpp"
   "src/gc_threading.cpp"
   "src/gc_vulkan_utils.cpp"
+  "src/gc_gen_tangents.cpp"
 )
 
 # Public API includes
@@ -72,10 +73,13 @@ set(INCLUDE_FILES
   "include/gamecore/gc_gpu_resources.h"
   "include/gamecore/gc_cube_component.h"
   "include/gamecore/gc_cube_system.h"
+  "include/gamecore/gc_camera_component.h"
+  "include/gamecore/gc_camera_system.h"
   "include/gamecore/gc_frame_state.h"
   "include/gamecore/gc_format_specialisations.h"
   "include/gamecore/gc_threading.h"
   "include/gamecore/gc_vulkan_utils.h"
+  "include/gamecore/gc_gen_tangents.h"
 )
 
 # gamecore is a static library
@@ -128,6 +132,8 @@ target_link_libraries(${PROJECT_NAME} PUBLIC imgui)
 target_link_libraries(${PROJECT_NAME} PUBLIC tinygltf)
 target_link_libraries(${PROJECT_NAME} PUBLIC mio::mio)
 target_link_libraries(${PROJECT_NAME} PUBLIC stb)
+target_link_libraries(${PROJECT_NAME} PUBLIC mikktspace)
+target_link_libraries(${PROJECT_NAME} PUBLIC weldmesh)
 
 if(WIN32)
     target_link_libraries(${PROJECT_NAME} PUBLIC Vulkan::shaderc_combined)
