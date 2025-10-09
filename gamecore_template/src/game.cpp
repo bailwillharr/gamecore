@@ -25,7 +25,7 @@ void buildAndStartGame(gc::App& app)
     gc::Content& content = app.content();
 
     // On Windows/NVIDIA, TRIPLE_BUFFERED gives horrible latency and TRIPLE_BUFFERED_UNTHROTTLED doesn't work properly so use double buffering instead
-#if WIN32
+#ifdef WIN32
     render_backend.setSyncMode(gc::RenderSyncMode::VSYNC_OFF);
 #else
     render_backend.setSyncMode(gc::RenderSyncMode::VSYNC_ON_TRIPLE_BUFFERED_UNTHROTTLED);
