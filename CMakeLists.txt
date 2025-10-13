@@ -52,8 +52,8 @@ cpmaddpackage(
 # SDL3
 cpmaddpackage(
   NAME SDL3
-  VERSION 3.2.22
-  URL https://github.com/libsdl-org/SDL/archive/refs/tags/release-3.2.22.zip
+  VERSION 3.2.24
+  URL https://github.com/libsdl-org/SDL/archive/refs/tags/release-3.2.24.zip
   EXCLUDE_FROM_ALL YES
   SYSTEM YES
 )
@@ -256,6 +256,9 @@ find_package(Vulkan REQUIRED COMPONENTS shaderc_combined REQUIRED)
 
 # library for manipulating game asset files
 add_subdirectory(gcpak)
+
+# useful containers and templates to supplement the standard library
+add_subdirectory(gctemplates)
 
 add_subdirectory(gamecore)
 

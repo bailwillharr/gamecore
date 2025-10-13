@@ -1,6 +1,6 @@
 #pragma once
 
-#include <vec2.hpp>
+#include <vec3.hpp>
 #include <gtc/constants.hpp>
 
 #include <gamecore/gc_ecs.h>
@@ -12,7 +12,8 @@ class MouseMoveComponent {
     float m_sensitivity{0.01f};
     float m_move_speed{1.0f}; // max speed in m/s
     float m_acceleration{1.0f}; // m/s/s
-    glm::vec2 m_current_velocity{0.0f, 0.0f}; // m/s {+x, +y} world space
+    float m_deceleration{5.0f}; // m/s/s
+    glm::vec3 m_current_velocity{0.0f, 0.0f, 0.0f}; // m/s {+x, +y, +z} world space
     float m_yaw{0.0f};   // along Z axis
     float m_pitch{glm::half_pi<float>()}; // along X axis
 public:
@@ -29,6 +30,11 @@ public:
     MouseMoveComponent& setAcceleration(float acceleration)
     {
         m_acceleration = acceleration;
+        return *this;
+    }
+    MouseMoveComponent& setDeceleration(float decleration)
+    {
+        m_deceleration = decleration;
         return *this;
     }
 };

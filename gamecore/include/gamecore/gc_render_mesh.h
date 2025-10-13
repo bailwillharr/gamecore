@@ -49,6 +49,14 @@ public:
         return false;
     }
 
+    void waitForUpload() const
+    {
+        if (!m_uploaded) {
+            m_vertex_index_buffer.waitForFree();
+            m_uploaded = true;
+        }
+    }
+
     // Ensure isUploaded() returned true before calling this
     void draw(VkCommandBuffer cmd, VkSemaphore timeline_semaphore, uint64_t signal_value);
 };

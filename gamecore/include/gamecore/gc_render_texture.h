@@ -2,6 +2,8 @@
 
 #include "gamecore/gc_gpu_resources.h"
 
+#include "gamecore/gc_logger.h"
+
 namespace gc {
 
 class RenderTexture {
@@ -24,10 +26,19 @@ public:
         }
         // if the backing image is no longer in use by the queue, assuming the backing image was just created, this means the image is uploaded.
         if (m_image_view.getImage()->isFree()) {
+            GC_DEBUG("Resource uploaded: {}", reinterpret_cast<void*>(m_image_view.getImage()->getHandle()));
             m_uploaded = true;
             return true;
         }
         return false;
+    }
+
+    void waitForUpload() const
+    {
+        if (!m_uploaded) {
+            m_image_view.getImage()->waitForFree();
+            m_uploaded = true;
+        }
     }
 
     GPUImageView& getImageView() { return m_image_view; }

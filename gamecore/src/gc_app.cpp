@@ -176,7 +176,7 @@ void App::run()
         delta_times[frame_count % delta_times.size()] = frame_state.delta_time;
         frame_state.average_frame_time = std::accumulate(delta_times.cbegin(), delta_times.cend(), 0.0) / static_cast<double>(delta_times.size());
         frame_state.window_state = &window().processEvents(DebugUI::windowEventInterceptor);
-         
+
         {
             ZoneScopedN("UI Logic");
             if (frame_state.window_state->getKeyDown(SDL_SCANCODE_ESCAPE)) {

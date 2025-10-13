@@ -6,6 +6,10 @@
 #include <span>
 #include <unordered_map>
 
+#include <gctemplates/gct_static_vector.h>
+
+#include <gcpak/gcpak.h>
+
 #include <mio/mmap.hpp>
 
 #include "gamecore/gc_name.h"
@@ -21,8 +25,8 @@ struct PackageAssetInfo; // forward-dec
 
 class Content {
 
-    // mmap_source objects are non-copyable and non-moveable so a vector cannot be used
-    std::vector<mio::ummap_source> m_package_file_maps;
+    static constexpr uint32_t MAX_PAK_FILES = 8;
+    gct::static_vector<mio::ummap_source, MAX_PAK_FILES> m_package_file_maps;
 
     std::unordered_map<Name, PackageAssetInfo> m_asset_infos;
 
@@ -39,7 +43,8 @@ public:
     /* This function is thread-safe */
     /* Returns a non-owning view of the asset */
     /* Returns empty span on failure */
-    std::span<const uint8_t> findAsset(Name name) const;
+    /* The asset type is only checked in debug builds */
+    std::span<const uint8_t> findAsset(Name name, gcpak::GcpakAssetType type) const;
 };
 
 } // namespace gc

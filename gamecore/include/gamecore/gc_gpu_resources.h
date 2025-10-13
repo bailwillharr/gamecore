@@ -119,6 +119,18 @@ public:
         }
         return false;
     }
+
+    void waitForFree() const
+    {
+        if (m_timeline_semaphore) {
+            VkSemaphoreWaitInfo info{};
+            info.sType = VK_STRUCTURE_TYPE_SEMAPHORE_WAIT_INFO;
+            info.semaphoreCount = 1;
+            info.pSemaphores = &m_timeline_semaphore;
+            info.pValues = &m_resource_free_signal_value;
+            GC_CHECKVK(vkWaitSemaphores(m_delete_queue.getDevice(), &info, UINT64_MAX));
+        }
+    }
 };
 
 class GPUPipeline : public GPUResource {

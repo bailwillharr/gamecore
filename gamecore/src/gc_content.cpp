@@ -97,6 +97,13 @@ Content::Content()
         // Iterate through the .gcpak files found in content/
         for (const auto& dir_entry : std::filesystem::directory_iterator(content_dir_opt.value())) {
             if (dir_entry.is_regular_file() && dir_entry.path().extension() == std::string{".gcpak"}) {
+
+                GC_ASSERT(!m_package_file_maps.full());
+                if (m_package_file_maps.full()) {
+                    GC_ERROR("Cannot open any more gcpak files (current limit: {})", m_package_file_maps.capacity());
+                    break;
+                }
+
                 GC_DEBUG("Loading .gcpak file: {}:", dir_entry.path().filename().string());
 
                 auto opt = openAndValidateGcpak(dir_entry.path()); // cannot be const as opt.get() has a unique_ptr which is moved from
@@ -128,7 +135,7 @@ Content::Content()
 
 Content::~Content() { GC_TRACE("Destroying content manager..."); }
 
-std::span<const uint8_t> Content::findAsset(Name name) const
+std::span<const uint8_t> Content::findAsset(Name name, gcpak::GcpakAssetType type) const
 {
     const auto it = m_asset_infos.find(name);
     if (it == m_asset_infos.cend()) [[unlikely]] {
@@ -136,6 +143,8 @@ std::span<const uint8_t> Content::findAsset(Name name) const
         return {};
     }
     const PackageAssetInfo& asset_info = it->second;
+    
+    GC_ASSERT(asset_info.entry.asset_type == type);
 
     const uint8_t* const asset_data = m_package_file_maps[asset_info.file_index].data() + asset_info.entry.offset;
     return std::span<const uint8_t>(asset_data, asset_info.entry.size);

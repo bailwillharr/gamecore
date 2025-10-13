@@ -140,6 +140,7 @@ public:
 
     // Memory layout of textures is upside down
     RenderTexture createTexture(std::span<const uint8_t> r8g8b8a8_pak, bool srgb);
+    RenderTexture createCubeTexture(std::array<std::span<const uint8_t>, 6> r8g8b8a8_paks, bool srgb);
     RenderMaterial createMaterial(const std::shared_ptr<RenderTexture>& base_color_texture,
                                   const std::shared_ptr<RenderTexture>& occlusion_roughness_metallic_texture,
                                   const std::shared_ptr<RenderTexture>& normal_texture, const std::shared_ptr<GPUPipeline>& pipeline);

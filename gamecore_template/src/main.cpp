@@ -1,6 +1,9 @@
 #include <SDL3/SDL_main.h>
 
+#include <gctemplates/gct_static_vector.h>
+
 #include <gamecore/gc_app.h>
+#include <gamecore/gc_logger.h>
 
 #include "game.h"
 

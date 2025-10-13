@@ -104,7 +104,18 @@ public:
     {
         GC_ASSERT(m_base_color_texture);
         GC_ASSERT(m_occlusion_roughness_metallic_texture);
+        GC_ASSERT(m_normal_texture);
         return m_base_color_texture->isUploaded() && m_occlusion_roughness_metallic_texture->isUploaded() && m_normal_texture->isUploaded();
+    }
+
+    void waitForUpload() const
+    {
+        GC_ASSERT(m_base_color_texture);
+        GC_ASSERT(m_occlusion_roughness_metallic_texture);
+        GC_ASSERT(m_normal_texture);
+        m_base_color_texture->waitForUpload();
+        m_occlusion_roughness_metallic_texture->waitForUpload();
+        m_normal_texture->waitForUpload();
     }
 };
 

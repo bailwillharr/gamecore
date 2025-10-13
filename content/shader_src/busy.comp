@@ -1,0 +1,19 @@
+#version 450
+
+layout(local_size_x = 64, local_size_y = 1, local_size_z = 1) in;
+
+void main() {
+    uint id = gl_GlobalInvocationID.x;
+
+    // Busy loop: waste time doing floating point math
+    float val = 0.0;
+    for (uint i = 0; i < 1000000; i++) {
+        val += sin(float(i)) * cos(float(i));
+    }
+
+    // Prevent compiler optimization by writing to dummy variable
+    if (val > 1e10) {
+        // This never happens
+        val = 0.0;
+    }
+}

@@ -8,8 +8,8 @@
 
 namespace gc {
 
-void recordWorldRenderingCommands(VkCommandBuffer cmd, VkPipelineLayout world_pipeline_layout,
-                                  VkSemaphore timeline_semaphore, uint64_t signal_value, const WorldDrawData& draw_data)
+void recordWorldRenderingCommands(VkCommandBuffer cmd, VkPipelineLayout world_pipeline_layout, VkSemaphore timeline_semaphore, uint64_t signal_value,
+                                  const WorldDrawData& draw_data)
 {
 
     vkCmdPushConstants(cmd, world_pipeline_layout, VK_SHADER_STAGE_VERTEX_BIT, 64, 64, &draw_data.getViewMatrix());
@@ -21,11 +21,17 @@ void recordWorldRenderingCommands(VkCommandBuffer cmd, VkPipelineLayout world_pi
         GC_ASSERT(entry.mesh);
         GC_ASSERT(entry.material);
 
-        if (entry.material->isUploaded() && entry.mesh->isUploaded()) {
+        if (entry.mesh->isUploaded()) {
+            if (entry.material->isUploaded()) {
+                entry.material->bind(cmd, world_pipeline_layout, timeline_semaphore, signal_value, last_material);
+                last_material = entry.material;
+            }
+            else {
+                draw_data.getFallbackMaterial()->bind(cmd, world_pipeline_layout, timeline_semaphore, signal_value, last_material);
+                last_material = draw_data.getFallbackMaterial();
+            }
             vkCmdPushConstants(cmd, world_pipeline_layout, VK_SHADER_STAGE_VERTEX_BIT, 0, 64, &entry.world_matrix);
-            entry.material->bind(cmd, world_pipeline_layout, timeline_semaphore, signal_value, last_material);
             entry.mesh->draw(cmd, timeline_semaphore, signal_value);
-            last_material = entry.material;
         }
     }
 }

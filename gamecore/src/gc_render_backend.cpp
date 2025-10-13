@@ -12,6 +12,8 @@
 
 #include <backends/imgui_impl_vulkan.h>
 
+#include "gamecore/gc_app.h"
+#include "gamecore/gc_content.h"
 #include "gamecore/gc_gpu_resources.h"
 #include "gamecore/gc_vulkan_common.h"
 #include "gamecore/gc_abort.h"
@@ -154,6 +156,99 @@ static void printGPUMemoryStats(VmaAllocator allocator, VkPhysicalDevice physica
     }
 }
 
+[[maybe_unused]] static void wasteGPUCycles(VkImage image, VkDevice device, VkCommandBuffer cmd, size_t iters)
+{
+    (void)image;
+    static VkPipeline pipeline{};
+    static VkPipelineLayout layout{};
+    if (!pipeline) {
+        VkShaderModule shader_module{};
+        VkShaderModuleCreateInfo module_info{};
+        module_info.sType = VK_STRUCTURE_TYPE_SHADER_MODULE_CREATE_INFO;
+        auto code = App::instance().content().findAsset(Name("busy.comp"), gcpak::GcpakAssetType::SPIRV_SHADER);
+        if (code.size() == 0) {
+            abortGame("Couldn't find compute shader binary");
+        }
+        module_info.codeSize = code.size();
+        module_info.pCode = reinterpret_cast<const uint32_t*>(code.data());
+        GC_CHECKVK(vkCreateShaderModule(device, &module_info, nullptr, &shader_module));
+        VkPipelineLayoutCreateInfo layout_info{};
+        layout_info.sType = VK_STRUCTURE_TYPE_PIPELINE_LAYOUT_CREATE_INFO;
+        layout_info.setLayoutCount = 0;
+        layout_info.pSetLayouts = nullptr;
+        layout_info.pushConstantRangeCount = 0;
+        layout_info.pPushConstantRanges = nullptr;
+        GC_CHECKVK(vkCreatePipelineLayout(device, &layout_info, nullptr, &layout));
+        VkComputePipelineCreateInfo info{};
+        info.sType = VK_STRUCTURE_TYPE_COMPUTE_PIPELINE_CREATE_INFO;
+        info.flags = VK_PIPELINE_CREATE_DISABLE_OPTIMIZATION_BIT;
+        info.stage.sType = VK_STRUCTURE_TYPE_PIPELINE_SHADER_STAGE_CREATE_INFO;
+        info.stage.flags = 0;
+        info.stage.stage = VK_SHADER_STAGE_COMPUTE_BIT;
+        info.stage.module = shader_module;
+        info.stage.pName = "main";
+        info.stage.pSpecializationInfo = nullptr;
+        info.layout = layout;
+        GC_CHECKVK(vkCreateComputePipelines(device, VK_NULL_HANDLE, 1, &info, nullptr, &pipeline));
+        vkDestroyShaderModule(device, shader_module, nullptr);
+    }
+
+    VkMemoryBarrier2 barrier{};
+    barrier.sType = VK_STRUCTURE_TYPE_MEMORY_BARRIER_2;
+    barrier.srcStageMask = VK_PIPELINE_STAGE_2_ALL_COMMANDS_BIT;
+    barrier.srcAccessMask = VK_ACCESS_2_MEMORY_READ_BIT | VK_ACCESS_2_MEMORY_WRITE_BIT;
+    barrier.dstStageMask = VK_PIPELINE_STAGE_2_ALL_COMMANDS_BIT;
+    barrier.dstAccessMask = VK_ACCESS_2_MEMORY_READ_BIT | VK_ACCESS_2_MEMORY_WRITE_BIT;
+    VkDependencyInfo dep{};
+    dep.sType = VK_STRUCTURE_TYPE_DEPENDENCY_INFO;
+    dep.memoryBarrierCount = 1;
+    dep.pMemoryBarriers = &barrier;
+
+    vkCmdPipelineBarrier2(cmd, &dep);
+
+    vkCmdBindPipeline(cmd, VK_PIPELINE_BIND_POINT_COMPUTE, pipeline);
+    vkCmdDispatch(cmd, (static_cast<uint32_t>(iters) + 64 - 1) / 64, 16, 1024);
+
+    vkCmdPipelineBarrier2(cmd, &dep);
+#if 0
+    (void)device;
+
+    VkImageMemoryBarrier2 barrier{};
+    barrier.sType = VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER_2;
+    barrier.srcStageMask = VK_PIPELINE_STAGE_2_ALL_COMMANDS_BIT;
+    barrier.srcAccessMask = VK_ACCESS_2_MEMORY_READ_BIT | VK_ACCESS_2_MEMORY_WRITE_BIT;
+    barrier.dstStageMask = VK_PIPELINE_STAGE_2_ALL_COMMANDS_BIT;
+    barrier.dstAccessMask = VK_ACCESS_2_MEMORY_READ_BIT | VK_ACCESS_2_MEMORY_WRITE_BIT;
+    barrier.oldLayout = VK_IMAGE_LAYOUT_UNDEFINED;
+    barrier.newLayout = VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL;
+    barrier.srcQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
+    barrier.dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
+    barrier.image = image;
+    barrier.subresourceRange.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT;
+    barrier.subresourceRange.baseMipLevel = 0;
+    barrier.subresourceRange.levelCount = 1;
+    barrier.subresourceRange.baseArrayLayer = 0;
+    barrier.subresourceRange.layerCount = 1;
+    VkDependencyInfo dep{};
+    dep.sType = VK_STRUCTURE_TYPE_DEPENDENCY_INFO;
+    dep.imageMemoryBarrierCount = 1;
+    dep.pImageMemoryBarriers = &barrier;
+    vkCmdPipelineBarrier2(cmd, &dep);
+    barrier.oldLayout = VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL;
+    barrier.newLayout = VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL;
+    for (size_t i = 0; i < iters; ++i) {
+        vkCmdPipelineBarrier2(cmd, &dep);
+        VkClearColorValue color{};
+        color.float32[0] = 1.0f;
+        color.float32[1] = 1.0f;
+        color.float32[2] = 1.0f;
+        color.float32[3] = 1.0f;
+        vkCmdClearColorImage(cmd, image, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, &color, 1, &barrier.subresourceRange);
+        vkCmdPipelineBarrier2(cmd, &dep);
+    }
+#endif
+}
+
 RenderBackend::RenderBackend(SDL_Window* window_handle)
     : m_device(), m_allocator(m_device), m_swapchain(m_device, window_handle), m_delete_queue(m_device.getHandle(), m_allocator.getHandle())
 {
@@ -161,7 +256,7 @@ RenderBackend::RenderBackend(SDL_Window* window_handle)
     {
         VkSamplerCreateInfo info{};
         info.sType = VK_STRUCTURE_TYPE_SAMPLER_CREATE_INFO;
-        info.magFilter = VK_FILTER_LINEAR;
+        info.magFilter = VK_FILTER_NEAREST;
         info.minFilter = VK_FILTER_LINEAR;
         info.mipmapMode = VK_SAMPLER_MIPMAP_MODE_LINEAR;
         info.addressModeU = VK_SAMPLER_ADDRESS_MODE_REPEAT;
@@ -828,27 +923,11 @@ RenderTexture RenderBackend::createTexture(std::span<const uint8_t> r8g8b8a8_pak
 
     GPUBuffer gpu_staging_buffer(m_delete_queue, buffer, buffer_alloc);
 
-    VkImageCreateInfo image_info{};
-    image_info.sType = VK_STRUCTURE_TYPE_IMAGE_CREATE_INFO;
-    image_info.flags = 0;
-    image_info.imageType = VK_IMAGE_TYPE_2D;
-    image_info.format = srgb ? VK_FORMAT_R8G8B8A8_SRGB : VK_FORMAT_R8G8B8A8_UNORM; // supported by all conforming drivers
-    image_info.extent.width = width;
-    image_info.extent.height = height;
-    image_info.extent.depth = 1;
-    image_info.mipLevels = mip_levels;
-    image_info.arrayLayers = 1;
-    image_info.samples = VK_SAMPLE_COUNT_1_BIT;
-    image_info.tiling = VK_IMAGE_TILING_OPTIMAL;
-    image_info.usage = VK_IMAGE_USAGE_TRANSFER_DST_BIT | VK_IMAGE_USAGE_TRANSFER_SRC_BIT | VK_IMAGE_USAGE_SAMPLED_BIT;
-    image_info.sharingMode = VK_SHARING_MODE_EXCLUSIVE;
-    VmaAllocationCreateInfo alloc_info{};
-    alloc_info.flags = 0;
-    alloc_info.usage = VMA_MEMORY_USAGE_AUTO;
-    alloc_info.priority = 0.5f;
-    VkImage image{};
-    VmaAllocation allocation{};
-    GC_CHECKVK(vmaCreateImage(m_allocator.getHandle(), &image_info, &alloc_info, &image, &allocation, nullptr));
+    const VkFormat image_format = srgb ? VK_FORMAT_R8G8B8A8_SRGB : VK_FORMAT_R8G8B8A8_UNORM;
+    auto [image, allocation] =
+        vkutils::createImage(m_allocator.getHandle(), image_format, width, height, mip_levels,
+                             VK_SAMPLE_COUNT_1_BIT, VK_IMAGE_USAGE_TRANSFER_DST_BIT | VK_IMAGE_USAGE_TRANSFER_SRC_BIT | VK_IMAGE_USAGE_SAMPLED_BIT, 0.5f);
+
 
     {
         VkCommandBufferAllocateInfo cmd_info{};
@@ -897,7 +976,9 @@ RenderTexture RenderBackend::createTexture(std::span<const uint8_t> r8g8b8a8_pak
         region.imageOffset.x = 0;
         region.imageOffset.y = 0;
         region.imageOffset.z = 0;
-        region.imageExtent = image_info.extent;
+        region.imageExtent.width = width;
+        region.imageExtent.height = height;
+        region.imageExtent.depth = 1;
         vkCmdCopyBufferToImage(cmd, gpu_staging_buffer.getHandle(), image, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, 1, &region);
 
         if (mip_levels > 1) {
@@ -977,22 +1058,7 @@ RenderTexture RenderBackend::createTexture(std::span<const uint8_t> r8g8b8a8_pak
     gpu_staging_buffer.useResource(m_transfer_timeline_semaphore, m_transfer_timeline_value);
     gpu_image->useResource(m_transfer_timeline_semaphore, m_transfer_timeline_value);
 
-    VkImageViewCreateInfo view_info{};
-    view_info.sType = VK_STRUCTURE_TYPE_IMAGE_VIEW_CREATE_INFO;
-    view_info.image = image;
-    view_info.viewType = VK_IMAGE_VIEW_TYPE_2D;
-    view_info.format = image_info.format;
-    view_info.components.r = VK_COMPONENT_SWIZZLE_IDENTITY;
-    view_info.components.g = VK_COMPONENT_SWIZZLE_IDENTITY;
-    view_info.components.b = VK_COMPONENT_SWIZZLE_IDENTITY;
-    view_info.components.a = VK_COMPONENT_SWIZZLE_IDENTITY;
-    view_info.subresourceRange.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT;
-    view_info.subresourceRange.baseMipLevel = 0;
-    view_info.subresourceRange.levelCount = mip_levels;
-    view_info.subresourceRange.baseArrayLayer = 0;
-    view_info.subresourceRange.layerCount = 1;
-    VkImageView image_view{};
-    GC_CHECKVK(vkCreateImageView(m_device.getHandle(), &view_info, nullptr, &image_view));
+    auto image_view = vkutils::createImageView(m_device.getHandle(), image, image_format, VK_IMAGE_ASPECT_COLOR_BIT, mip_levels);
 
     return RenderTexture(GPUImageView(m_delete_queue, image_view, gpu_image));
 };
