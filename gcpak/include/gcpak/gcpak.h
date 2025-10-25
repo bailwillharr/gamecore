@@ -64,6 +64,7 @@ enum class GcpakAssetType : std::uint32_t {
     INVALID = 0,
     SPIRV_SHADER = 1, // passed directly into VkShaderModuleCreateInfo
     TEXTURE_R8G8B8A8 = 2, // first 4 bytes is width, second 4 bytes is height, remaining data is just R8G8B8A8
+    MESH_POS12_NORM12_TANG16_UV8_INDEXED16 // first 2 bytes is vertex count, followed by vertices, followed by 16 bit indices
 };
 
 struct GcpakAssetEntry {

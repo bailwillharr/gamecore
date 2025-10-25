@@ -151,6 +151,7 @@ public:
                                   const std::shared_ptr<RenderTexture>& occlusion_roughness_metallic_texture,
                                   const std::shared_ptr<RenderTexture>& normal_texture, const std::shared_ptr<GPUPipeline>& pipeline);
     RenderMesh createMesh(std::span<const MeshVertex> vertices, std::span<const uint16_t> indices);
+    RenderMesh createMeshFromAsset(std::span<const uint8_t> asset);
 
     RenderBackendInfo getInfo() const
     {

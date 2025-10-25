@@ -60,7 +60,6 @@ public:
                     const glm::vec3 follower_to_target = target_t->getPosition() - t.getPosition();
                     const float distance = glm::length(follower_to_target);
                     const glm::vec3 follower_to_target_norm = follower_to_target / distance;
-
                     t.setRotation(glm::quatLookAtRH(-follower_to_target_norm, glm::vec3{0.0f, 0.0f, 1.0f}) *
                                   glm::angleAxis(-glm::half_pi<float>(), glm::vec3{1.0f, 0.0f, 0.0f}));
 
@@ -70,9 +69,6 @@ public:
                     else {
                         t.setPosition(t.getPosition() +
                                       follower_to_target_norm * fminf(f.m_speed * static_cast<float>(frame_state.delta_time), distance - f.m_min_distance));
-                    }
-                    if (distance < f.m_min_distance + 0.1f) {
-                        gc::App::instance().window().pushQuitEvent();
                     }
                 }
             }
@@ -182,15 +178,7 @@ public:
                 frame_state.draw_data.setSkyboxMaterial(m_skybox_material.get());
             }
 
-            {
-                std::error_code err;
-                mio::ummap_source file{};
-                file.map("shrek.obj", err);
-                if (err) {
-                    gc::abortGame("Failed to map file: shrek.obj, code: {}", err.message());
-                }
-                m_meshes[0] = std::make_unique<gc::RenderMesh>(genOBJMesh(render_backend, file));
-            }
+            m_meshes[0] = std::make_unique<gc::RenderMesh>(render_backend.createMeshFromAsset(content.findAsset(gc::Name("shrek.obj"), gcpak::GcpakAssetType::MESH_POS12_NORM12_TANG16_UV8_INDEXED16)));
             m_meshes[1] = std::make_unique<gc::RenderMesh>(genSphereMesh(render_backend, 1.0f, 64));
             m_meshes[2] = std::make_unique<gc::RenderMesh>(genSphereMesh(render_backend, 0.5f, 16, true));
             m_meshes[3] = std::make_unique<gc::RenderMesh>(genCuboidMesh(render_backend, 100.0f, 100.0f, 1.0f, 25.0f));

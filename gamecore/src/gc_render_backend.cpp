@@ -1245,7 +1245,7 @@ RenderTexture RenderBackend::createCubeTexture(std::array<std::span<const uint8_
         return r8g8b8a8_paks[index].data() + 2 * sizeof(uint32_t);
     };
 
-    uint32_t mip_levels = 1; //getMipLevels(width, height);
+    uint32_t mip_levels = 1; // getMipLevels(width, height);
 
     const size_t face_buffer_size = static_cast<VkDeviceSize>(width) * static_cast<VkDeviceSize>(height) * 4ULL;
 
@@ -1272,8 +1272,9 @@ RenderTexture RenderBackend::createCubeTexture(std::array<std::span<const uint8_
     GPUBuffer gpu_staging_buffer(m_delete_queue, buffer, buffer_alloc);
 
     const VkFormat image_format = srgb ? VK_FORMAT_R8G8B8A8_SRGB : VK_FORMAT_R8G8B8A8_UNORM;
-    auto [image, allocation] = vkutils::createImage(m_allocator.getHandle(), image_format, width, height, mip_levels, VK_SAMPLE_COUNT_1_BIT,
-                                                    VK_IMAGE_USAGE_TRANSFER_DST_BIT | VK_IMAGE_USAGE_TRANSFER_SRC_BIT | VK_IMAGE_USAGE_SAMPLED_BIT, 0.5f, false, true);
+    auto [image, allocation] =
+        vkutils::createImage(m_allocator.getHandle(), image_format, width, height, mip_levels, VK_SAMPLE_COUNT_1_BIT,
+                             VK_IMAGE_USAGE_TRANSFER_DST_BIT | VK_IMAGE_USAGE_TRANSFER_SRC_BIT | VK_IMAGE_USAGE_SAMPLED_BIT, 0.5f, false, true);
 
     {
         VkCommandBufferAllocateInfo cmd_info{};
@@ -1520,6 +1521,22 @@ RenderMesh RenderBackend::createMesh(std::span<const MeshVertex> vertices, std::
     managed_buffer.useResource(m_transfer_timeline_semaphore, m_transfer_timeline_value);
 
     return RenderMesh(std::move(managed_buffer), static_cast<VkDeviceSize>(vertices_size), VK_INDEX_TYPE_UINT16, num_indices);
+}
+
+RenderMesh RenderBackend::createMeshFromAsset(std::span<const uint8_t> asset)
+{
+    GC_ASSERT(asset.size() > 2);
+    uint16_t vertex_count{};
+    std::memcpy(&vertex_count, asset.data(), sizeof(uint16_t));
+
+    const uint8_t* const vertices_location = asset.data() + sizeof(uint16_t);
+    const uint8_t* const indices_location = vertices_location + vertex_count * sizeof(MeshVertex);
+    const size_t index_count = (asset.data() + asset.size() - indices_location) / sizeof(uint16_t);
+
+    const std::span<const MeshVertex> vertices(reinterpret_cast<const MeshVertex*>(vertices_location), vertex_count);
+    const std::span<const uint16_t> indices(reinterpret_cast<const uint16_t*>(indices_location), index_count);
+
+    return createMesh(vertices, indices);
 }
 
 void RenderBackend::waitIdle()
