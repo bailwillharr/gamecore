@@ -163,7 +163,6 @@ void App::run()
 
     FrameState frame_state{};
 
-    uint64_t frame_count{};
     std::array<double, 20> delta_times{};
     uint64_t frame_begin_stamp = SDL_GetTicksNS() - 16'666'667LL; // set first delta time to something reasonable
     while (!window().shouldQuit()) {
@@ -173,7 +172,7 @@ void App::run()
         frame_begin_stamp = SDL_GetTicksNS();
 
         frame_state.delta_time = static_cast<double>(frame_begin_stamp - last_frame_begin_stamp) * 1e-9;
-        delta_times[frame_count % delta_times.size()] = frame_state.delta_time;
+        delta_times[frame_state.frame_count % delta_times.size()] = frame_state.delta_time;
         frame_state.average_frame_time = std::accumulate(delta_times.cbegin(), delta_times.cend(), 0.0) / static_cast<double>(delta_times.size());
         frame_state.window_state = &window().processEvents(DebugUI::windowEventInterceptor);
 
@@ -183,7 +182,9 @@ void App::run()
                 window().pushQuitEvent();
             }
             if (frame_state.window_state->getKeyPress(SDL_SCANCODE_F11)) {
-                window().setSize(0, 0, !frame_state.window_state->getIsFullscreen());
+                if (window().getIsResizable()) {
+                    window().setSize(0, 0, !frame_state.window_state->getIsFullscreen());
+                }
             }
             if (frame_state.window_state->getKeyPress(SDL_SCANCODE_F10)) {
                 m_debug_ui->active = !m_debug_ui->active;
@@ -199,7 +200,7 @@ void App::run()
         frame_state.draw_data.reset();
         renderBackend().cleanupGPUResources();
 
-        ++frame_count;
+        ++frame_state.frame_count;
         FrameMark;
     }
     GC_TRACE("Quitting...");

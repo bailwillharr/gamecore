@@ -2,6 +2,8 @@
 
 #include <ext/matrix_clip_space.hpp>
 
+#include <tracy/Tracy.hpp>
+
 #include <gamecore/gc_ecs.h>
 #include <gamecore/gc_world.h>
 #include <gamecore/gc_transform_component.h>
@@ -16,6 +18,7 @@ public:
 
     void onUpdate(FrameState& frame_state) override
     {
+        ZoneScoped;
         const float aspect_ratio =
             static_cast<float>(frame_state.window_state->getWindowSize().x) / static_cast<float>(frame_state.window_state->getWindowSize().y);
         m_world.forEach<TransformComponent, CameraComponent>([&]([[maybe_unused]] Entity entity, TransformComponent& t, CameraComponent& c) {

@@ -29,6 +29,8 @@
 #include <vec3.hpp>
 #include <vec4.hpp>
 
+#include <gctemplates/gct_static_vector.h>
+
 #include "gamecore/gc_vulkan_common.h"
 #include "gamecore/gc_vulkan_device.h"
 #include "gamecore/gc_vulkan_allocator.h"
@@ -78,6 +80,9 @@ class RenderBackend {
 
     uint64_t m_frame_count{};
 
+    // Skybox stuff
+    VkPipeline m_skybox_pipeline{};
+
     // Images:
 
     VkImage m_color_attachment_image{};
@@ -100,7 +105,7 @@ class RenderBackend {
         VkCommandBuffer cmd;
         uint64_t command_buffer_available_value;
     };
-    std::vector<FIFStuff> m_fif{};
+    gct::static_vector<FIFStuff, 2> m_fif{};
     int m_requested_frames_in_flight{};
     VkSemaphore m_main_timeline_semaphore{};
     uint64_t m_main_timeline_value{};
@@ -137,6 +142,7 @@ public:
     void cleanupGPUResources();
 
     GPUPipeline createPipeline(std::span<const uint8_t> vertex_spv, std::span<const uint8_t> fragment_spv);
+    GPUPipeline createSkyboxPipeline();
 
     // Memory layout of textures is upside down
     RenderTexture createTexture(std::span<const uint8_t> r8g8b8a8_pak, bool srgb);

@@ -135,7 +135,7 @@ Content::Content()
 
 Content::~Content() { GC_TRACE("Destroying content manager..."); }
 
-std::span<const uint8_t> Content::findAsset(Name name, gcpak::GcpakAssetType type) const
+std::span<const uint8_t> Content::findAsset(Name name, [[maybe_unused]] gcpak::GcpakAssetType type) const
 {
     const auto it = m_asset_infos.find(name);
     if (it == m_asset_infos.cend()) [[unlikely]] {

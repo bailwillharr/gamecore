@@ -34,6 +34,13 @@ void recordWorldRenderingCommands(VkCommandBuffer cmd, VkPipelineLayout world_pi
             entry.mesh->draw(cmd, timeline_semaphore, signal_value);
         }
     }
+
+    if (RenderMaterial* skybox_material = draw_data.getSkyboxMaterial()) {
+        if (skybox_material->isUploaded()) {
+            skybox_material->bind(cmd, world_pipeline_layout, timeline_semaphore, signal_value, nullptr);
+            vkCmdDraw(cmd, 36, 1, 0, 0);
+        }
+    }
 }
 
 } // namespace gc

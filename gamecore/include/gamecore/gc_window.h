@@ -117,7 +117,10 @@ public:
 
     void setTitle(const std::string& title);
 
+    // Can still resize with setSize()
     void setIsResizable(bool resizable);
+
+    bool getIsResizable() const;
 
     // This method may fail but the window will remain usable.
     // If width or height == 0, fullscreen == true will use desktop resolution and fullscreen == false will maximise the window

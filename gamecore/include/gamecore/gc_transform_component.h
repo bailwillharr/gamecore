@@ -33,6 +33,8 @@ public:
 
     glm::mat4 getWorldMatrix() const { return m_world_matrix; }
 
+    Entity getParent() const { return m_parent; }
+
     void setPosition(const glm::vec3& position)
     {
         m_position = position;

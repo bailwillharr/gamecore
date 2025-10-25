@@ -10,10 +10,12 @@
 
 namespace gc {
 
+// the ORM and normal map textures can be NULL. This is only for supporting pipelines that only use one or two textures though.
+
 class RenderMaterial {
     const std::shared_ptr<RenderTexture> m_base_color_texture{};
-    const std::shared_ptr<RenderTexture> m_occlusion_roughness_metallic_texture{};
-    const std::shared_ptr<RenderTexture> m_normal_texture{};
+    const std::shared_ptr<RenderTexture> m_occlusion_roughness_metallic_texture{}; // can be null
+    const std::shared_ptr<RenderTexture> m_normal_texture{};                       // can be null
     const std::shared_ptr<GPUPipeline> m_pipeline{};
     VkDescriptorSet m_descriptor_set{};
 
@@ -30,8 +32,8 @@ public:
         GC_ASSERT(descriptor_pool);
         GC_ASSERT(descriptor_set_layout);
         GC_ASSERT(m_base_color_texture);
-        GC_ASSERT(m_occlusion_roughness_metallic_texture);
-        GC_ASSERT(m_normal_texture);
+        // GC_ASSERT(m_occlusion_roughness_metallic_texture);
+        // GC_ASSERT(m_normal_texture);
         GC_ASSERT(m_pipeline);
 
         VkDescriptorSetAllocateInfo info{};
@@ -54,7 +56,12 @@ public:
         writes[0].descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
         writes[0].pImageInfo = &descriptor_image_infos[0];
 
-        descriptor_image_infos[1].imageView = m_occlusion_roughness_metallic_texture->getImageView().getHandle();
+        if (m_occlusion_roughness_metallic_texture) {
+            descriptor_image_infos[1].imageView = m_occlusion_roughness_metallic_texture->getImageView().getHandle();
+        }
+        else {
+            descriptor_image_infos[1].imageView = descriptor_image_infos[0].imageView;
+        }
         descriptor_image_infos[1].imageLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
         writes[1].sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
         writes[1].dstSet = m_descriptor_set;
@@ -64,7 +71,12 @@ public:
         writes[1].descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
         writes[1].pImageInfo = &descriptor_image_infos[1];
 
-        descriptor_image_infos[2].imageView = m_normal_texture->getImageView().getHandle();
+        if (m_normal_texture) {
+            descriptor_image_infos[2].imageView = m_normal_texture->getImageView().getHandle();
+        }
+        else {
+            descriptor_image_infos[2].imageView = descriptor_image_infos[0].imageView;
+        }
         descriptor_image_infos[2].imageLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
         writes[2].sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
         writes[2].dstSet = m_descriptor_set;
@@ -94,28 +106,39 @@ public:
         if (!last_used_material || (last_used_material && last_used_material->m_descriptor_set != m_descriptor_set)) {
             vkCmdBindDescriptorSets(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, pipeline_layout, 0, 1, &m_descriptor_set, 0, nullptr);
             m_base_color_texture->getImageView().useResource(timeline_semaphore, signal_value);
-            m_occlusion_roughness_metallic_texture->getImageView().useResource(timeline_semaphore, signal_value);
-            m_normal_texture->getImageView().useResource(timeline_semaphore, signal_value);
+            if (m_occlusion_roughness_metallic_texture) {
+                m_occlusion_roughness_metallic_texture->getImageView().useResource(timeline_semaphore, signal_value);
+            }
+            if (m_normal_texture) {
+                m_normal_texture->getImageView().useResource(timeline_semaphore, signal_value);
+            }
         }
     }
 
     // Checks that all textures for this material are uploaded
     bool isUploaded() const
-    {
-        GC_ASSERT(m_base_color_texture);
-        GC_ASSERT(m_occlusion_roughness_metallic_texture);
-        GC_ASSERT(m_normal_texture);
-        return m_base_color_texture->isUploaded() && m_occlusion_roughness_metallic_texture->isUploaded() && m_normal_texture->isUploaded();
+    { 
+        if (!m_base_color_texture->isUploaded()) {
+            return false;
+        }
+        if (m_occlusion_roughness_metallic_texture && !m_occlusion_roughness_metallic_texture->isUploaded()) {
+            return false;
+        }
+        if (m_normal_texture && !m_normal_texture->isUploaded()) {
+            return false;
+        }
+        return true;
     }
 
     void waitForUpload() const
     {
-        GC_ASSERT(m_base_color_texture);
-        GC_ASSERT(m_occlusion_roughness_metallic_texture);
-        GC_ASSERT(m_normal_texture);
         m_base_color_texture->waitForUpload();
-        m_occlusion_roughness_metallic_texture->waitForUpload();
-        m_normal_texture->waitForUpload();
+        if (m_occlusion_roughness_metallic_texture) {
+            m_occlusion_roughness_metallic_texture->waitForUpload();
+        }
+        if (m_normal_texture) {
+            m_normal_texture->waitForUpload();
+        }
     }
 };
 

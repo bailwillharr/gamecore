@@ -354,6 +354,8 @@ void Window::setIsResizable(bool resizable)
     }
 }
 
+bool Window::getIsResizable() const { return SDL_GetWindowFlags(m_window_handle) & SDL_WINDOW_RESIZABLE; }
+
 void Window::setMouseCaptured(bool captured)
 {
     SDL_Event ev{};

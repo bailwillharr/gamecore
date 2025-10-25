@@ -7,6 +7,8 @@
 
 #include <mio/mmap.hpp>
 
+#include <tracy/Tracy.hpp>
+
 #include <gamecore/gc_app.h>
 #include <gamecore/gc_render_backend.h>
 #include <gamecore/gc_world.h>
@@ -15,6 +17,68 @@
 #include <gamecore/gc_cube_component.h>
 #include <gamecore/gc_camera_component.h>
 #include <gamecore/gc_transform_component.h>
+#include <gamecore/gc_debug_ui.h>
+
+class FollowSystem; // forward-dec
+
+class FollowComponent {
+    friend class FollowSystem;
+
+    gc::Entity m_target{gc::ENTITY_NONE};
+    float m_speed = 1.0f;
+    float m_min_distance = 1.0f;
+
+public:
+    FollowComponent& setTarget(gc::Entity target)
+    {
+        m_target = target;
+        return *this;
+    }
+    FollowComponent& setSpeed(float speed)
+    {
+        m_speed = speed;
+        return *this;
+    }
+    FollowComponent& setMinDistance(float min_distance)
+    {
+        m_min_distance = min_distance;
+        return *this;
+    }
+};
+
+class FollowSystem : public gc::System {
+public:
+    FollowSystem(gc::World& world) : gc::System(world) {}
+
+    void onUpdate(gc::FrameState& frame_state) override
+    {
+        ZoneScoped;
+        m_world.forEach<gc::TransformComponent, FollowComponent>([&](gc::Entity, gc::TransformComponent& t, FollowComponent& f) {
+            if (f.m_target != gc::ENTITY_NONE) {
+                const gc::TransformComponent* const target_t = m_world.getComponent<gc::TransformComponent>(f.m_target);
+                if (t.getParent() == target_t->getParent()) {
+                    const glm::vec3 follower_to_target = target_t->getPosition() - t.getPosition();
+                    const float distance = glm::length(follower_to_target);
+                    const glm::vec3 follower_to_target_norm = follower_to_target / distance;
+
+                    t.setRotation(glm::quatLookAtRH(-follower_to_target_norm, glm::vec3{0.0f, 0.0f, 1.0f}) *
+                                  glm::angleAxis(-glm::half_pi<float>(), glm::vec3{1.0f, 0.0f, 0.0f}));
+
+                    if (distance < f.m_min_distance) {
+                        t.setPosition(t.getPosition() - follower_to_target_norm * (f.m_min_distance - distance));
+                    }
+                    else {
+                        t.setPosition(t.getPosition() +
+                                      follower_to_target_norm * fminf(f.m_speed * static_cast<float>(frame_state.delta_time), distance - f.m_min_distance));
+                    }
+                    if (distance < f.m_min_distance + 0.1f) {
+                        gc::App::instance().window().pushQuitEvent();
+                    }
+                }
+            }
+        });
+    }
+};
 
 static gc::RenderTexture createORMTexture(gc::RenderBackend& render_backend, float roughness, float metallic)
 {
@@ -43,7 +107,8 @@ static gc::RenderTexture createNormalTexture(gc::RenderBackend& render_backend)
 class WorldLoadSystem : public gc::System {
     bool m_loaded = false;
     std::unique_ptr<gc::RenderMaterial> m_fallback_material{};
-    static const std::array<gc::Name, 6> s_texture_names;
+    std::unique_ptr<gc::RenderMaterial> m_skybox_material{};
+    static const std::array<gc::Name, 7> s_texture_names;
     std::array<std::unique_ptr<gc::RenderMaterial>, s_texture_names.size()> m_materials{};
     std::array<std::unique_ptr<gc::RenderMesh>, 4> m_meshes{};
 
@@ -55,7 +120,6 @@ public:
         if (!m_loaded) {
 
             gc::App& app = gc::App::instance();
-            gc::Window& win = app.window();
             gc::RenderBackend& render_backend = app.renderBackend();
             gc::Content& content = app.content();
             gc::World& world = app.world();
@@ -108,6 +172,17 @@ public:
             frame_state.draw_data.setFallbackMaterial(m_fallback_material.get());
 
             {
+                auto skybox_pipeline = std::make_shared<gc::GPUPipeline>(render_backend.createSkyboxPipeline());
+                std::array<std::span<const uint8_t>, 6> faces{};
+                for (int i = 0; i < 6; ++i) {
+                    faces[i] = content.findAsset(gc::Name(std::format("skybox{}.jpg", i)), gcpak::GcpakAssetType::TEXTURE_R8G8B8A8);
+                }
+                auto skybox_texture = std::make_shared<gc::RenderTexture>(render_backend.createCubeTexture(faces, true));
+                m_skybox_material = std::make_unique<gc::RenderMaterial>(render_backend.createMaterial(skybox_texture, nullptr, nullptr, skybox_pipeline));
+                frame_state.draw_data.setSkyboxMaterial(m_skybox_material.get());
+            }
+
+            {
                 std::error_code err;
                 mio::ummap_source file{};
                 file.map("shrek.obj", err);
@@ -125,8 +200,10 @@ public:
 
             world.registerComponent<SpinComponent, gc::ComponentArrayType::SPARSE>();
             world.registerComponent<MouseMoveComponent, gc::ComponentArrayType::SPARSE>();
+            world.registerComponent<FollowComponent, gc::ComponentArrayType::SPARSE>();
             world.registerSystem<SpinSystem>();
             world.registerSystem<MouseMoveSystem>();
+            world.registerSystem<FollowSystem>();
 
             {
                 auto occlusion_roughness_metallic_texture = std::make_shared<gc::RenderTexture>(createORMTexture(render_backend, 0.5f, 0.0f));
@@ -162,43 +239,52 @@ public:
             const auto floor = world.createEntity(gc::Name("floor"), gc::ENTITY_NONE, {0.0f, 0.0f, -0.5f});
             world.addComponent<gc::CubeComponent>(floor).setMesh(m_meshes[3].get()).setMaterial(m_materials[0].get());
 
-            const auto cube = world.createEntity(gc::Name("cube"), gc::ENTITY_NONE, glm::vec3{0.0f, +5.0f, 0.5f});
-            world.addComponent<gc::CubeComponent>(cube).setMaterial(m_materials[5].get()).setMesh(m_meshes[0].get());
-            world.addComponent<SpinComponent>(cube).setAxis({0.0f, 0.0f, 1.0f}).setRadiansPerSecond(0.25f);
-
-            auto light_pivot = world.createEntity(gc::Name("light_pivot"), gc::ENTITY_NONE, {0.0f, 0.0f, 5.0f});
-            world.addComponent<SpinComponent>(light_pivot).setAxis({0.0f, 0.0f, 1.0f}).setRadiansPerSecond((2.0f));
-            const auto light = world.createEntity(gc::Name("light"), light_pivot, {0.0f, 10.0f, 0.0f});
-            world.addComponent<gc::CubeComponent>(light).setMesh(m_meshes[2].get()).setMaterial(m_materials[2].get());
-
             // camera
-            auto camera = world.createEntity(gc::Name("camera"), gc::ENTITY_NONE, {0.0f, 0.0f, 67.5f * 25.4e-3f});
+            auto camera = world.createEntity(gc::Name("light"), gc::ENTITY_NONE, {0.0f, 0.0f, 67.5f * 25.4e-3f});
             world.addComponent<gc::CameraComponent>(camera).setFOV(glm::radians(45.0f)).setNearPlane(0.1f).setFarPlane(1000.0f).setActive(true);
             world.addComponent<MouseMoveComponent>(camera).setMoveSpeed(25.0f).setAcceleration(50.0f).setDeceleration(100.0f).setSensitivity(1e-3f);
+            world.addComponent<gc::CubeComponent>(camera).setVisible(false);
 
-            // On Windows/NVIDIA, TRIPLE_BUFFERED gives horrible latency and TRIPLE_BUFFERED_UNTHROTTLED doesn't work properly so use double buffering instead
-#ifdef WIN32
-            render_backend.setSyncMode(gc::RenderSyncMode::VSYNC_OFF);
-#else
-            render_backend.setSyncMode(gc::RenderSyncMode::VSYNC_ON_TRIPLE_BUFFERED_UNTHROTTLED);
-#endif
+            const auto shrek_parent = world.createEntity(gc::Name("shrek_parent"), gc::ENTITY_NONE, glm::vec3{0.0f, +100.0f, 5.0f});
+            const auto shrek = world.createEntity(gc::Name("shrek"), shrek_parent, glm::vec3{0.0f, +0.0f, -4.331f});
+            world.addComponent<gc::CubeComponent>(shrek).setMaterial(m_materials[5].get()).setMesh(m_meshes[0].get());
+            world.addComponent<FollowComponent>(shrek_parent).setTarget(camera).setMinDistance(5.0f).setSpeed(10.0f);
 
-            win.setTitle("Hello world!");
-            win.setIsResizable(true);
-            win.setMouseCaptured(true);
-            win.setSize(0, 0, true);
-            win.setWindowVisibility(true);
+            // earth
+            const auto earth =
+                world.createEntity(gc::Name("earth"), gc::ENTITY_NONE, {10.0f, 10.0f, 5.0f}, glm::quat{1.0f, 0.0f, 0.0f, 0.0f}, {5.0f, 5.0f, 5.0f});
+            world.addComponent<gc::CubeComponent>(earth).setMesh(m_meshes[1].get()).setMaterial(m_materials[6].get());
+
+            // auto light_pivot = world.createEntity(gc::Name("light_pivot"), gc::ENTITY_NONE, {0.0f, 0.0f, 5.0f});
+            // world.addComponent<SpinComponent>(light_pivot).setAxis({0.0f, 0.0f, 1.0f}).setRadiansPerSecond((2.0f));
+            // const auto light = world.createEntity(gc::Name("light"), light_pivot, {0.0f, 10.0f, 0.0f});
+            // world.addComponent<gc::CubeComponent>(light).setMesh(m_meshes[2].get()).setMaterial(m_materials[2].get());
 
             m_loaded = true;
         }
     }
 };
 
-const std::array<gc::Name, 6> WorldLoadSystem::s_texture_names{gc::Name("box.jpg"),  gc::Name("bricks.jpg"), gc::Name("fire.jpg"),
-                                                               gc::Name("nuke.jpg"), gc::Name("moss.png"),   gc::Name("uvcheck.png")};
+const std::array<gc::Name, 7> WorldLoadSystem::s_texture_names{gc::Name("box.jpg"),  gc::Name("bricks.jpg"),  gc::Name("fire.jpg"),    gc::Name("nuke.jpg"),
+                                                               gc::Name("moss.png"), gc::Name("uvcheck.png"), gc::Name("8k_earth.jpg")};
 
 void buildAndStartGame(gc::App& app)
 {
+    // On Windows/NVIDIA, TRIPLE_BUFFERED gives horrible latency and TRIPLE_BUFFERED_UNTHROTTLED doesn't work properly so use double buffering instead
+#ifdef WIN32
+    app.renderBackend().setSyncMode(gc::RenderSyncMode::VSYNC_OFF);
+#else
+    app.renderBackend().setSyncMode(gc::RenderSyncMode::VSYNC_ON_TRIPLE_BUFFERED_UNTHROTTLED);
+#endif
+
+    app.window().setTitle("Hello world!");
+    app.window().setIsResizable(true);
+    app.window().setMouseCaptured(true);
+    // win.setSize(0, 0, true);
+    app.window().setWindowVisibility(true);
+
+    // app.debugUI().active = true;
+
     gc::World& world = app.world();
     world.registerSystem<WorldLoadSystem>();
     app.run();

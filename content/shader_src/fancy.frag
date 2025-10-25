@@ -108,7 +108,7 @@ void main() {
 	vec3 hdr_color = BRDF_PBR(N, V, L, BASE_COLOR, METALLIC, ROUGHNESS) * point_light;
 
     L = normalize(fragLightDirTangentSpace);
-    hdr_color += BRDF_PBR(N, V, L, BASE_COLOR, METALLIC, ROUGHNESS) * vec3(1.0, 0.9, 1.0) * 0.3;
+    hdr_color += BRDF_PBR(N, V, L, BASE_COLOR, METALLIC, ROUGHNESS) * vec3(1.0, 0.9, 1.0) * 2.2;
 
 	outColor = vec4(hdr_color / (hdr_color + 1.0), 1.0);
 }
