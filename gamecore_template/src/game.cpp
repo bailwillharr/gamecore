@@ -149,8 +149,8 @@ public:
                     constexpr uint32_t SIZE = 4;
                     std::array<uint8_t, 8 + 4 * SIZE * SIZE> image_data{}; // uint32 width, uint32 height, and four RGBA pixels
                     static_assert(SIZE <= 255);
-                    image_data[0] = SIZE;                                  // width
-                    image_data[4] = SIZE;                                  // height
+                    image_data[0] = SIZE; // width
+                    image_data[4] = SIZE; // height
                     for (size_t y = 0; y < SIZE; ++y) {
                         for (size_t x = 0; x < SIZE; ++x) {
                             image_data[8 + (y * SIZE * 4) + x * 4 + 0] = ((x + y) % 2 == 0) ? 255u : 0u; // R channel
@@ -178,7 +178,8 @@ public:
                 frame_state.draw_data.setSkyboxMaterial(m_skybox_material.get());
             }
 
-            m_meshes[0] = std::make_unique<gc::RenderMesh>(render_backend.createMeshFromAsset(content.findAsset(gc::Name("shrek.obj"), gcpak::GcpakAssetType::MESH_POS12_NORM12_TANG16_UV8_INDEXED16)));
+            m_meshes[0] = std::make_unique<gc::RenderMesh>(
+                render_backend.createMeshFromAsset(content.findAsset(gc::Name("shrek.obj"), gcpak::GcpakAssetType::MESH_POS12_NORM12_TANG16_UV8_INDEXED16)));
             m_meshes[1] = std::make_unique<gc::RenderMesh>(genSphereMesh(render_backend, 1.0f, 64));
             m_meshes[2] = std::make_unique<gc::RenderMesh>(genSphereMesh(render_backend, 0.5f, 16, true));
             m_meshes[3] = std::make_unique<gc::RenderMesh>(genCuboidMesh(render_backend, 100.0f, 100.0f, 1.0f, 25.0f));
@@ -236,7 +237,7 @@ public:
             const auto shrek_parent = world.createEntity(gc::Name("shrek_parent"), gc::ENTITY_NONE, glm::vec3{0.0f, +100.0f, 5.0f});
             const auto shrek = world.createEntity(gc::Name("shrek"), shrek_parent, glm::vec3{0.0f, +0.0f, -4.331f});
             world.addComponent<gc::CubeComponent>(shrek).setMaterial(m_materials[5].get()).setMesh(m_meshes[0].get());
-            world.addComponent<FollowComponent>(shrek_parent).setTarget(camera).setMinDistance(5.0f).setSpeed(10.0f);
+            world.addComponent<FollowComponent>(shrek_parent).setTarget(camera).setMinDistance(5.0f).setSpeed(0.0f);
 
             // earth
             const auto earth =
