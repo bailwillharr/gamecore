@@ -237,7 +237,7 @@ public:
             const auto shrek_parent = world.createEntity(gc::Name("shrek_parent"), gc::ENTITY_NONE, glm::vec3{0.0f, +100.0f, 5.0f});
             const auto shrek = world.createEntity(gc::Name("shrek"), shrek_parent, glm::vec3{0.0f, +0.0f, -4.331f});
             world.addComponent<gc::CubeComponent>(shrek).setMaterial(m_materials[5].get()).setMesh(m_meshes[0].get());
-            world.addComponent<FollowComponent>(shrek_parent).setTarget(camera).setMinDistance(5.0f).setSpeed(0.0f);
+            world.addComponent<FollowComponent>(shrek_parent).setTarget(camera).setMinDistance(5.0f).setSpeed(10.0f);
 
             // earth
             const auto earth =
