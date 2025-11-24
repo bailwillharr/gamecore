@@ -11,6 +11,7 @@ namespace gc {
 
 struct RenderBackendInfo; // forward-dec
 struct FrameState;        // forward-dec
+class Content;            // forward-dec
 
 class DebugUI {
     ImGuiContext* m_imgui_ctx{};
@@ -35,7 +36,7 @@ public:
     DebugUI& operator=(DebugUI&&) = delete;
 
     // Call every frame after Window::processEvents() and before RenderBackend::submitFrame()
-    void update(FrameState& frame_state);
+    void update(FrameState& frame_state, const Content& content);
 
     static void windowEventInterceptor(SDL_Event& ev);
 };

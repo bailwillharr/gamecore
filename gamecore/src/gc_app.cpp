@@ -194,7 +194,7 @@ void App::run()
 
         m_world->update(frame_state);
 
-        m_debug_ui->update(frame_state);
+        m_debug_ui->update(frame_state, content());
 
         renderBackend().submitFrame(frame_state.window_state->getResizedFlag(), frame_state.draw_data);
         frame_state.draw_data.reset();

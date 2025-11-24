@@ -104,6 +104,7 @@ class WorldLoadSystem : public gc::System {
     bool m_loaded = false;
     std::unique_ptr<gc::RenderMaterial> m_fallback_material{};
     std::unique_ptr<gc::RenderMaterial> m_skybox_material{};
+    std::unique_ptr<gc::RenderMaterial> m_floor_material{};
     static const std::array<gc::Name, 7> s_texture_names;
     std::array<std::unique_ptr<gc::RenderMaterial>, s_texture_names.size()> m_materials{};
     std::array<std::unique_ptr<gc::RenderMesh>, 4> m_meshes{};
@@ -149,8 +150,8 @@ public:
                     constexpr uint32_t SIZE = 4;
                     std::array<uint8_t, 8 + 4 * SIZE * SIZE> image_data{}; // uint32 width, uint32 height, and four RGBA pixels
                     static_assert(SIZE <= 255);
-                    image_data[0] = SIZE; // width
-                    image_data[4] = SIZE; // height
+                    image_data[0] = SIZE;                                  // width
+                    image_data[4] = SIZE;                                  // height
                     for (size_t y = 0; y < SIZE; ++y) {
                         for (size_t x = 0; x < SIZE; ++x) {
                             image_data[8 + (y * SIZE * 4) + x * 4 + 0] = ((x + y) % 2 == 0) ? 255u : 0u; // R channel
@@ -176,6 +177,7 @@ public:
                 auto skybox_texture = std::make_shared<gc::RenderTexture>(render_backend.createCubeTexture(faces, true));
                 m_skybox_material = std::make_unique<gc::RenderMaterial>(render_backend.createMaterial(skybox_texture, nullptr, nullptr, skybox_pipeline));
                 frame_state.draw_data.setSkyboxMaterial(m_skybox_material.get());
+                frame_state.draw_data.setSkyboxMaterial(nullptr);
             }
 
             m_meshes[0] = std::make_unique<gc::RenderMesh>(
@@ -210,6 +212,16 @@ public:
                     }
                 }
             }
+            {
+                auto base_color_texture = std::make_shared<gc::RenderTexture>(
+                    render_backend.createTexture(content.findAsset(gc::Name("bricks-mortar-albedo.png"), gcpak::GcpakAssetType::TEXTURE_R8G8B8A8), true));
+                auto occlusion_roughness_metallic_texture = std::make_shared<gc::RenderTexture>(
+                    render_backend.createTexture(content.findAsset(gc::Name("bricks-mortar-orm.png"), gcpak::GcpakAssetType::TEXTURE_R8G8B8A8), false));
+                auto normal_texture = std::make_shared<gc::RenderTexture>(
+                    render_backend.createTexture(content.findAsset(gc::Name("bricks-mortar-normal.png"), gcpak::GcpakAssetType::TEXTURE_R8G8B8A8), false));
+                m_floor_material = std::make_unique<gc::RenderMaterial>(
+                    render_backend.createMaterial(base_color_texture, occlusion_roughness_metallic_texture, normal_texture, pipeline));
+            }
 
             std::array<gc::Entity, 36> cubes{};
             const gc::Entity parent = world.createEntity(gc::Name("parent"), gc::ENTITY_NONE, glm::vec3{0.0f, 15.0f, 5.5f});
@@ -226,23 +238,31 @@ public:
 
             // add a floor
             const auto floor = world.createEntity(gc::Name("floor"), gc::ENTITY_NONE, {0.0f, 0.0f, -0.5f});
-            world.addComponent<gc::CubeComponent>(floor).setMesh(m_meshes[3].get()).setMaterial(m_materials[0].get());
+            world.addComponent<gc::CubeComponent>(floor).setMesh(m_meshes[3].get()).setMaterial(m_floor_material.get());
 
             // camera
             auto camera = world.createEntity(gc::Name("light"), gc::ENTITY_NONE, {0.0f, 0.0f, 67.5f * 25.4e-3f});
-            world.addComponent<gc::CameraComponent>(camera).setFOV(glm::radians(45.0f)).setNearPlane(0.1f).setFarPlane(1000.0f).setActive(true);
-            world.addComponent<MouseMoveComponent>(camera).setMoveSpeed(25.0f).setAcceleration(50.0f).setDeceleration(100.0f).setSensitivity(1e-3f);
+            world.addComponent<gc::CameraComponent>(camera)
+                .setFOV(glm::radians(45.0f))
+                .setNearPlane(0.1f)
+                .setFarPlane(1000.0f * 1000.0f * 100.0f)
+                .setActive(true);
+            world.addComponent<MouseMoveComponent>(camera).setMoveSpeed(3e8f).setAcceleration(40.0f).setDeceleration(100.0f).setSensitivity(1e-3f);
             world.addComponent<gc::CubeComponent>(camera).setVisible(false);
 
             const auto shrek_parent = world.createEntity(gc::Name("shrek_parent"), gc::ENTITY_NONE, glm::vec3{0.0f, +100.0f, 5.0f});
             const auto shrek = world.createEntity(gc::Name("shrek"), shrek_parent, glm::vec3{0.0f, +0.0f, -4.331f});
             world.addComponent<gc::CubeComponent>(shrek).setMaterial(m_materials[5].get()).setMesh(m_meshes[0].get());
-            world.addComponent<FollowComponent>(shrek_parent).setTarget(camera).setMinDistance(5.0f).setSpeed(0.0f);
+            world.addComponent<FollowComponent>(shrek_parent).setTarget(camera).setMinDistance(5.0f).setSpeed(15.0f);
 
             // earth
-            const auto earth =
-                world.createEntity(gc::Name("earth"), gc::ENTITY_NONE, {10.0f, 10.0f, 5.0f}, glm::quat{1.0f, 0.0f, 0.0f, 0.0f}, {5.0f, 5.0f, 5.0f});
+            constexpr float equatorial_radius = 6'378.137 * 1000.0;
+            constexpr float polar_radius = 6'356.752 * 1000.0;
+            constexpr float earth_rotation_speed = 7.2722e-5f;
+            const auto earth = world.createEntity(gc::Name("earth"), gc::ENTITY_NONE, {0.0f, 0.0f, -polar_radius * 1.5}, glm::quat{1.0f, 0.0f, 0.0f, 0.0f},
+                                                  {equatorial_radius, equatorial_radius, polar_radius});
             world.addComponent<gc::CubeComponent>(earth).setMesh(m_meshes[1].get()).setMaterial(m_materials[6].get());
+            world.addComponent<SpinComponent>(earth).setAxis({0.0f, 0.0f, 1.0f}).setRadiansPerSecond(earth_rotation_speed);
 
             // auto light_pivot = world.createEntity(gc::Name("light_pivot"), gc::ENTITY_NONE, {0.0f, 0.0f, 5.0f});
             // world.addComponent<SpinComponent>(light_pivot).setAxis({0.0f, 0.0f, 1.0f}).setRadiansPerSecond((2.0f));

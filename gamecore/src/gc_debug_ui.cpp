@@ -19,8 +19,21 @@
 #include "gamecore/gc_vulkan_common.h"
 #include "gamecore/gc_render_backend.h"
 #include "gamecore/gc_frame_state.h"
+#include "gamecore/gc_content.h"
+#include "gamecore/gc_units.h"
 
 namespace gc {
+
+static void drawAssetList(const Content& content)
+{
+    ImGui::Begin("Asset List", nullptr, 0);
+
+    for (const auto& [name, info] : content) {
+        ImGui::Text("[%d] %s %s", info.file_index, bytesToHumanReadable(info.entry.size).c_str(), name.getString().c_str());
+    }
+
+    ImGui::End();
+}
 
 DebugUI::DebugUI(SDL_Window* window, const RenderBackendInfo& render_backend_info, const std::filesystem::path& config_file)
 {
@@ -90,7 +103,7 @@ DebugUI::~DebugUI()
     ImGui::DestroyContext(m_imgui_ctx);
 }
 
-void DebugUI::update(FrameState& frame_state)
+void DebugUI::update(FrameState& frame_state, const Content& content)
 {
     ZoneScoped;
 
@@ -104,12 +117,15 @@ void DebugUI::update(FrameState& frame_state)
                     static_cast<int>(std::round(1.0 / frame_state.average_frame_time)));
         ImGui::Checkbox("Disable world rendering", &m_clear_draw_data);
         ImGui::Checkbox("Show ImGui Demo", &m_show_demo);
-        ImGui::Text("Velocity: (%f, %f} MAG: %f", frame_state.current_velocity.x, frame_state.current_velocity.y, glm::length(frame_state.current_velocity));
+        ImGui::Text("Velocity: (%f, %f, %f} MAG: %f", frame_state.current_velocity.x, frame_state.current_velocity.y,
+                    frame_state.current_velocity.z, glm::length(frame_state.current_velocity));
         ImGui::End();
 
         if (m_show_demo) {
             ImGui::ShowDemoWindow(&m_show_demo);
         }
+
+        drawAssetList(content);
     }
 
     ImGui::Render();

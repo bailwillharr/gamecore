@@ -21,7 +21,10 @@
 
 namespace gc {
 
-struct PackageAssetInfo; // forward-dec
+struct PackageAssetInfo {
+    unsigned int file_index;
+    gcpak::GcpakAssetEntry entry;
+};
 
 class Content {
 
@@ -39,6 +42,9 @@ public:
 
     Content& operator=(const Content&) = delete;
     Content& operator=(Content&&) = delete;
+
+    decltype(Content::m_asset_infos)::const_iterator begin() const;
+    decltype(Content::m_asset_infos)::const_iterator end() const;
 
     /* This function is thread-safe */
     /* Returns a non-owning view of the asset */

@@ -19,11 +19,6 @@
 
 namespace gc {
 
-struct PackageAssetInfo {
-    unsigned int file_index;
-    gcpak::GcpakAssetEntry entry;
-};
-
 static std::optional<std::filesystem::path> findContentDir()
 {
     const char* const base_path = SDL_GetBasePath();
@@ -135,6 +130,10 @@ Content::Content()
 
 Content::~Content() { GC_TRACE("Destroying content manager..."); }
 
+decltype(Content::m_asset_infos)::const_iterator Content::begin() const { return m_asset_infos.begin(); }
+
+decltype(Content::m_asset_infos)::const_iterator Content::end() const { return m_asset_infos.end(); }
+
 std::span<const uint8_t> Content::findAsset(Name name, [[maybe_unused]] gcpak::GcpakAssetType type) const
 {
     const auto it = m_asset_infos.find(name);
@@ -143,7 +142,7 @@ std::span<const uint8_t> Content::findAsset(Name name, [[maybe_unused]] gcpak::G
         return {};
     }
     const PackageAssetInfo& asset_info = it->second;
-    
+
     GC_ASSERT(asset_info.entry.asset_type == type);
 
     const uint8_t* const asset_data = m_package_file_maps[asset_info.file_index].data() + asset_info.entry.offset;
