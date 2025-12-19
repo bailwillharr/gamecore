@@ -12,3 +12,7 @@ Create a ResourceManager<T> that for any given resource type knows how to automa
 	The ResourceManager<Material> recipe would then call ResourceManager<Shader>::getResource(manifest.shader_name)
 	which would create the shader resource.
 	A ResourceManager<Texture> manifest would contain the asset name for the texture asset, its size, and possibly also format.
+
+Pipeline variants
+	If a given material doesn't use a normal map, for example, it shouldn't sample a normal texture in the fragment shader.
+	Use multiple pipelines instead or maybe just use null descriptors

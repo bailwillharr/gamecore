@@ -1,5 +1,9 @@
 #include <SDL3/SDL_main.h>
 
+#include <span>
+#include <string_view>
+#include <optional>
+
 #include <gctemplates/gct_static_vector.h>
 
 #include <gamecore/gc_app.h>
@@ -7,8 +11,30 @@
 
 #include "game.h"
 
-int main([[maybe_unused]] int argc, [[maybe_unused]] char* argv[])
+Options parseCmdLine(std::span<const char* const> args)
 {
+    Options result{};
+    for (auto arg : args) {
+        std::string_view sv(arg);
+        if (sv.starts_with("syncmode=")) {
+            int value{};
+            const char* const first = sv.data() + 9;
+            const char* const last = sv.data() + sv.size();
+            if (std::from_chars(first, last, value).ptr == last) {
+                if (value < 4) {
+                    result.render_sync_mode = value;
+                }
+            }
+        }
+    }
+    return result;
+}
+
+int main(int argc, char* argv[])
+{
+
+    auto options = parseCmdLine(std::span(argv + 1, argc - 1));
+
     gc::AppInitOptions init_options{};
     init_options.name = "gamecore_template";
     init_options.author = "bailwillharr";
@@ -16,7 +42,7 @@ int main([[maybe_unused]] int argc, [[maybe_unused]] char* argv[])
 
     gc::App::initialise(init_options);
 
-    buildAndStartGame(gc::App::instance());
+    buildAndStartGame(gc::App::instance(), options);
 
     gc::App::shutdown();
 

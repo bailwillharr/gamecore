@@ -37,9 +37,7 @@ void main() {
     
     frag_direction = frag_position;
 
-	// The , 0.0 part makes it a purely linear transform (no affine translation.)
-	// The .xyzz part undoes the z component divide (ensures depth value is always 1.0.)
-	// This pipeline doesn't need to write to the depth buffer,
-	// but it should test the depth buffer if it's not rendered first.
-	gl_Position = (pc.projection * vec4(mat3(pc.view) * frag_position, 0.0)).xyzz;
+    vec4 pos = vec4(mat3(pc.view) * frag_position, 1.0);
+    gl_Position = pc.projection * pos;
+    gl_Position.z = 0.0;
 }

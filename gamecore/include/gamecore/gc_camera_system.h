@@ -23,8 +23,14 @@ public:
             static_cast<float>(frame_state.window_state->getWindowSize().x) / static_cast<float>(frame_state.window_state->getWindowSize().y);
         m_world.forEach<TransformComponent, CameraComponent>([&]([[maybe_unused]] Entity entity, TransformComponent& t, CameraComponent& c) {
             if (c.m_active) {
-                // in view spacew
-                const glm::mat4 projection_matrix = glm::perspectiveRH_ZO(c.m_fov_radians, aspect_ratio, c.m_near, c.m_far) * glm::scale(glm::mat4{1.0f}, glm::vec3{1.0f, -1.0f, 1.0f});
+                // in view space
+                glm::mat4 projection_matrix = glm::infinitePerspectiveRH_NO(c.m_fov_radians, aspect_ratio, c.m_near);
+                
+                projection_matrix[2][2] = 0.0f;
+                projection_matrix[3][2] = c.m_near; // push near to depth = 1
+
+                projection_matrix[1][1] *= -1.0f;
+
                 frame_state.draw_data.setProjectionMatrix(projection_matrix);
                 frame_state.draw_data.setViewMatrix(glm::inverse(t.getWorldMatrix()));
             }

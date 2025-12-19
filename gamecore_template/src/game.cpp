@@ -177,7 +177,6 @@ public:
                 auto skybox_texture = std::make_shared<gc::RenderTexture>(render_backend.createCubeTexture(faces, true));
                 m_skybox_material = std::make_unique<gc::RenderMaterial>(render_backend.createMaterial(skybox_texture, nullptr, nullptr, skybox_pipeline));
                 frame_state.draw_data.setSkyboxMaterial(m_skybox_material.get());
-                frame_state.draw_data.setSkyboxMaterial(nullptr);
             }
 
             m_meshes[0] = std::make_unique<gc::RenderMesh>(
@@ -245,29 +244,14 @@ public:
             world.addComponent<gc::CameraComponent>(camera)
                 .setFOV(glm::radians(45.0f))
                 .setNearPlane(0.1f)
-                .setFarPlane(1000.0f * 1000.0f * 100.0f)
                 .setActive(true);
-            world.addComponent<MouseMoveComponent>(camera).setMoveSpeed(3e8f).setAcceleration(40.0f).setDeceleration(100.0f).setSensitivity(1e-3f);
+            world.addComponent<MouseMoveComponent>(camera).setMoveSpeed(25.0f).setAcceleration(40.0f).setDeceleration(100.0f).setSensitivity(1e-3f);
             world.addComponent<gc::CubeComponent>(camera).setVisible(false);
 
             const auto shrek_parent = world.createEntity(gc::Name("shrek_parent"), gc::ENTITY_NONE, glm::vec3{0.0f, +100.0f, 5.0f});
             const auto shrek = world.createEntity(gc::Name("shrek"), shrek_parent, glm::vec3{0.0f, +0.0f, -4.331f});
             world.addComponent<gc::CubeComponent>(shrek).setMaterial(m_materials[5].get()).setMesh(m_meshes[0].get());
-            world.addComponent<FollowComponent>(shrek_parent).setTarget(camera).setMinDistance(5.0f).setSpeed(15.0f);
-
-            // earth
-            constexpr float equatorial_radius = 6'378.137 * 1000.0;
-            constexpr float polar_radius = 6'356.752 * 1000.0;
-            constexpr float earth_rotation_speed = 7.2722e-5f;
-            const auto earth = world.createEntity(gc::Name("earth"), gc::ENTITY_NONE, {0.0f, 0.0f, -polar_radius * 1.5}, glm::quat{1.0f, 0.0f, 0.0f, 0.0f},
-                                                  {equatorial_radius, equatorial_radius, polar_radius});
-            world.addComponent<gc::CubeComponent>(earth).setMesh(m_meshes[1].get()).setMaterial(m_materials[6].get());
-            world.addComponent<SpinComponent>(earth).setAxis({0.0f, 0.0f, 1.0f}).setRadiansPerSecond(earth_rotation_speed);
-
-            // auto light_pivot = world.createEntity(gc::Name("light_pivot"), gc::ENTITY_NONE, {0.0f, 0.0f, 5.0f});
-            // world.addComponent<SpinComponent>(light_pivot).setAxis({0.0f, 0.0f, 1.0f}).setRadiansPerSecond((2.0f));
-            // const auto light = world.createEntity(gc::Name("light"), light_pivot, {0.0f, 10.0f, 0.0f});
-            // world.addComponent<gc::CubeComponent>(light).setMesh(m_meshes[2].get()).setMaterial(m_materials[2].get());
+            world.addComponent<FollowComponent>(shrek_parent).setTarget(camera).setMinDistance(25.0f).setSpeed(15.0f);
 
             m_loaded = true;
         }
@@ -277,14 +261,19 @@ public:
 const std::array<gc::Name, 7> WorldLoadSystem::s_texture_names{gc::Name("box.jpg"),  gc::Name("bricks.jpg"),  gc::Name("fire.jpg"),    gc::Name("nuke.jpg"),
                                                                gc::Name("moss.png"), gc::Name("uvcheck.png"), gc::Name("8k_earth.jpg")};
 
-void buildAndStartGame(gc::App& app)
+void buildAndStartGame(gc::App& app, Options options)
 {
+    if (options.render_sync_mode.has_value()) {
+        app.renderBackend().setSyncMode(static_cast<gc::RenderSyncMode>(options.render_sync_mode.value()));
+    }
+    else {
     // On Windows/NVIDIA, TRIPLE_BUFFERED gives horrible latency and TRIPLE_BUFFERED_UNTHROTTLED doesn't work properly so use double buffering instead
 #ifdef WIN32
-    app.renderBackend().setSyncMode(gc::RenderSyncMode::VSYNC_OFF);
+    app.renderBackend().setSyncMode(gc::RenderSyncMode::VSYNC_ON_DOUBLE_BUFFERED);
 #else
-    app.renderBackend().setSyncMode(gc::RenderSyncMode::VSYNC_ON_TRIPLE_BUFFERED_UNTHROTTLED);
+    app.renderBackend().setSyncMode(gc::RenderSyncMode::VSYNC_ON_TRIPLE_BUFFERED);
 #endif
+    }
 
     app.window().setTitle("Hello world!");
     app.window().setIsResizable(true);

@@ -8,7 +8,7 @@
 #include <vector>
 
 /*
- * The gcpak file format contains many game assets each of which can either be compressed or decompressed.
+ * The gcpak file format contains many game assets
  *
  * Version 1
  *
@@ -18,7 +18,7 @@
  *  -- ASSET DATA
  *  -- ASSET DATA
  *  -- ...
- *  -- ASSET 1 INFO ENTRY (crc32 id, compressed yes/no, uncompressed size, compressed size, offset)
+ *  -- ASSET 1 INFO ENTRY (crc32 id, size, offset)
  *  -- ASSET 2 INFO ENTRY
  *  -- ASSET 3 INFO ENTRY
  *  -- ...
@@ -62,16 +62,16 @@ struct GcpakHeader {
 
 enum class GcpakAssetType : std::uint32_t {
     INVALID = 0,
-    SPIRV_SHADER = 1, // passed directly into VkShaderModuleCreateInfo
-    TEXTURE_R8G8B8A8 = 2, // first 4 bytes is width, second 4 bytes is height, remaining data is just R8G8B8A8
-    MESH_POS12_NORM12_TANG16_UV8_INDEXED16 // first 2 bytes is vertex count, followed by vertices, followed by 16 bit indices
+    SPIRV_SHADER = 1,                           // passed directly into VkShaderModuleCreateInfo
+    TEXTURE_R8G8B8A8 = 2,                       // first 4 bytes is width, second 4 bytes is height, remaining data is just R8G8B8A8
+    MESH_POS12_NORM12_TANG16_UV8_INDEXED16 = 3, // first 2 bytes is vertex count, followed by vertices, followed by 16 bit indices
 };
 
 struct GcpakAssetEntry {
     uint64_t offset; // absolute positition of start of asset data in the file
     uint32_t crc32_id;
     GcpakAssetType asset_type;
-    uint32_t size;              // size of data in file (compressed size if compression enabled)
+    uint32_t size; // size of data in file
 
     void serialize(std::ostream& s) const
     {

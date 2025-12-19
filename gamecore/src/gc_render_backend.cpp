@@ -341,7 +341,7 @@ static GPUPipeline createSkyboxPipeline(VkDevice device, GPUResourceDeleteQueue&
     depth_stencil_state.sType = VK_STRUCTURE_TYPE_PIPELINE_DEPTH_STENCIL_STATE_CREATE_INFO;
     depth_stencil_state.depthTestEnable = VK_TRUE;
     depth_stencil_state.depthWriteEnable = VK_FALSE; // it will always be at 1.0 (max depth) so no point writing to the depth buffer
-    depth_stencil_state.depthCompareOp = VK_COMPARE_OP_LESS_OR_EQUAL;
+    depth_stencil_state.depthCompareOp = VK_COMPARE_OP_GREATER_OR_EQUAL;
     depth_stencil_state.depthBoundsTestEnable = VK_FALSE;
     depth_stencil_state.minDepthBounds = 0.0f;
     depth_stencil_state.maxDepthBounds = 1.0f;
@@ -724,7 +724,7 @@ void RenderBackend::submitFrame(bool window_resized, const WorldDrawData& world_
         depth_attachment.resolveMode = VK_RESOLVE_MODE_NONE;
         depth_attachment.loadOp = VK_ATTACHMENT_LOAD_OP_CLEAR;
         depth_attachment.storeOp = VK_ATTACHMENT_STORE_OP_DONT_CARE;
-        depth_attachment.clearValue.depthStencil.depth = 1.0f;
+        depth_attachment.clearValue.depthStencil.depth = 0.0f;
         VkRenderingInfo info{};
         info.sType = VK_STRUCTURE_TYPE_RENDERING_INFO;
         info.renderArea.offset.x = 0;
@@ -973,7 +973,7 @@ GPUPipeline RenderBackend::createPipeline(std::span<const uint8_t> vertex_spv, s
     depth_stencil_state.sType = VK_STRUCTURE_TYPE_PIPELINE_DEPTH_STENCIL_STATE_CREATE_INFO;
     depth_stencil_state.depthTestEnable = VK_TRUE;
     depth_stencil_state.depthWriteEnable = VK_TRUE;
-    depth_stencil_state.depthCompareOp = VK_COMPARE_OP_LESS_OR_EQUAL;
+    depth_stencil_state.depthCompareOp = VK_COMPARE_OP_GREATER_OR_EQUAL;
     depth_stencil_state.depthBoundsTestEnable = VK_FALSE;
     depth_stencil_state.minDepthBounds = 0.0f;
     depth_stencil_state.maxDepthBounds = 1.0f;
