@@ -34,6 +34,7 @@ set(SRC_FILES
   "src/gc_threading.cpp"
   "src/gc_vulkan_utils.cpp"
   "src/gc_gen_tangents.cpp"
+  "src/gc_resource_manager.cpp"
 )
 
 # Public API includes
@@ -80,6 +81,7 @@ set(INCLUDE_FILES
   "include/gamecore/gc_threading.h"
   "include/gamecore/gc_vulkan_utils.h"
   "include/gamecore/gc_gen_tangents.h"
+  "include/gamecore/gc_resource_manager.h"
 )
 
 # gamecore is a static library

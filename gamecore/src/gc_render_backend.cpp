@@ -555,6 +555,15 @@ RenderBackend::RenderBackend(SDL_Window* window_handle)
 
     // m_main_timeline_semaphore and the frame in flight command pools will be created when submitFrame() is called for the first time.
 
+    VkPhysicalDeviceDriverProperties driverProps = {.sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_DRIVER_PROPERTIES};
+
+    VkPhysicalDeviceProperties2 props2 = {.sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_PROPERTIES_2, .pNext = &driverProps};
+
+    vkGetPhysicalDeviceProperties2(m_device.getPhysicalDevice(), &props2);
+
+    GC_INFO("Driver name: {}", driverProps.driverName);
+    GC_INFO("Driver info: {}", driverProps.driverInfo);
+
     GC_TRACE("Initialised RenderBackend");
 }
 

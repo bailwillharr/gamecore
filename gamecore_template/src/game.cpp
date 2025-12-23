@@ -150,8 +150,8 @@ public:
                     constexpr uint32_t SIZE = 4;
                     std::array<uint8_t, 8 + 4 * SIZE * SIZE> image_data{}; // uint32 width, uint32 height, and four RGBA pixels
                     static_assert(SIZE <= 255);
-                    image_data[0] = SIZE;                                  // width
-                    image_data[4] = SIZE;                                  // height
+                    image_data[0] = SIZE; // width
+                    image_data[4] = SIZE; // height
                     for (size_t y = 0; y < SIZE; ++y) {
                         for (size_t x = 0; x < SIZE; ++x) {
                             image_data[8 + (y * SIZE * 4) + x * 4 + 0] = ((x + y) % 2 == 0) ? 255u : 0u; // R channel
@@ -241,10 +241,7 @@ public:
 
             // camera
             auto camera = world.createEntity(gc::Name("light"), gc::ENTITY_NONE, {0.0f, 0.0f, 67.5f * 25.4e-3f});
-            world.addComponent<gc::CameraComponent>(camera)
-                .setFOV(glm::radians(45.0f))
-                .setNearPlane(0.1f)
-                .setActive(true);
+            world.addComponent<gc::CameraComponent>(camera).setFOV(glm::radians(45.0f)).setNearPlane(0.1f).setActive(true);
             world.addComponent<MouseMoveComponent>(camera).setMoveSpeed(25.0f).setAcceleration(40.0f).setDeceleration(100.0f).setSensitivity(1e-3f);
             world.addComponent<gc::CubeComponent>(camera).setVisible(false);
 
@@ -267,18 +264,18 @@ void buildAndStartGame(gc::App& app, Options options)
         app.renderBackend().setSyncMode(static_cast<gc::RenderSyncMode>(options.render_sync_mode.value()));
     }
     else {
-    // On Windows/NVIDIA, TRIPLE_BUFFERED gives horrible latency and TRIPLE_BUFFERED_UNTHROTTLED doesn't work properly so use double buffering instead
+        // On Windows/NVIDIA, TRIPLE_BUFFERED gives horrible latency and TRIPLE_BUFFERED_UNTHROTTLED doesn't work properly so use double buffering instead
 #ifdef WIN32
-    app.renderBackend().setSyncMode(gc::RenderSyncMode::VSYNC_ON_DOUBLE_BUFFERED);
+        app.renderBackend().setSyncMode(gc::RenderSyncMode::VSYNC_ON_DOUBLE_BUFFERED);
 #else
-    app.renderBackend().setSyncMode(gc::RenderSyncMode::VSYNC_ON_TRIPLE_BUFFERED);
+        app.renderBackend().setSyncMode(gc::RenderSyncMode::VSYNC_ON_TRIPLE_BUFFERED_UNTHROTTLED);
 #endif
     }
 
     app.window().setTitle("Hello world!");
     app.window().setIsResizable(true);
     app.window().setMouseCaptured(true);
-    // win.setSize(0, 0, true);
+    app.window().setSize(640, 480, true);
     app.window().setWindowVisibility(true);
 
     // app.debugUI().active = true;
