@@ -18,6 +18,7 @@
 #include <gamecore/gc_camera_component.h>
 #include <gamecore/gc_transform_component.h>
 #include <gamecore/gc_debug_ui.h>
+#include <gamecore/gc_resource_manager.h>
 
 class FollowSystem; // forward-dec
 
@@ -275,7 +276,7 @@ void buildAndStartGame(gc::App& app, Options options)
     app.window().setTitle("Hello world!");
     app.window().setIsResizable(true);
     app.window().setMouseCaptured(true);
-    app.window().setSize(640, 480, true);
+    app.window().setSize(0, 0, true);
     app.window().setWindowVisibility(true);
 
     // app.debugUI().active = true;

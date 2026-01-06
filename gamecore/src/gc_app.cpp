@@ -13,8 +13,6 @@
 
 #include "gamecore/gc_threading.h"
 #include "gamecore/gc_assert.h"
-#include "gamecore/gc_gpu_resources.h"
-#include "gamecore/gc_name.h"
 #include "gamecore/gc_abort.h"
 #include "gamecore/gc_logger.h"
 #include "gamecore/gc_jobs.h"
@@ -24,10 +22,9 @@
 #include "gamecore/gc_debug_ui.h"
 #include "gamecore/gc_world.h"
 #include "gamecore/gc_world_draw_data.h"
-#include "gamecore/gc_transform_component.h"
 #include "gamecore/gc_cube_system.h"
-#include "gamecore/gc_stopwatch.h"
 #include "gamecore/gc_frame_state.h"
+#include "gamecore/gc_resource_manager.h"
 
 namespace gc {
 
@@ -79,6 +76,7 @@ App::App(const AppInitOptions& options)
     m_render_backend = std::make_unique<RenderBackend>(m_window->getHandle());
     m_debug_ui = std::make_unique<DebugUI>(m_window->getHandle(), m_render_backend->getInfo(), m_save_directory / "imgui.ini");
     m_world = std::make_unique<World>();
+    m_resource_manager = std::make_unique<ResourceManager>();
 
     GC_TRACE("Initialised Application");
 }

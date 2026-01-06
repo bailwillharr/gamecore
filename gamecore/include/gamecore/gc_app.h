@@ -13,12 +13,13 @@ Call App::initialise() to initialise. Call shutdown() at end of program
 
 namespace gc {
 
-class Jobs;          // forward-dec
-class Content;       // forward-dec
-class Window;        // forward-dec
-class RenderBackend; // forward-dec
-class DebugUI;       // forward-dec
-class World;         // forward-dec
+class Jobs;            // forward-dec
+class Content;         // forward-dec
+class Window;          // forward-dec
+class RenderBackend;   // forward-dec
+class DebugUI;         // forward-dec
+class World;           // forward-dec
+class ResourceManager; // forward-dec
 
 struct AppInitOptions {
     // None of these strings should have spaces.
@@ -41,6 +42,7 @@ class App {
     std::unique_ptr<RenderBackend> m_render_backend{};
     std::unique_ptr<DebugUI> m_debug_ui{};
     std::unique_ptr<World> m_world{};
+    std::unique_ptr<ResourceManager> m_resource_manager{};
 
     std::filesystem::path m_save_directory{};
 
@@ -64,6 +66,7 @@ public:
     RenderBackend& renderBackend();
     DebugUI& debugUI();
     World& world();
+    ResourceManager& resourceManager();
 
     // Call before using any engine functionality (apart from logging)
     static void initialise(const AppInitOptions& options);
