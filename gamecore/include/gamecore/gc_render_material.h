@@ -117,7 +117,7 @@ public:
 
     // Checks that all textures for this material are uploaded
     bool isUploaded() const
-    { 
+    {
         if (!m_base_color_texture->isUploaded()) {
             return false;
         }
@@ -140,6 +140,10 @@ public:
             m_normal_texture->waitForUpload();
         }
     }
+
+    auto getBaseColorTexture() const { return m_base_color_texture; }
+    auto getOcclusionRoughnessMetallicTexture() const { return m_occlusion_roughness_metallic_texture; }
+    auto getNormalTexture() const { return m_normal_texture; }
 };
 
 } // namespace gc
