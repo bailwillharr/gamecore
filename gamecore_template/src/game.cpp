@@ -281,6 +281,23 @@ void buildAndStartGame(gc::App& app, Options options)
 
     // app.debugUI().active = true;
 
+    class MyResource {
+        std::string m_name;
+
+    public:
+        MyResource(std::string name)
+        {
+            static double val = 0.0;
+            m_name = name + std::to_string(val);
+            ++val;
+        }
+        static MyResource create(const gc::Content& content_manager, gc::Name name)
+        {
+            (void)content_manager;
+            return MyResource(name.getString());
+        }
+    };
+
     gc::World& world = app.world();
     world.registerSystem<WorldLoadSystem>();
     app.run();

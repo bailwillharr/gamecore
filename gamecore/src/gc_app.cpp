@@ -76,7 +76,7 @@ App::App(const AppInitOptions& options)
     m_render_backend = std::make_unique<RenderBackend>(m_window->getHandle());
     m_debug_ui = std::make_unique<DebugUI>(m_window->getHandle(), m_render_backend->getInfo(), m_save_directory / "imgui.ini");
     m_world = std::make_unique<World>();
-    m_resource_manager = std::make_unique<ResourceManager>();
+    m_resource_manager = std::make_unique<ResourceManager>(*m_content);
 
     GC_TRACE("Initialised Application");
 }
@@ -153,6 +153,12 @@ World& App::world()
 {
     GC_ASSERT(m_world);
     return *m_world;
+}
+
+ResourceManager& App::resourceManager()
+{
+    GC_ASSERT(m_resource_manager);
+    return *m_resource_manager;
 }
 
 void App::run()
