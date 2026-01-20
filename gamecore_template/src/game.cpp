@@ -184,7 +184,7 @@ public:
                 render_backend.createMeshFromAsset(content.findAsset(gc::Name("shrek.obj"), gcpak::GcpakAssetType::MESH_POS12_NORM12_TANG16_UV8_INDEXED16)));
             m_meshes[1] = std::make_unique<gc::RenderMesh>(genSphereMesh(render_backend, 1.0f, 64));
             m_meshes[2] = std::make_unique<gc::RenderMesh>(genSphereMesh(render_backend, 0.5f, 16, true));
-            m_meshes[3] = std::make_unique<gc::RenderMesh>(genCuboidMesh(render_backend, 100.0f, 100.0f, 1.0f, 25.0f));
+            m_meshes[3] = std::make_unique<gc::RenderMesh>(genPlaneMesh(render_backend, 25.0f));
             for (const auto& mesh : m_meshes) {
                 mesh->waitForUpload();
             }
@@ -237,7 +237,7 @@ public:
             }
 
             // add a floor
-            const auto floor = world.createEntity(gc::Name("floor"), gc::ENTITY_NONE, {0.0f, 0.0f, -0.5f});
+            const auto floor = world.createEntity(gc::Name("floor"), gc::ENTITY_NONE, {0.0f, 0.0f, -0.5f}, {}, {100.0f, 100.0f, 1.0f});
             world.addComponent<gc::CubeComponent>(floor).setMesh(m_meshes[3].get()).setMaterial(m_floor_material.get());
 
             // camera
@@ -249,7 +249,7 @@ public:
             const auto shrek_parent = world.createEntity(gc::Name("shrek_parent"), gc::ENTITY_NONE, glm::vec3{0.0f, +100.0f, 5.0f});
             const auto shrek = world.createEntity(gc::Name("shrek"), shrek_parent, glm::vec3{0.0f, +0.0f, -4.331f});
             world.addComponent<gc::CubeComponent>(shrek).setMaterial(m_materials[5].get()).setMesh(m_meshes[0].get());
-            world.addComponent<FollowComponent>(shrek_parent).setTarget(camera).setMinDistance(25.0f).setSpeed(15.0f);
+            //world.addComponent<FollowComponent>(shrek_parent).setTarget(camera).setMinDistance(25.0f).setSpeed(15.0f);
 
             m_loaded = true;
         }
@@ -285,18 +285,39 @@ void buildAndStartGame(gc::App& app, Options options)
         std::string m_name;
 
     public:
-        MyResource(std::string name)
+        MyResource() = delete;
+        explicit MyResource(std::string name)
         {
             static double val = 0.0;
             m_name = name + std::to_string(val);
             ++val;
         }
+        MyResource(const MyResource& other) = delete;
+        MyResource(MyResource&&) noexcept = default;
+
+        ~MyResource() { GC_TRACE("Destroying {}", m_name);
+        }
+
+        MyResource& operator=(const MyResource&) = delete;
+        MyResource& operator=(MyResource&&) = delete;
+
         static MyResource create(const gc::Content& content_manager, gc::Name name)
         {
             (void)content_manager;
             return MyResource(name.getString());
         }
+
+        std::string getName() const { return m_name; }
     };
+
+    const auto& res_hello1 = app.resourceManager().get<MyResource>(gc::Name("hello"));
+    const auto& res_hello2 = app.resourceManager().get<MyResource>(gc::Name("hello"));
+    const auto& res_foo1 = app.resourceManager().get<MyResource>(gc::Name("foo"));
+    const auto& res_foo2 = app.resourceManager().get<MyResource>(gc::Name("foo"));
+    GC_TRACE("res_hello1 name: {}", res_hello1.getName());
+    GC_TRACE("res_hello2 name: {}", res_hello2.getName());
+    GC_TRACE("res_foo1 name: {}", res_foo1.getName());
+    GC_TRACE("res_foo2 name: {}", res_foo2.getName());
 
     gc::World& world = app.world();
     world.registerSystem<WorldLoadSystem>();

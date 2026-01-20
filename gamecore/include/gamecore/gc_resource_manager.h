@@ -47,8 +47,14 @@ class ResourceCache : public IResourceCache {
 public:
     const T& get(const Content& content_manager, Name name)
     {
-        auto [it, just_created] = m_resources.emplace(name, std::make_unique<T>(T::create(content_manager, name)));
-        return *(it->second);
+        auto it = m_resources.find(name);
+        if (it != m_resources.end()) {
+            return *(it->second);
+        }
+        else {
+            it = m_resources.emplace(name, std::make_unique<T>(T::create(content_manager, name))).first;
+            return *(it->second);
+        }
     }
 };
 
@@ -67,6 +73,7 @@ public:
         uint32_t index = getResourceIndex<T>();
         if (index >= m_caches.size()) {
             m_caches.emplace_back(std::make_unique<ResourceCache<T>>());
+            GC_ASSERT(index + 1 == m_caches.size());
         }
         IResourceCache* i_cache = m_caches[index].get();
         ResourceCache<T>* cache = static_cast<ResourceCache<T>*>(i_cache);
