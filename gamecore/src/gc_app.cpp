@@ -22,7 +22,6 @@
 #include "gamecore/gc_debug_ui.h"
 #include "gamecore/gc_world.h"
 #include "gamecore/gc_world_draw_data.h"
-#include "gamecore/gc_cube_system.h"
 #include "gamecore/gc_frame_state.h"
 #include "gamecore/gc_resource_manager.h"
 

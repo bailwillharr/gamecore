@@ -59,6 +59,12 @@ public:
 
     // Ensure isUploaded() returned true before calling this
     void draw(VkCommandBuffer cmd, VkSemaphore timeline_semaphore, uint64_t signal_value);
+
+    static RenderMesh create(const gc::Content& content_manager, gc::Name name)
+    {
+        auto& rb = app().renderBackend();
+        return rb.createMeshFromAsset(content_manager.findAsset(name, gcpak::GcpakAssetType::MESH_POS12_NORM12_TANG16_UV8_INDEXED16));
+    }
 };
 
 } // namespace gc

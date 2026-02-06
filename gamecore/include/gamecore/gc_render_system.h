@@ -7,10 +7,10 @@ namespace gc {
 class World;      // forward-dec
 struct FrameState; // forward-dec
 
-class CubeSystem : public System {
+class RenderSystem : public System {
 
 public:
-    CubeSystem(World& world);
+    RenderSystem(World& world);
 
     void onUpdate(FrameState& frame_state) override;
 };

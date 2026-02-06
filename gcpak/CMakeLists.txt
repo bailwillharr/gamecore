@@ -8,6 +8,7 @@ set(SRC_FILES
 
 set(INCLUDE_FILES
   "include/gcpak/gcpak.h"
+  "include/gcpak/gcpak_prefab.h"
 )
 
 add_library(${PROJECT_NAME} STATIC

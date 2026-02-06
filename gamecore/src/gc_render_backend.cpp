@@ -1401,9 +1401,7 @@ RenderTexture RenderBackend::createCubeTexture(std::array<std::span<const uint8_
     return RenderTexture(GPUImageView(m_delete_queue, image_view, gpu_image));
 }
 
-RenderMaterial RenderBackend::createMaterial(const std::shared_ptr<RenderTexture>& base_color_texture,
-                                             const std::shared_ptr<RenderTexture>& occlusion_roughness_metallic_texture,
-                                             const std::shared_ptr<RenderTexture>& normal_texture, const std::shared_ptr<GPUPipeline>& pipeline)
+RenderMaterial RenderBackend::createMaterial(Name base_color_texture, Name occlusion_roughness_metallic_texture, Name normal_texture, Name pipeline)
 {
     return RenderMaterial(m_device.getHandle(), m_main_descriptor_pool, m_descriptor_set_layout, base_color_texture, occlusion_roughness_metallic_texture,
                           normal_texture, pipeline);

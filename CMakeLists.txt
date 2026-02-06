@@ -266,7 +266,7 @@ add_subdirectory(gamecore_template)
 
 #add_subdirectory(dedicated_server)
 
-#add_subdirectory(tools/gcpak_editor) # broken
+add_subdirectory(tools/gcpak_editor) # broken
 add_subdirectory(tools/compile_shaders)
 add_subdirectory(tools/package_textures)
 add_subdirectory(tools/package_meshes)

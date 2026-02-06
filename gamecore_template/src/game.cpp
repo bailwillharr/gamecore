@@ -14,7 +14,7 @@
 #include <gamecore/gc_world.h>
 #include <gamecore/gc_window.h>
 #include <gamecore/gc_content.h>
-#include <gamecore/gc_cube_component.h>
+#include <gamecore/gc_renderable_component.h>
 #include <gamecore/gc_camera_component.h>
 #include <gamecore/gc_transform_component.h>
 #include <gamecore/gc_debug_ui.h>
@@ -231,24 +231,24 @@ public:
                 for (int y = 0; y < 6; ++y) {
                     auto& cube = cubes[x * 6 + y];
                     cube = world.createEntity(gc::Name(std::format("cube{}.{}", x, y)), parent, glm::vec3{(x - 2.5f) * 2.0f, 0.0f, (y - 2.5f) * 2.0f});
-                    world.addComponent<gc::CubeComponent>(cube).setMesh(m_meshes[1].get()).setMaterial(m_materials[x].get());
+                    world.addComponent<gc::RenderableComponent>(cube).setMesh(m_meshes[1].get()).setMaterial(m_materials[x].get());
                     world.addComponent<SpinComponent>(cube).setAxis({1.0f, 0.0f, 0.7f}).setRadiansPerSecond(0.0f);
                 }
             }
 
             // add a floor
             const auto floor = world.createEntity(gc::Name("floor"), gc::ENTITY_NONE, {0.0f, 0.0f, -0.5f}, {}, {100.0f, 100.0f, 1.0f});
-            world.addComponent<gc::CubeComponent>(floor).setMesh(m_meshes[3].get()).setMaterial(m_floor_material.get());
+            world.addComponent<gc::RenderableComponent>(floor).setMesh(m_meshes[3].get()).setMaterial(m_floor_material.get());
 
             // camera
             auto camera = world.createEntity(gc::Name("light"), gc::ENTITY_NONE, {0.0f, 0.0f, 67.5f * 25.4e-3f});
             world.addComponent<gc::CameraComponent>(camera).setFOV(glm::radians(45.0f)).setNearPlane(0.1f).setActive(true);
             world.addComponent<MouseMoveComponent>(camera).setMoveSpeed(25.0f).setAcceleration(40.0f).setDeceleration(100.0f).setSensitivity(1e-3f);
-            world.addComponent<gc::CubeComponent>(camera).setVisible(false);
+            world.addComponent<gc::RenderableComponent>(camera).setVisible(false);
 
             const auto shrek_parent = world.createEntity(gc::Name("shrek_parent"), gc::ENTITY_NONE, glm::vec3{0.0f, +100.0f, 5.0f});
             const auto shrek = world.createEntity(gc::Name("shrek"), shrek_parent, glm::vec3{0.0f, +0.0f, -4.331f});
-            world.addComponent<gc::CubeComponent>(shrek).setMaterial(m_materials[5].get()).setMesh(m_meshes[0].get());
+            world.addComponent<gc::RenderableComponent>(shrek).setMaterial(m_materials[5].get()).setMesh(m_meshes[0].get());
             //world.addComponent<FollowComponent>(shrek_parent).setTarget(camera).setMinDistance(25.0f).setSpeed(15.0f);
 
             m_loaded = true;

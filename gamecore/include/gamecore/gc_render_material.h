@@ -7,22 +7,22 @@
 #include "gamecore/gc_vulkan_common.h"
 #include "gamecore/gc_gpu_resources.h"
 #include "gamecore/gc_render_texture.h"
+#include "gamecore/gc_name.h"
 
 namespace gc {
 
 // the ORM and normal map textures can be NULL. This is only for supporting pipelines that only use one or two textures though.
 
 class RenderMaterial {
-    const std::shared_ptr<RenderTexture> m_base_color_texture{};
-    const std::shared_ptr<RenderTexture> m_occlusion_roughness_metallic_texture{}; // can be null
-    const std::shared_ptr<RenderTexture> m_normal_texture{};                       // can be null
-    const std::shared_ptr<GPUPipeline> m_pipeline{};
+    const Name m_base_color_texture{};
+    const Name m_occlusion_roughness_metallic_texture{}; // can be empty
+    const Name m_normal_texture{};                       // can be empty
+    const Name m_pipeline{};
     VkDescriptorSet m_descriptor_set{};
 
 public:
-    RenderMaterial(VkDevice device, VkDescriptorPool descriptor_pool, VkDescriptorSetLayout descriptor_set_layout,
-                   const std::shared_ptr<RenderTexture>& base_color_texture, const std::shared_ptr<RenderTexture>& occlusion_roughness_metallic_texture,
-                   const std::shared_ptr<RenderTexture>& normal_texture, const std::shared_ptr<GPUPipeline>& pipeline)
+    RenderMaterial(VkDevice device, VkDescriptorPool descriptor_pool, VkDescriptorSetLayout descriptor_set_layout, Name base_color_texture,
+                   Name occlusion_roughness_metallic_texture, Name normal_texture, Name pipeline)
         : m_base_color_texture(base_color_texture),
           m_occlusion_roughness_metallic_texture(occlusion_roughness_metallic_texture),
           m_normal_texture(normal_texture),
@@ -31,10 +31,12 @@ public:
         GC_ASSERT(device);
         GC_ASSERT(descriptor_pool);
         GC_ASSERT(descriptor_set_layout);
-        GC_ASSERT(m_base_color_texture);
+        GC_ASSERT(!m_base_color_texture.empty());
         // GC_ASSERT(m_occlusion_roughness_metallic_texture);
         // GC_ASSERT(m_normal_texture);
-        GC_ASSERT(m_pipeline);
+        GC_ASSERT(!m_pipeline.empty());
+
+        const auto& base_color_texture = 
 
         VkDescriptorSetAllocateInfo info{};
         info.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_ALLOCATE_INFO;
@@ -144,6 +146,12 @@ public:
     auto getBaseColorTexture() const { return m_base_color_texture; }
     auto getOcclusionRoughnessMetallicTexture() const { return m_occlusion_roughness_metallic_texture; }
     auto getNormalTexture() const { return m_normal_texture; }
+
+    static RenderMaterial create(const gc::Content& content_manager, gc::Name name)
+    {
+        auto& rb = app().renderBackend();
+        return rb.createMaterial(Name("textures/white"), Name("textures/orm"), Name("textures/normal"), Name("pipelines/fancy"));
+    }
 };
 
 } // namespace gc

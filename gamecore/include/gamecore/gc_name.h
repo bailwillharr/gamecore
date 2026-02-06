@@ -41,9 +41,11 @@ public:
     explicit constexpr Name(std::string_view str) : m_hash(crc32(str)) {}
 #endif
 
-    constexpr bool operator==(const Name& other) const { return m_hash == other.m_hash; }
+    constexpr bool operator==(const Name& other) const noexcept { return m_hash == other.m_hash; }
 
-    constexpr uint32_t getHash() const { return m_hash; }
+    constexpr uint32_t getHash() const noexcept { return m_hash; }
+
+    constexpr bool empty() const noexcept { return m_hash == 0; }
 
     std::string getString() const
     {
@@ -86,5 +88,5 @@ inline void loadNameLookupTable(const std::filesystem::path& file_path)
 
 template <>
 struct std::hash<gc::Name> {
-    constexpr std::size_t operator()(const gc::Name& key) const { return static_cast<size_t>(key.getHash()); }
+    constexpr std::size_t operator()(const gc::Name& key) const noexcept { return static_cast<size_t>(key.getHash()); }
 };

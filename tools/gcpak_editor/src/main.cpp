@@ -12,4 +12,7 @@
 
 #include <stb_image.h>
 
-int main() { return EXIT_SUCCESS; }
+#include <gcpak/gcpak.h>
+#include <gcpak/gcpak_prefab.h>
+
+int main() { std::cout << gcpak::PrefabComponentTransform::getSerializedSize(); }
