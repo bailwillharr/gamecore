@@ -1,25 +1,13 @@
 #pragma once
 
-#include <span>
-
 #include <vec2.hpp>
 #include <vec3.hpp>
 #include <vec4.hpp>
 
-#include "gamecore/gc_vulkan_common.h"
 #include "gamecore/gc_gpu_resources.h"
 #include "gamecore/gc_assert.h"
 
 namespace gc {
-
-struct MeshVertex {
-    glm::vec3 position;
-    glm::vec3 normal;
-    glm::vec4 tangent;
-    glm::vec2 uv;
-
-    static consteval int floatsPerVertex() { return static_cast<int>(sizeof(position) + sizeof(normal) + sizeof(tangent) + sizeof(uv)) / 4; }
-};
 
 class RenderMesh {
     GPUBuffer m_vertex_index_buffer;
@@ -59,12 +47,6 @@ public:
 
     // Ensure isUploaded() returned true before calling this
     void draw(VkCommandBuffer cmd, VkSemaphore timeline_semaphore, uint64_t signal_value);
-
-    static RenderMesh create(const gc::Content& content_manager, gc::Name name)
-    {
-        auto& rb = app().renderBackend();
-        return rb.createMeshFromAsset(content_manager.findAsset(name, gcpak::GcpakAssetType::MESH_POS12_NORM12_TANG16_UV8_INDEXED16));
-    }
 };
 
 } // namespace gc

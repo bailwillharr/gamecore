@@ -1215,16 +1215,16 @@ RenderTexture RenderBackend::createTexture(std::span<const uint8_t> r8g8b8a8_pak
         m_delete_queue.markForDeletion(command_buffer_deletion_entry);
     }
 
-    auto gpu_image = std::make_shared<GPUImage>(m_delete_queue, image, allocation);
+    auto image_view = vkutils::createImageView(m_device.getHandle(), image, image_format, VK_IMAGE_ASPECT_COLOR_BIT, mip_levels);
+
+    GPUTexture gpu_texture(m_delete_queue, image, allocation, image_view);
 
     // The destructor for GPUStagingBuffer will be called when this function returns.
     // It will be actually destroyed only after the image has been uploaded.
     gpu_staging_buffer.useResource(m_transfer_timeline_semaphore, m_transfer_timeline_value);
-    gpu_image->useResource(m_transfer_timeline_semaphore, m_transfer_timeline_value);
+    gpu_texture.useResource(m_transfer_timeline_semaphore, m_transfer_timeline_value);
 
-    auto image_view = vkutils::createImageView(m_device.getHandle(), image, image_format, VK_IMAGE_ASPECT_COLOR_BIT, mip_levels);
-
-    return RenderTexture(GPUImageView(m_delete_queue, image_view, gpu_image));
+    return RenderTexture(std::move(gpu_texture));
 };
 
 RenderTexture RenderBackend::createCubeTexture(std::array<std::span<const uint8_t>, 6> r8g8b8a8_paks, bool srgb)
@@ -1389,23 +1389,17 @@ RenderTexture RenderBackend::createCubeTexture(std::array<std::span<const uint8_
         m_delete_queue.markForDeletion(command_buffer_deletion_entry);
     }
 
-    auto gpu_image = std::make_shared<GPUImage>(m_delete_queue, image, allocation);
+    auto image_view = vkutils::createImageView(m_device.getHandle(), image, image_format, VK_IMAGE_ASPECT_COLOR_BIT, mip_levels, true);
+    GPUTexture gpu_texture(m_delete_queue, image, allocation, image_view);
 
     // The destructor for GPUStagingBuffer will be called when this function returns.
     // It will be actually destroyed only after the image has been uploaded.
     gpu_staging_buffer.useResource(m_transfer_timeline_semaphore, m_transfer_timeline_value);
-    gpu_image->useResource(m_transfer_timeline_semaphore, m_transfer_timeline_value);
+    gpu_texture.useResource(m_transfer_timeline_semaphore, m_transfer_timeline_value);
 
-    auto image_view = vkutils::createImageView(m_device.getHandle(), image, image_format, VK_IMAGE_ASPECT_COLOR_BIT, mip_levels, true);
-
-    return RenderTexture(GPUImageView(m_delete_queue, image_view, gpu_image));
+    return RenderTexture(std::move(gpu_texture));
 }
 
-RenderMaterial RenderBackend::createMaterial(Name base_color_texture, Name occlusion_roughness_metallic_texture, Name normal_texture, Name pipeline)
-{
-    return RenderMaterial(m_device.getHandle(), m_main_descriptor_pool, m_descriptor_set_layout, base_color_texture, occlusion_roughness_metallic_texture,
-                          normal_texture, pipeline);
-}
 RenderMesh RenderBackend::createMesh(std::span<const MeshVertex> vertices, std::span<const uint16_t> indices)
 {
     GC_ASSERT(vertices.size() <= static_cast<size_t>(std::numeric_limits<decltype(indices)::value_type>::max()));
@@ -1530,20 +1524,9 @@ RenderMesh RenderBackend::createMesh(std::span<const MeshVertex> vertices, std::
     return RenderMesh(std::move(managed_buffer), static_cast<VkDeviceSize>(vertices_size), VK_INDEX_TYPE_UINT16, num_indices);
 }
 
-RenderMesh RenderBackend::createMeshFromAsset(std::span<const uint8_t> asset)
+RenderMaterial RenderBackend::createMaterial(RenderTexture& base_color, RenderTexture& orm, RenderTexture& normal)
 {
-    GC_ASSERT(asset.size() > 2);
-    uint16_t vertex_count{};
-    std::memcpy(&vertex_count, asset.data(), sizeof(uint16_t));
-
-    const uint8_t* const vertices_location = asset.data() + sizeof(uint16_t);
-    const uint8_t* const indices_location = vertices_location + vertex_count * sizeof(MeshVertex);
-    const size_t index_count = (asset.data() + asset.size() - indices_location) / sizeof(uint16_t);
-
-    const std::span<const MeshVertex> vertices(reinterpret_cast<const MeshVertex*>(vertices_location), vertex_count);
-    const std::span<const uint16_t> indices(reinterpret_cast<const uint16_t*>(indices_location), index_count);
-
-    return createMesh(vertices, indices);
+    return RenderMaterial(m_device.getHandle(), m_main_descriptor_pool, m_descriptor_set_layout, base_color, orm, normal);
 }
 
 void RenderBackend::waitIdle()

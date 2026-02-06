@@ -1,42 +1,30 @@
 #pragma once
 
 #include <array>
-#include <memory>
 
 #include "gamecore/gc_assert.h"
 #include "gamecore/gc_vulkan_common.h"
-#include "gamecore/gc_gpu_resources.h"
 #include "gamecore/gc_render_texture.h"
-#include "gamecore/gc_name.h"
 
 namespace gc {
 
-// the ORM and normal map textures can be NULL. This is only for supporting pipelines that only use one or two textures though.
-
 class RenderMaterial {
-    const Name m_base_color_texture{};
-    const Name m_occlusion_roughness_metallic_texture{}; // can be empty
-    const Name m_normal_texture{};                       // can be empty
-    const Name m_pipeline{};
+    RenderTexture& m_base_color_texture;
+    RenderTexture& m_occlusion_roughness_metallic_texture;
+    RenderTexture& m_normal_texture;
+
     VkDescriptorSet m_descriptor_set{};
 
 public:
-    RenderMaterial(VkDevice device, VkDescriptorPool descriptor_pool, VkDescriptorSetLayout descriptor_set_layout, Name base_color_texture,
-                   Name occlusion_roughness_metallic_texture, Name normal_texture, Name pipeline)
+    RenderMaterial(VkDevice device, VkDescriptorPool descriptor_pool, VkDescriptorSetLayout descriptor_set_layout, RenderTexture& base_color_texture,
+                   RenderTexture& occlusion_roughness_metallic_texture, RenderTexture& normal_texture)
         : m_base_color_texture(base_color_texture),
           m_occlusion_roughness_metallic_texture(occlusion_roughness_metallic_texture),
-          m_normal_texture(normal_texture),
-          m_pipeline(pipeline)
+          m_normal_texture(normal_texture)
     {
         GC_ASSERT(device);
         GC_ASSERT(descriptor_pool);
         GC_ASSERT(descriptor_set_layout);
-        GC_ASSERT(!m_base_color_texture.empty());
-        // GC_ASSERT(m_occlusion_roughness_metallic_texture);
-        // GC_ASSERT(m_normal_texture);
-        GC_ASSERT(!m_pipeline.empty());
-
-        const auto& base_color_texture = 
 
         VkDescriptorSetAllocateInfo info{};
         info.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_ALLOCATE_INFO;
@@ -48,7 +36,7 @@ public:
         std::array<VkDescriptorImageInfo, 3> descriptor_image_infos{};
         std::array<VkWriteDescriptorSet, 3> writes{};
 
-        descriptor_image_infos[0].imageView = m_base_color_texture->getImageView().getHandle();
+        descriptor_image_infos[0].imageView = m_base_color_texture.getImageView();
         descriptor_image_infos[0].imageLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
         writes[0].sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
         writes[0].dstSet = m_descriptor_set;
@@ -58,12 +46,7 @@ public:
         writes[0].descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
         writes[0].pImageInfo = &descriptor_image_infos[0];
 
-        if (m_occlusion_roughness_metallic_texture) {
-            descriptor_image_infos[1].imageView = m_occlusion_roughness_metallic_texture->getImageView().getHandle();
-        }
-        else {
-            descriptor_image_infos[1].imageView = descriptor_image_infos[0].imageView;
-        }
+        descriptor_image_infos[1].imageView = m_occlusion_roughness_metallic_texture.getImageView();
         descriptor_image_infos[1].imageLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
         writes[1].sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
         writes[1].dstSet = m_descriptor_set;
@@ -73,12 +56,7 @@ public:
         writes[1].descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
         writes[1].pImageInfo = &descriptor_image_infos[1];
 
-        if (m_normal_texture) {
-            descriptor_image_infos[2].imageView = m_normal_texture->getImageView().getHandle();
-        }
-        else {
-            descriptor_image_infos[2].imageView = descriptor_image_infos[0].imageView;
-        }
+        descriptor_image_infos[2].imageView = m_normal_texture.getImageView();
         descriptor_image_infos[2].imageLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
         writes[2].sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
         writes[2].dstSet = m_descriptor_set;
@@ -91,42 +69,29 @@ public:
         vkUpdateDescriptorSets(device, static_cast<uint32_t>(writes.size()), writes.data(), 0, nullptr);
     }
 
-    // Binds pipeline and descriptor sets. Check isUploaded() first
-    void bind(VkCommandBuffer cmd, VkPipelineLayout pipeline_layout, VkSemaphore timeline_semaphore, uint64_t signal_value,
-              const RenderMaterial* last_used_material = nullptr) const
+    // Binds descriptor sets. Check isUploaded() first
+    void bind(VkCommandBuffer cmd, VkPipelineLayout pipeline_layout, VkSemaphore timeline_semaphore, uint64_t signal_value) const
     {
         GC_ASSERT(cmd);
         GC_ASSERT(pipeline_layout);
         GC_ASSERT(timeline_semaphore);
-        GC_ASSERT(m_pipeline->getHandle());
 
-        if (!last_used_material || (last_used_material && last_used_material->m_pipeline != m_pipeline)) {
-            vkCmdBindPipeline(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, m_pipeline->getHandle());
-            m_pipeline->useResource(timeline_semaphore, signal_value);
-        }
-
-        if (!last_used_material || (last_used_material && last_used_material->m_descriptor_set != m_descriptor_set)) {
-            vkCmdBindDescriptorSets(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, pipeline_layout, 0, 1, &m_descriptor_set, 0, nullptr);
-            m_base_color_texture->getImageView().useResource(timeline_semaphore, signal_value);
-            if (m_occlusion_roughness_metallic_texture) {
-                m_occlusion_roughness_metallic_texture->getImageView().useResource(timeline_semaphore, signal_value);
-            }
-            if (m_normal_texture) {
-                m_normal_texture->getImageView().useResource(timeline_semaphore, signal_value);
-            }
-        }
+        vkCmdBindDescriptorSets(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, pipeline_layout, 0, 1, &m_descriptor_set, 0, nullptr);
+        m_base_color_texture.useResource(timeline_semaphore, signal_value);
+        m_occlusion_roughness_metallic_texture.useResource(timeline_semaphore, signal_value);
+        m_normal_texture.useResource(timeline_semaphore, signal_value);
     }
 
     // Checks that all textures for this material are uploaded
     bool isUploaded() const
     {
-        if (!m_base_color_texture->isUploaded()) {
+        if (!m_base_color_texture.isUploaded()) {
             return false;
         }
-        if (m_occlusion_roughness_metallic_texture && !m_occlusion_roughness_metallic_texture->isUploaded()) {
+        if (!m_occlusion_roughness_metallic_texture.isUploaded()) {
             return false;
         }
-        if (m_normal_texture && !m_normal_texture->isUploaded()) {
+        if (!m_normal_texture.isUploaded()) {
             return false;
         }
         return true;
@@ -134,23 +99,9 @@ public:
 
     void waitForUpload() const
     {
-        m_base_color_texture->waitForUpload();
-        if (m_occlusion_roughness_metallic_texture) {
-            m_occlusion_roughness_metallic_texture->waitForUpload();
-        }
-        if (m_normal_texture) {
-            m_normal_texture->waitForUpload();
-        }
-    }
-
-    auto getBaseColorTexture() const { return m_base_color_texture; }
-    auto getOcclusionRoughnessMetallicTexture() const { return m_occlusion_roughness_metallic_texture; }
-    auto getNormalTexture() const { return m_normal_texture; }
-
-    static RenderMaterial create(const gc::Content& content_manager, gc::Name name)
-    {
-        auto& rb = app().renderBackend();
-        return rb.createMaterial(Name("textures/white"), Name("textures/orm"), Name("textures/normal"), Name("pipelines/fancy"));
+        m_base_color_texture.waitForUpload();
+        m_occlusion_roughness_metallic_texture.waitForUpload();
+        m_normal_texture.waitForUpload();
     }
 };
 

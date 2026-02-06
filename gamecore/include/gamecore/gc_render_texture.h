@@ -8,13 +8,13 @@ namespace gc {
 
 class RenderTexture {
 
-    GPUImageView m_image_view;
+    GPUTexture m_texture;
     mutable bool m_uploaded;
 
 public:
-    explicit RenderTexture(GPUImageView&& image_view) : m_image_view(std::move(image_view)), m_uploaded(false) {}
+    explicit RenderTexture(GPUTexture&& texture) : m_texture(std::move(texture)), m_uploaded(false) {}
     RenderTexture(const RenderTexture&) = delete;
-    RenderTexture(RenderTexture&& other) noexcept : m_image_view(std::move(other.m_image_view)), m_uploaded(other.m_uploaded) {}
+    RenderTexture(RenderTexture&& other) noexcept : m_texture(std::move(other.m_texture)), m_uploaded(other.m_uploaded) {}
 
     RenderTexture& operator=(const RenderTexture&) = delete;
     RenderTexture& operator=(RenderTexture&&) = delete;
@@ -25,8 +25,8 @@ public:
             return true;
         }
         // if the backing image is no longer in use by the queue, assuming the backing image was just created, this means the image is uploaded.
-        if (m_image_view.getImage()->isFree()) {
-            GC_DEBUG("Resource uploaded: {}", reinterpret_cast<void*>(m_image_view.getImage()->getHandle()));
+        if (m_texture.isFree()) {
+            GC_DEBUG("RenderTexture uploaded: {}", reinterpret_cast<void*>(m_texture.getImage()));
             m_uploaded = true;
             return true;
         }
@@ -36,12 +36,17 @@ public:
     void waitForUpload() const
     {
         if (!m_uploaded) {
-            m_image_view.getImage()->waitForFree();
+            m_texture.waitForFree();
             m_uploaded = true;
         }
     }
 
-    GPUImageView& getImageView() { return m_image_view; }
+    VkImageView getImageView() const { return m_texture.getImageView(); }
+
+    void useResource(VkSemaphore timeline_semaphore, uint64_t resource_free_signal_value)
+    {
+        m_texture.useResource(timeline_semaphore, resource_free_signal_value);
+    }
 };
 
 } // namespace gc

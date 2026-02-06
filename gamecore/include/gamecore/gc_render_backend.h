@@ -21,9 +21,7 @@
 #pragma once
 
 #include <array>
-#include <vector>
 #include <span>
-#include <memory>
 
 #include <vec2.hpp>
 #include <vec3.hpp>
@@ -37,8 +35,9 @@
 #include "gamecore/gc_vulkan_swapchain.h"
 #include "gamecore/gc_gpu_resources.h"
 #include "gamecore/gc_render_texture.h"
-#include "gamecore/gc_render_material.h"
 #include "gamecore/gc_render_mesh.h"
+#include "gamecore/gc_mesh_vertex.h"
+#include "gamecore/gc_render_material.h"
 
 struct SDL_Window; // forward-dec
 
@@ -144,12 +143,10 @@ public:
     GPUPipeline createPipeline(std::span<const uint8_t> vertex_spv, std::span<const uint8_t> fragment_spv);
     GPUPipeline createSkyboxPipeline();
 
-    // Memory layout of textures is upside down
     RenderTexture createTexture(std::span<const uint8_t> r8g8b8a8_pak, bool srgb);
     RenderTexture createCubeTexture(std::array<std::span<const uint8_t>, 6> r8g8b8a8_paks, bool srgb);
-    RenderMaterial createMaterial(Name base_color_texture, Name occlusion_roughness_metallic_texture, Name normal_texture, Name pipeline);
     RenderMesh createMesh(std::span<const MeshVertex> vertices, std::span<const uint16_t> indices);
-    RenderMesh createMeshFromAsset(std::span<const uint8_t> asset);
+    RenderMaterial createMaterial(RenderTexture& base_color, RenderTexture& orm, RenderTexture& normal);
 
     RenderBackendInfo getInfo() const
     {
