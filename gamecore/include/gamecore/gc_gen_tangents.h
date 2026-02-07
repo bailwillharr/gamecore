@@ -2,7 +2,7 @@
 
 #include <vector>
 
-#include <gamecore/gc_render_mesh.h>
+#include <gamecore/gc_resources.h>
 
 namespace gc {
 

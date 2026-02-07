@@ -25,7 +25,7 @@ template <typename T>
 concept ValidComponent = std::is_trivially_copyable_v<T>;
 
 template <typename T>
-concept ValidDerivedSystem = requires(World& world) { T(world); } && std::is_base_of_v<System, T> && !std::is_same_v<System, T>;
+concept ValidDerivedSystem = std::is_base_of_v<System, T> && !std::is_same_v<System, T>;
 
 constexpr Entity ENTITY_NONE = std::numeric_limits<Entity>::max();
 constexpr size_t MAX_COMPONENTS = 32;

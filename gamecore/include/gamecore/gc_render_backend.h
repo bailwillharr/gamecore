@@ -75,12 +75,14 @@ class RenderBackend {
     // pipeline layout for most 3D rendering
     VkPipelineLayout m_pipeline_layout{};
 
+    std::unique_ptr<GPUPipeline> m_pipeline;
+
     VkSampleCountFlagBits m_msaa_samples{};
 
     uint64_t m_frame_count{};
 
     // Skybox stuff
-    VkPipeline m_skybox_pipeline{};
+    //VkPipeline m_skybox_pipeline{};
 
     // Images:
 
@@ -140,8 +142,8 @@ public:
     /* Destroys any GPU resources that have been added to the delete queue and are not in use */
     void cleanupGPUResources();
 
-    GPUPipeline createPipeline(std::span<const uint8_t> vertex_spv, std::span<const uint8_t> fragment_spv);
-    GPUPipeline createSkyboxPipeline();
+    void createPipeline(std::span<const uint8_t> vertex_spv, std::span<const uint8_t> fragment_spv);
+    //GPUPipeline createSkyboxPipeline();
 
     RenderTexture createTexture(std::span<const uint8_t> r8g8b8a8_pak, bool srgb);
     RenderTexture createCubeTexture(std::array<std::span<const uint8_t>, 6> r8g8b8a8_paks, bool srgb);

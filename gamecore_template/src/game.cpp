@@ -1,9 +1,6 @@
 #include "game.h"
 
-#include "gamecore/gc_ecs.h"
-#include "gen_mesh.h"
-#include "spin.h"
-#include "mouse_move.h"
+#include <memory>
 
 #include <mio/mmap.hpp>
 
@@ -11,14 +8,22 @@
 
 #include <gamecore/gc_app.h>
 #include <gamecore/gc_render_backend.h>
+#include <gamecore/gc_ecs.h>
 #include <gamecore/gc_world.h>
 #include <gamecore/gc_window.h>
 #include <gamecore/gc_content.h>
+#include <gamecore/gc_render_system.h>
+#include <gamecore/gc_camera_system.h>
 #include <gamecore/gc_renderable_component.h>
 #include <gamecore/gc_camera_component.h>
 #include <gamecore/gc_transform_component.h>
 #include <gamecore/gc_debug_ui.h>
 #include <gamecore/gc_resource_manager.h>
+#include <gamecore/gc_gpu_resources.h>
+
+#include "gen_mesh.h"
+#include "spin.h"
+#include "mouse_move.h"
 
 class FollowSystem; // forward-dec
 
@@ -28,6 +33,10 @@ class FollowComponent {
     gc::Entity m_target{gc::ENTITY_NONE};
     float m_speed = 1.0f;
     float m_min_distance = 1.0f;
+    float m_cooldown_seconds = 1.0f;
+    gc::Entity m_texture_target{gc::ENTITY_NONE};
+
+    float m_time_since_contact = std::numeric_limits<float>::max();
 
 public:
     FollowComponent& setTarget(gc::Entity target)
@@ -45,11 +54,27 @@ public:
         m_min_distance = min_distance;
         return *this;
     }
+    FollowComponent& setCooldownSeconds(float cooldown_seconds)
+    {
+        m_cooldown_seconds = cooldown_seconds;
+        return *this;
+    }
+    FollowComponent& setTextureTarget(gc::Entity texture_target)
+    {
+        m_texture_target = texture_target;
+        return *this;
+    }
 };
 
 class FollowSystem : public gc::System {
+    gc::ResourceManager& m_rm;
+
+    int current_texture = 0;
+    const std::array<gc::Name, 7> m_textures{gc::Name("box.jpg"),  gc::Name("bricks.jpg"),  gc::Name("fire.jpg"),    gc::Name("nuke.jpg"),
+                                             gc::Name("moss.png"), gc::Name("uvcheck.png"), gc::Name("8k_earth.jpg")};
+
 public:
-    FollowSystem(gc::World& world) : gc::System(world) {}
+    FollowSystem(gc::World& world, gc::ResourceManager& rm) : gc::System(world), m_rm(rm) {}
 
     void onUpdate(gc::FrameState& frame_state) override
     {
@@ -67,39 +92,40 @@ public:
                     if (distance < f.m_min_distance) {
                         t.setPosition(t.getPosition() - follower_to_target_norm * (f.m_min_distance - distance));
                     }
+                    if (distance < f.m_min_distance + 1.0f) {
+                        if (f.m_time_since_contact > f.m_cooldown_seconds) {
+                            f.m_time_since_contact = 0.0f;
+                        }
+                    }
                     else {
                         t.setPosition(t.getPosition() +
                                       follower_to_target_norm * fminf(f.m_speed * static_cast<float>(frame_state.delta_time), distance - f.m_min_distance));
                     }
+                    if (f.m_time_since_contact == 0.0f) {
+                        const auto ren = m_world.getComponent<gc::RenderableComponent>(f.m_texture_target);
+                        if (ren) {
+                            const auto& old_material = m_rm.get<gc::ResourceMaterial>(ren->m_material);
+                            auto new_material = old_material;
+                            new_material.base_color_texture = m_textures[current_texture % m_textures.size()];
+                            current_texture += 1;
+                            ren->m_material = m_rm.add(std::move(new_material));
+                            GC_TRACE("Material switched to: {}", ren->m_material.getString());
+                        }
+                        else {
+                            const auto texture_target_t = m_world.getComponent<gc::TransformComponent>(f.m_texture_target);
+                            GC_WARN_ONCE("FollowComponent of entity '{}' has texture target '{}' with no RenderableComponent!", t.name.getString(),
+                                         texture_target_t ? texture_target_t->name.getString() : std::string("ENTITY_NONE"));
+                        }
+                    }
+                    //f.m_time_since_contact += static_cast<float>(frame_state.delta_time);
+                }
+                else {
+                    GC_WARN_ONCE("FollowComponent of entity '{}' has target '{}' with a different parent!", t.name.getString(), target_t->name.getString());
                 }
             }
         });
     }
 };
-
-static gc::RenderTexture createORMTexture(gc::RenderBackend& render_backend, float roughness, float metallic)
-{
-    std::array<uint8_t, 4 + 4 + 4> image_data{};              // uint32 width, uint32 height, and one RGBA pixel
-    image_data[0] = 1u;                                       // width = 1
-    image_data[4] = 1u;                                       // height = 1
-    image_data[8] = 255u;                                     // R channel occlusion
-    image_data[9] = static_cast<uint8_t>(roughness * 255.0f); // G channel roughness
-    image_data[10] = static_cast<uint8_t>(metallic * 255.0f); // B channel metallic
-    image_data[11] = 0u;                                      // unused alpha channel
-    return render_backend.createTexture(image_data, false);
-}
-
-static gc::RenderTexture createNormalTexture(gc::RenderBackend& render_backend)
-{
-    std::array<uint8_t, 4 + 4 + 4> image_data{}; // uint32 width, uint32 height, and one RGBA pixel
-    image_data[0] = 1u;                          // width = 1
-    image_data[4] = 1u;                          // height = 1
-    image_data[8] = 128u;                        // R channel (tangent space X)
-    image_data[9] = 128u;                        // G channel (tangent space Y)
-    image_data[10] = 255u;                       // B channel (tangent space Z)
-    image_data[11] = 0u;                         // unused alpha channel
-    return render_backend.createTexture(image_data, false);
-}
 
 class WorldLoadSystem : public gc::System {
     bool m_loaded = false;
@@ -113,18 +139,53 @@ class WorldLoadSystem : public gc::System {
 public:
     WorldLoadSystem(gc::World& world) : gc::System(world) {}
 
-    void onUpdate(gc::FrameState& frame_state) override
+    void onUpdate([[maybe_unused]] gc::FrameState& frame_state) override
     {
         if (!m_loaded) {
 
             gc::App& app = gc::App::instance();
+            gc::ResourceManager& resource_manager = app.resourceManager();
             gc::RenderBackend& render_backend = app.renderBackend();
             gc::Content& content = app.content();
             gc::World& world = app.world();
 
-            auto pipeline = std::make_shared<gc::GPUPipeline>(
-                render_backend.createPipeline(content.findAsset(gc::Name("fancy.vert"), gcpak::GcpakAssetType::SPIRV_SHADER),
-                                              content.findAsset(gc::Name("fancy.frag"), gcpak::GcpakAssetType::SPIRV_SHADER)));
+            render_backend.createPipeline(content.findAsset(gc::Name("fancy.vert"), gcpak::GcpakAssetType::SPIRV_SHADER),
+                                          content.findAsset(gc::Name("fancy.frag"), gcpak::GcpakAssetType::SPIRV_SHADER));
+
+            world.registerComponent<gc::RenderableComponent, gc::ComponentArrayType::DENSE>();
+            world.registerComponent<gc::CameraComponent, gc::ComponentArrayType::SPARSE>();
+            world.registerComponent<SpinComponent, gc::ComponentArrayType::SPARSE>();
+            world.registerComponent<MouseMoveComponent, gc::ComponentArrayType::SPARSE>();
+            world.registerComponent<FollowComponent, gc::ComponentArrayType::SPARSE>();
+            world.registerSystem<gc::RenderSystem>(resource_manager, render_backend);
+            world.registerSystem<gc::CameraSystem>();
+            world.registerSystem<SpinSystem>();
+            world.registerSystem<MouseMoveSystem>();
+            world.registerSystem<FollowSystem>(resource_manager);
+
+            // camera
+            auto camera = world.createEntity(gc::Name("light"), gc::ENTITY_NONE, {0.0f, 0.0f, 67.5f * 25.4e-3f});
+            world.addComponent<gc::CameraComponent>(camera).setFOV(glm::radians(45.0f)).setNearPlane(0.1f).setActive(true);
+            world.addComponent<MouseMoveComponent>(camera).setMoveSpeed(25.0f).setAcceleration(40.0f).setDeceleration(100.0f).setSensitivity(1e-3f);
+
+            const auto shrek_parent = world.createEntity(gc::Name("shrek_parent"), gc::ENTITY_NONE, glm::vec3{0.0f, +100.0f, 5.0f});
+            world.addComponent<FollowComponent>(shrek_parent).setTarget(camera).setMinDistance(5.0f).setSpeed(10.0f);
+
+            const auto shrek = world.createEntity(gc::Name("shrek"), shrek_parent, glm::vec3{0.0f, +0.0f, -4.331f});
+            world.addComponent<gc::RenderableComponent>(shrek).setMaterial(gc::Name("default_material")).setMesh(gc::Name("shrek.obj"));
+
+            world.getComponent<FollowComponent>(shrek_parent)->setTextureTarget(shrek);
+
+            // but cannot load materials from disk yet, so create manually:
+            {
+                gc::ResourceMaterial default_material{};
+                default_material.base_color_texture = gc::Name("bricks-mortar-albedo.png");
+                default_material.occlusion_roughness_metallic_texture = gc::Name("bricks-mortar-orm.png");
+                default_material.normal_texture = gc::Name("bricks-mortar-normal.png");
+                resource_manager.add<gc::ResourceMaterial>(std::move(default_material), gc::Name("default_material"));
+            }
+
+#if 0
 
             {
                 auto orm_texture = [&] {
@@ -179,16 +240,8 @@ public:
                 m_skybox_material = std::make_unique<gc::RenderMaterial>(render_backend.createMaterial(skybox_texture, nullptr, nullptr, skybox_pipeline));
                 frame_state.draw_data.setSkyboxMaterial(m_skybox_material.get());
             }
-
-            m_meshes[0] = std::make_unique<gc::RenderMesh>(
-                render_backend.createMeshFromAsset(content.findAsset(gc::Name("shrek.obj"), gcpak::GcpakAssetType::MESH_POS12_NORM12_TANG16_UV8_INDEXED16)));
-            m_meshes[1] = std::make_unique<gc::RenderMesh>(genSphereMesh(render_backend, 1.0f, 64));
-            m_meshes[2] = std::make_unique<gc::RenderMesh>(genSphereMesh(render_backend, 0.5f, 16, true));
-            m_meshes[3] = std::make_unique<gc::RenderMesh>(genPlaneMesh(render_backend, 25.0f));
-            for (const auto& mesh : m_meshes) {
-                mesh->waitForUpload();
-            }
-
+#endif
+#if 0
             world.registerComponent<SpinComponent, gc::ComponentArrayType::SPARSE>();
             world.registerComponent<MouseMoveComponent, gc::ComponentArrayType::SPARSE>();
             world.registerComponent<FollowComponent, gc::ComponentArrayType::SPARSE>();
@@ -240,24 +293,17 @@ public:
             const auto floor = world.createEntity(gc::Name("floor"), gc::ENTITY_NONE, {0.0f, 0.0f, -0.5f}, {}, {100.0f, 100.0f, 1.0f});
             world.addComponent<gc::RenderableComponent>(floor).setMesh(m_meshes[3].get()).setMaterial(m_floor_material.get());
 
-            // camera
-            auto camera = world.createEntity(gc::Name("light"), gc::ENTITY_NONE, {0.0f, 0.0f, 67.5f * 25.4e-3f});
-            world.addComponent<gc::CameraComponent>(camera).setFOV(glm::radians(45.0f)).setNearPlane(0.1f).setActive(true);
-            world.addComponent<MouseMoveComponent>(camera).setMoveSpeed(25.0f).setAcceleration(40.0f).setDeceleration(100.0f).setSensitivity(1e-3f);
-            world.addComponent<gc::RenderableComponent>(camera).setVisible(false);
-
             const auto shrek_parent = world.createEntity(gc::Name("shrek_parent"), gc::ENTITY_NONE, glm::vec3{0.0f, +100.0f, 5.0f});
             const auto shrek = world.createEntity(gc::Name("shrek"), shrek_parent, glm::vec3{0.0f, +0.0f, -4.331f});
             world.addComponent<gc::RenderableComponent>(shrek).setMaterial(m_materials[5].get()).setMesh(m_meshes[0].get());
-            //world.addComponent<FollowComponent>(shrek_parent).setTarget(camera).setMinDistance(25.0f).setSpeed(15.0f);
+            // world.addComponent<FollowComponent>(shrek_parent).setTarget(camera).setMinDistance(25.0f).setSpeed(15.0f);
+
+#endif
 
             m_loaded = true;
         }
     }
 };
-
-const std::array<gc::Name, 7> WorldLoadSystem::s_texture_names{gc::Name("box.jpg"),  gc::Name("bricks.jpg"),  gc::Name("fire.jpg"),    gc::Name("nuke.jpg"),
-                                                               gc::Name("moss.png"), gc::Name("uvcheck.png"), gc::Name("8k_earth.jpg")};
 
 void buildAndStartGame(gc::App& app, Options options)
 {
@@ -280,44 +326,6 @@ void buildAndStartGame(gc::App& app, Options options)
     app.window().setWindowVisibility(true);
 
     // app.debugUI().active = true;
-
-    class MyResource {
-        std::string m_name;
-
-    public:
-        MyResource() = delete;
-        explicit MyResource(std::string name)
-        {
-            static double val = 0.0;
-            m_name = name + std::to_string(val);
-            ++val;
-        }
-        MyResource(const MyResource& other) = delete;
-        MyResource(MyResource&&) noexcept = default;
-
-        ~MyResource() { GC_TRACE("Destroying {}", m_name);
-        }
-
-        MyResource& operator=(const MyResource&) = delete;
-        MyResource& operator=(MyResource&&) = delete;
-
-        static MyResource create(const gc::Content& content_manager, gc::Name name)
-        {
-            (void)content_manager;
-            return MyResource(name.getString());
-        }
-
-        std::string getName() const { return m_name; }
-    };
-
-    const auto& res_hello1 = app.resourceManager().get<MyResource>(gc::Name("hello"));
-    const auto& res_hello2 = app.resourceManager().get<MyResource>(gc::Name("hello"));
-    const auto& res_foo1 = app.resourceManager().get<MyResource>(gc::Name("foo"));
-    const auto& res_foo2 = app.resourceManager().get<MyResource>(gc::Name("foo"));
-    GC_TRACE("res_hello1 name: {}", res_hello1.getName());
-    GC_TRACE("res_hello2 name: {}", res_hello2.getName());
-    GC_TRACE("res_foo1 name: {}", res_foo1.getName());
-    GC_TRACE("res_foo2 name: {}", res_foo2.getName());
 
     gc::World& world = app.world();
     world.registerSystem<WorldLoadSystem>();

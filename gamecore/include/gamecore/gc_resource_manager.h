@@ -56,6 +56,11 @@ public:
             return *(it->second);
         }
     }
+
+    // returns false if already exists
+    bool add(T&& resource, Name name) { return m_resources.try_emplace(name, std::make_unique<T>(std::move(resource))).second; }
+
+    void deleteResource(Name name) { m_resources.erase(name); }
 };
 
 class ResourceManager {
@@ -78,6 +83,43 @@ public:
         IResourceCache* i_cache = m_caches[index].get();
         ResourceCache<T>* cache = static_cast<ResourceCache<T>*>(i_cache);
         return cache->get(m_content_manager, name);
+    }
+
+    // Generates random name if none given
+    // Returns the name if successful otherwise empty on error (resource already exists)
+    template <ValidResource T>
+    Name add(T&& resource, Name name = {})
+    {
+        const uint32_t index = getResourceIndex<T>();
+        if (index >= m_caches.size()) {
+            m_caches.emplace_back(std::make_unique<ResourceCache<T>>());
+            GC_ASSERT(index + 1 == m_caches.size());
+        }
+        IResourceCache* i_cache = m_caches[index].get();
+        GC_ASSERT(i_cache);
+        ResourceCache<T>* cache = static_cast<ResourceCache<T>*>(i_cache);
+        if (name.empty()) {
+            name = Name(static_cast<uint32_t>(rand() << 16 | rand()));
+        }
+        if (cache->add(std::move(resource), name)) {
+            return name;
+        }
+        else {
+            return {};
+        }
+    }
+
+    // Deletes a resource from the cache.
+    // This will invalidate references to that resource.
+    template <ValidResource T>
+    void deleteResource(Name name)
+    {
+        uint32_t index = getResourceIndex<T>();
+        if (index < m_caches.size()) {
+            IResourceCache* i_cache = m_caches[index].get();
+            ResourceCache<T>* cache = static_cast<ResourceCache<T>*>(i_cache);
+            cache->deleteResource(name);
+        }
     }
 };
 

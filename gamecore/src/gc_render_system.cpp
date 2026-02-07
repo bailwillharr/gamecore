@@ -11,7 +11,10 @@
 
 namespace gc {
 
-RenderSystem::RenderSystem(gc::World& world) : gc::System(world) {}
+RenderSystem::RenderSystem(gc::World& world, ResourceManager& resource_manager, RenderBackend& render_backend)
+    : gc::System(world), m_render_object_manager(resource_manager, render_backend)
+{
+}
 
 void RenderSystem::onUpdate(FrameState& frame_state)
 {
@@ -20,16 +23,21 @@ void RenderSystem::onUpdate(FrameState& frame_state)
     m_world.forEach<TransformComponent, RenderableComponent>([&]([[maybe_unused]] Entity entity, TransformComponent& t, RenderableComponent& c) {
         if (c.m_visible && !c.m_mesh.empty() && !c.m_material.empty()) {
             // resolve resources
-            ResourceManager& rm = app().resourceManager();
-            auto& mesh = rm.get<RenderMesh>(c.m_mesh);
-            auto& material = rm.get<RenderMaterial>(c.m_material);
-
-            frame_state.draw_data.drawMesh(t.getWorldMatrix(), c.m_mesh, c.m_material);
+            const auto mesh_ref = m_render_object_manager.getRenderMesh(c.m_mesh);
+            const auto material_ref = m_render_object_manager.getRenderMaterial(c.m_material);
+            mesh_ref->setLastUsedFrame(frame_state.frame_count);
+            material_ref->setLastUsedFrame(frame_state.frame_count);
+            frame_state.draw_data.drawMesh(t.getWorldMatrix(), mesh_ref, material_ref);
         }
         if (t.name == Name("light")) {
             frame_state.draw_data.setLightPos(t.getWorldPosition());
         }
     });
+
+    constexpr uint64_t INACTIVE_OBJECT_LIFETIME_FRAMES = 10;
+    if (frame_state.frame_count > INACTIVE_OBJECT_LIFETIME_FRAMES) {
+        m_render_object_manager.deleteUnusedObjects(frame_state.frame_count - INACTIVE_OBJECT_LIFETIME_FRAMES);
+    }
 }
 
 } // namespace gc

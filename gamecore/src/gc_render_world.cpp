@@ -27,9 +27,17 @@ void recordWorldRenderingCommands(VkCommandBuffer cmd, VkPipelineLayout world_pi
             if (entry.material->isUploaded()) {
                 entry.material->bind(cmd, world_pipeline_layout, timeline_semaphore, signal_value);
             }
-            else if (auto fallback = draw_data.getFallbackMaterial()) {
-                fallback->bind(cmd, world_pipeline_layout, timeline_semaphore, signal_value);
+            else {
+                auto fallback = draw_data.getFallbackMaterial();
+                if (fallback) {
+                    fallback->bind(cmd, world_pipeline_layout, timeline_semaphore, signal_value);
+                }
+                else {
+                    GC_WARN("Material texture's not uploaded yet, but fallback material hasn't been set!");
+                    continue;
+                }
             }
+
             vkCmdPushConstants(cmd, world_pipeline_layout, VK_SHADER_STAGE_VERTEX_BIT, 0, 64, &entry.world_matrix);
             entry.mesh->draw(cmd, timeline_semaphore, signal_value);
         }

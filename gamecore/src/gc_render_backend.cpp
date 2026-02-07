@@ -249,9 +249,9 @@ static uint32_t getAppropriateFramesInFlight(uint32_t swapchain_image_count) { r
 #endif
 }
 
-static GPUPipeline createSkyboxPipeline(VkDevice device, GPUResourceDeleteQueue& delete_queue, VkPipelineLayout pipeline_layout,
-                                        VkFormat color_attachment_format, VkFormat depth_stencil_attachment_format,
-                                        VkSampleCountFlagBits color_attachment_sample_count)
+[[maybe_unused]] static GPUPipeline createSkyboxPipeline(VkDevice device, GPUResourceDeleteQueue& delete_queue, VkPipelineLayout pipeline_layout,
+                                                         VkFormat color_attachment_format, VkFormat depth_stencil_attachment_format,
+                                                         VkSampleCountFlagBits color_attachment_sample_count)
 {
     VkShaderModuleCreateInfo module_info{};
     module_info.sType = VK_STRUCTURE_TYPE_SHADER_MODULE_CREATE_INFO;
@@ -762,7 +762,8 @@ void RenderBackend::submitFrame(bool window_resized, const WorldDrawData& world_
         scissor.extent = swapchain_extent;
         vkCmdSetScissor(stuff.cmd, 0, 1, &scissor);
 
-        recordWorldRenderingCommands(stuff.cmd, m_pipeline_layout, m_main_timeline_semaphore, m_main_timeline_value + 1, world_draw_data);
+        recordWorldRenderingCommands(stuff.cmd, m_pipeline_layout, m_pipeline->getHandle(), m_main_timeline_semaphore, m_main_timeline_value + 1,
+                                     world_draw_data);
 
         ImGui_ImplVulkan_RenderDrawData(ImGui::GetDrawData(), stuff.cmd);
 
@@ -865,9 +866,13 @@ void RenderBackend::cleanupGPUResources()
     }
 }
 
-GPUPipeline RenderBackend::createPipeline(std::span<const uint8_t> vertex_spv, std::span<const uint8_t> fragment_spv)
+void RenderBackend::createPipeline(std::span<const uint8_t> vertex_spv, std::span<const uint8_t> fragment_spv)
 {
     ZoneScoped;
+
+    if (m_pipeline) {
+        abortGame("Pipeline already created!");
+    }
 
     VkShaderModuleCreateInfo module_info{};
     module_info.sType = VK_STRUCTURE_TYPE_SHADER_MODULE_CREATE_INFO;
@@ -1040,14 +1045,16 @@ GPUPipeline RenderBackend::createPipeline(std::span<const uint8_t> vertex_spv, s
     vkDestroyShaderModule(m_device.getHandle(), fragment_module, nullptr);
     vkDestroyShaderModule(m_device.getHandle(), vertex_module, nullptr);
 
-    return GPUPipeline(m_delete_queue, handle);
+    m_pipeline = std::make_unique<GPUPipeline>(m_delete_queue, handle);
 }
 
+/*
 GPUPipeline RenderBackend::createSkyboxPipeline()
 {
     return gc::createSkyboxPipeline(m_device.getHandle(), m_delete_queue, m_pipeline_layout, m_swapchain.getSurfaceFormat().format,
                                     m_depth_stencil_attachment_format, m_msaa_samples);
 }
+*/
 
 RenderTexture RenderBackend::createTexture(std::span<const uint8_t> r8g8b8a8_pak, bool srgb)
 {
@@ -1526,7 +1533,14 @@ RenderMesh RenderBackend::createMesh(std::span<const MeshVertex> vertices, std::
 
 RenderMaterial RenderBackend::createMaterial(RenderTexture& base_color, RenderTexture& orm, RenderTexture& normal)
 {
-    return RenderMaterial(m_device.getHandle(), m_main_descriptor_pool, m_descriptor_set_layout, base_color, orm, normal);
+    VkDescriptorSet descriptor_set{};
+    VkDescriptorSetAllocateInfo info{};
+    info.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_ALLOCATE_INFO;
+    info.descriptorPool = m_main_descriptor_pool;
+    info.descriptorSetCount = 1;
+    info.pSetLayouts = &m_descriptor_set_layout;
+    GC_CHECKVK(vkAllocateDescriptorSets(m_device.getHandle(), &info, &descriptor_set));
+    return RenderMaterial(m_device.getHandle(), GPUDescriptorSet(m_delete_queue, m_main_descriptor_pool, descriptor_set), base_color, orm, normal);
 }
 
 void RenderBackend::waitIdle()

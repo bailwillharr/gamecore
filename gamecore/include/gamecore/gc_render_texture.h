@@ -9,12 +9,14 @@ namespace gc {
 class RenderTexture {
 
     GPUTexture m_texture;
-    mutable bool m_uploaded;
+    mutable bool m_uploaded = false;
 
 public:
-    explicit RenderTexture(GPUTexture&& texture) : m_texture(std::move(texture)), m_uploaded(false) {}
+    explicit RenderTexture(GPUTexture&& texture) : m_texture(std::move(texture)) { GC_TRACE("Created RenderTexture"); }
     RenderTexture(const RenderTexture&) = delete;
     RenderTexture(RenderTexture&& other) noexcept : m_texture(std::move(other.m_texture)), m_uploaded(other.m_uploaded) {}
+
+    ~RenderTexture() { GC_TRACE("Destroyed RenderTexture"); }
 
     RenderTexture& operator=(const RenderTexture&) = delete;
     RenderTexture& operator=(RenderTexture&&) = delete;

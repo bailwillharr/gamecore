@@ -8,11 +8,9 @@ namespace gc {
 
 class RenderSystem; // forward-dec
 
-class RenderableComponent {
-    friend class RenderSystem;
-
+struct RenderableComponent {
     bool m_visible = true;
-    Name m_mesh{}; // can be empty
+    Name m_mesh{};     // can be empty
     Name m_material{}; // can be empty
 
 public:

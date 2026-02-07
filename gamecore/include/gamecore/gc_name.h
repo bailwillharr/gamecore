@@ -34,7 +34,6 @@ public:
 #ifdef GC_LOOKUP_ASSET_IDS
     explicit Name(std::string_view str) : m_hash(crc32(str))
     {
-        // can't pass *this as object isn't constructed yet
         s_lut.emplace(m_hash, str);
     }
 #else

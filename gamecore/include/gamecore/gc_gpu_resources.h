@@ -89,7 +89,7 @@ protected:
     }
 
     GPUResource& operator=(const GPUResource&) = delete;
-    GPUResource& operator=(GPUResource&&) = delete;
+    GPUResource& operator=(GPUResource&& other) = delete;
 
     void markForDeletion(const std::function<void(VkDevice, VmaAllocator)>& deleter)
     {
@@ -158,6 +158,44 @@ public:
     }
 
     VkPipeline getHandle() const { return m_handle; }
+};
+
+class GPUDescriptorSet : public GPUResource {
+    VkDescriptorPool m_pool;
+    VkDescriptorSet m_handle;
+
+public:
+    GPUDescriptorSet(GPUResourceDeleteQueue& delete_queue, VkDescriptorPool pool, VkDescriptorSet handle)
+        : GPUResource(delete_queue), m_pool(pool), m_handle(handle)
+    {
+        GC_ASSERT(m_pool);
+        GC_ASSERT(m_handle);
+    }
+    GPUDescriptorSet(const GPUDescriptorSet&) = delete;
+    GPUDescriptorSet(GPUDescriptorSet&& other) noexcept : GPUResource(std::move(other)), m_pool(other.m_pool), m_handle(other.m_handle)
+    {
+        other.m_pool = VK_NULL_HANDLE;
+        other.m_handle = VK_NULL_HANDLE;
+    }
+
+    GPUDescriptorSet& operator=(const GPUDescriptorSet&) = delete;
+    GPUDescriptorSet& operator=(GPUDescriptorSet&&) = default;
+
+    ~GPUDescriptorSet()
+    {
+        GC_TRACE("~GPUDescriptorSet() {}", reinterpret_cast<void*>(m_handle));
+        if (m_handle != VK_NULL_HANDLE) {
+            GC_ASSERT(m_pool);
+            auto pool = m_pool;
+            auto set = m_handle;
+            markForDeletion([pool, set](VkDevice device, [[maybe_unused]] VmaAllocator allocator) {
+                GC_TRACE("Deleting GPUDescriptorSet {}", reinterpret_cast<void*>(set));
+                vkFreeDescriptorSets(device, pool, 1, &set);
+            });
+        }
+    }
+
+    VkDescriptorSet getHandle() const { return m_handle; }
 };
 
 // 2D texture (image and image view)

@@ -83,6 +83,7 @@ set(INCLUDE_FILES
   "include/gamecore/gc_gen_tangents.h"
   "include/gamecore/gc_resource_manager.h"
   "include/gamecore/gc_render_texture_manager.h"
+  "include/gamecore/gc_render_object_manager.h"
   "include/gamecore/gc_resources.h"
 )
 

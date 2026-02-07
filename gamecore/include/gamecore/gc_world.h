@@ -106,7 +106,9 @@ public:
     template <ValidComponent T>
     T* getComponent(const Entity entity)
     {
-        GC_ASSERT(entity != ENTITY_NONE);
+        if (entity == ENTITY_NONE) {
+            return nullptr;
+        }
 
         const uint32_t component_index = getComponentIndex<T>();
 
@@ -130,14 +132,14 @@ public:
         }
     }
 
-    template <ValidDerivedSystem T>
-    void registerSystem()
+    template <ValidDerivedSystem T, typename... Args>
+    void registerSystem(Args&&... args)
     {
         const uint32_t system_index = getSystemIndex<T>();
         if (system_index != m_systems.size()) {
             gc::abortGame("Attempt to register same system twice!");
         }
-        m_systems.push_back(std::make_unique<T>(*this));
+        m_systems.push_back(std::make_unique<T>(*this, std::forward<Args>(args)...));
     }
 
     template <ValidDerivedSystem T>

@@ -168,7 +168,7 @@ void App::run()
 
     std::array<double, 20> delta_times{};
     uint64_t frame_begin_stamp = SDL_GetTicksNS() - 16'666'667LL; // set first delta time to something reasonable
-    while (!window().shouldQuit()) {
+    while (!m_window->shouldQuit()) {
         Logger::instance().incrementFrameNumber();
 
         const uint64_t last_frame_begin_stamp = frame_begin_stamp;
@@ -177,21 +177,21 @@ void App::run()
         frame_state.delta_time = static_cast<double>(frame_begin_stamp - last_frame_begin_stamp) * 1e-9;
         delta_times[frame_state.frame_count % delta_times.size()] = frame_state.delta_time;
         frame_state.average_frame_time = std::accumulate(delta_times.cbegin(), delta_times.cend(), 0.0) / static_cast<double>(delta_times.size());
-        frame_state.window_state = &window().processEvents(DebugUI::windowEventInterceptor);
+        frame_state.window_state = &m_window->processEvents(DebugUI::windowEventInterceptor);
 
         {
             ZoneScopedN("UI Logic");
             if (frame_state.window_state->getKeyDown(SDL_SCANCODE_ESCAPE)) {
-                window().pushQuitEvent();
+                m_window->pushQuitEvent();
             }
             if (frame_state.window_state->getKeyPress(SDL_SCANCODE_F11)) {
-                if (window().getIsResizable()) {
-                    window().setSize(0, 0, !frame_state.window_state->getIsFullscreen());
+                if (m_window->getIsResizable()) {
+                    m_window->setSize(0, 0, !frame_state.window_state->getIsFullscreen());
                 }
             }
             if (frame_state.window_state->getKeyPress(SDL_SCANCODE_F10)) {
                 m_debug_ui->active = !m_debug_ui->active;
-                window().setMouseCaptured(!m_debug_ui->active);
+                m_window->setMouseCaptured(!m_debug_ui->active);
             }
         }
 
@@ -199,9 +199,9 @@ void App::run()
 
         m_debug_ui->update(frame_state, content());
 
-        renderBackend().submitFrame(frame_state.window_state->getResizedFlag(), frame_state.draw_data);
+        m_render_backend->submitFrame(frame_state.window_state->getResizedFlag(), frame_state.draw_data);
         frame_state.draw_data.reset();
-        renderBackend().cleanupGPUResources();
+        m_render_backend->cleanupGPUResources();
 
         ++frame_state.frame_count;
         FrameMark;

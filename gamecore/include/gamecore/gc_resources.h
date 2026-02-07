@@ -28,6 +28,9 @@ struct ResourceTexture {
         ResourceTexture tex{};
         tex.data = content_manager.findAsset(name, gcpak::GcpakAssetType::TEXTURE_R8G8B8A8);
         tex.srgb = true; // TODO read from asset
+
+        GC_ASSERT(!tex.data.empty());
+
         return tex;
     }
 };
@@ -39,8 +42,10 @@ struct ResourceMaterial {
 
     static ResourceMaterial create(const Content& content_manager, Name name)
     {
+        (void)content_manager;
+        (void)name;
         abortGame("Cannot load materials from disk yet"); // TODO
-        return {};
+        //return {};
     }
 };
 
