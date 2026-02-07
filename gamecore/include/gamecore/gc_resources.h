@@ -29,7 +29,9 @@ struct ResourceTexture {
         tex.data = content_manager.findAsset(name, gcpak::GcpakAssetType::TEXTURE_R8G8B8A8);
         tex.srgb = true; // TODO read from asset
 
-        GC_ASSERT(!tex.data.empty());
+        if (tex.data.empty()) {
+            gc::abortGame("Could not find asset");
+        }
 
         return tex;
     }
@@ -45,19 +47,24 @@ struct ResourceMaterial {
         (void)content_manager;
         (void)name;
         abortGame("Cannot load materials from disk yet"); // TODO
-        //return {};
+        // return {};
     }
 };
 
 struct ResourceMesh {
 
-    std::span<const MeshVertex> vertices;
-    std::span<const uint16_t> indices;
+    std::vector<MeshVertex> vertices;
+    std::vector<uint16_t> indices;
 
     static ResourceMesh create(const Content& content_manager, Name name)
     {
         const auto asset = content_manager.findAsset(name, gcpak::GcpakAssetType::MESH_POS12_NORM12_TANG16_UV8_INDEXED16);
+        if (asset.empty()) {
+            gc::abortGame("Could not find asset");
+        }
+
         GC_ASSERT(asset.size() > 2);
+
         uint16_t vertex_count{};
         std::memcpy(&vertex_count, asset.data(), sizeof(uint16_t));
 
@@ -65,13 +72,14 @@ struct ResourceMesh {
         const uint8_t* const indices_location = vertices_location + vertex_count * sizeof(MeshVertex);
         const size_t index_count = (asset.data() + asset.size() - indices_location) / sizeof(uint16_t);
 
-        const std::span<const MeshVertex> vertices(reinterpret_cast<const MeshVertex*>(vertices_location), vertex_count);
-        const std::span<const uint16_t> indices(reinterpret_cast<const uint16_t*>(indices_location), index_count);
+        const auto vertices_begin = reinterpret_cast<const MeshVertex*>(vertices_location);
+        const auto vertices_end = vertices_begin + vertex_count;
+        const auto indices_begin = reinterpret_cast<const uint16_t*>(indices_location);
+        const auto indices_end = indices_begin + index_count;
 
         ResourceMesh mesh;
-        mesh.vertices = vertices;
-        mesh.indices = indices;
-
+        mesh.vertices.insert(mesh.vertices.begin(), vertices_begin, vertices_end);
+        mesh.indices.insert(mesh.indices.begin(), indices_begin, indices_end);
         return mesh;
     }
 };

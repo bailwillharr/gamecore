@@ -110,6 +110,7 @@ public:
                             current_texture += 1;
                             ren->m_material = m_rm.add(std::move(new_material));
                             GC_TRACE("Material switched to: {}", ren->m_material.getString());
+                            ren->m_mesh = gc::Name("sphere");
                         }
                         else {
                             const auto texture_target_t = m_world.getComponent<gc::TransformComponent>(f.m_texture_target);
@@ -117,7 +118,7 @@ public:
                                          texture_target_t ? texture_target_t->name.getString() : std::string("ENTITY_NONE"));
                         }
                     }
-                    //f.m_time_since_contact += static_cast<float>(frame_state.delta_time);
+                    f.m_time_since_contact += static_cast<float>(frame_state.delta_time);
                 }
                 else {
                     GC_WARN_ONCE("FollowComponent of entity '{}' has target '{}' with a different parent!", t.name.getString(), target_t->name.getString());
@@ -185,120 +186,25 @@ public:
                 resource_manager.add<gc::ResourceMaterial>(std::move(default_material), gc::Name("default_material"));
             }
 
-#if 0
-
-            {
-                auto orm_texture = [&] {
-                    std::array<uint8_t, 4 + 4 + 4> image_data{};         // uint32 width, uint32 height, and one RGBA pixel
-                    image_data[0] = 1u;                                  // width = 1
-                    image_data[4] = 1u;                                  // height = 1
-                    image_data[8] = 255u;                                // R channel occlusion
-                    image_data[9] = static_cast<uint8_t>(0.5 * 255.0f);  // G channel roughness
-                    image_data[10] = static_cast<uint8_t>(0.0 * 255.0f); // B channel metallic
-                    image_data[11] = 0u;                                 // unused alpha channel
-                    return std::make_shared<gc::RenderTexture>(render_backend.createTexture(image_data, false));
-                }();
-                auto normal_texture = [&] {
-                    std::array<uint8_t, 4 + 4 + 4> image_data{}; // uint32 width, uint32 height, and one RGBA pixel
-                    image_data[0] = 1u;                          // width = 1
-                    image_data[4] = 1u;                          // height = 1
-                    image_data[8] = 128u;                        // R channel (tangent space X)
-                    image_data[9] = 128u;                        // G channel (tangent space Y)
-                    image_data[10] = 255u;                       // B channel (tangent space Z)
-                    image_data[11] = 0u;                         // unused alpha channel
-                    return std::make_shared<gc::RenderTexture>(render_backend.createTexture(image_data, false));
-                }();
-                auto base_color_texture = [&] {
-                    constexpr uint32_t SIZE = 4;
-                    std::array<uint8_t, 8 + 4 * SIZE * SIZE> image_data{}; // uint32 width, uint32 height, and four RGBA pixels
-                    static_assert(SIZE <= 255);
-                    image_data[0] = SIZE; // width
-                    image_data[4] = SIZE; // height
-                    for (size_t y = 0; y < SIZE; ++y) {
-                        for (size_t x = 0; x < SIZE; ++x) {
-                            image_data[8 + (y * SIZE * 4) + x * 4 + 0] = ((x + y) % 2 == 0) ? 255u : 0u; // R channel
-                            image_data[8 + (y * SIZE * 4) + x * 4 + 1] = 0u;                             // G channel
-                            image_data[8 + (y * SIZE * 4) + x * 4 + 2] = ((x + y) % 2 == 0) ? 255u : 0u; // B channel
-                            image_data[8 + (y * SIZE * 4) + x * 4 + 3] = 255u;                           // unused alpha channel
-                        }
-                    }
-                    return std::make_shared<gc::RenderTexture>(render_backend.createTexture(image_data, true));
-                }();
-                m_fallback_material =
-                    std::make_unique<gc::RenderMaterial>(render_backend.createMaterial(base_color_texture, orm_texture, normal_texture, pipeline));
-            }
-            m_fallback_material->waitForUpload();
-            frame_state.draw_data.setFallbackMaterial(m_fallback_material.get());
-
-            {
-                auto skybox_pipeline = std::make_shared<gc::GPUPipeline>(render_backend.createSkyboxPipeline());
-                std::array<std::span<const uint8_t>, 6> faces{};
-                for (int i = 0; i < 6; ++i) {
-                    faces[i] = content.findAsset(gc::Name(std::format("skybox{}.jpg", i)), gcpak::GcpakAssetType::TEXTURE_R8G8B8A8);
-                }
-                auto skybox_texture = std::make_shared<gc::RenderTexture>(render_backend.createCubeTexture(faces, true));
-                m_skybox_material = std::make_unique<gc::RenderMaterial>(render_backend.createMaterial(skybox_texture, nullptr, nullptr, skybox_pipeline));
-                frame_state.draw_data.setSkyboxMaterial(m_skybox_material.get());
-            }
-#endif
-#if 0
-            world.registerComponent<SpinComponent, gc::ComponentArrayType::SPARSE>();
-            world.registerComponent<MouseMoveComponent, gc::ComponentArrayType::SPARSE>();
-            world.registerComponent<FollowComponent, gc::ComponentArrayType::SPARSE>();
-            world.registerSystem<SpinSystem>();
-            world.registerSystem<MouseMoveSystem>();
-            world.registerSystem<FollowSystem>();
-
-            {
-                auto occlusion_roughness_metallic_texture = std::make_shared<gc::RenderTexture>(createORMTexture(render_backend, 0.5f, 0.0f));
-                auto normal_texture = std::make_shared<gc::RenderTexture>(createNormalTexture(render_backend));
-                for (int i = 0; i < s_texture_names.size(); ++i) {
-                    const gc::Name texture_name = s_texture_names[i];
-                    auto image_data = content.findAsset(texture_name, gcpak::GcpakAssetType::TEXTURE_R8G8B8A8);
-                    if (!image_data.empty()) {
-                        m_materials[i] = std::make_unique<gc::RenderMaterial>(
-                            render_backend.createMaterial(std::make_shared<gc::RenderTexture>(render_backend.createTexture(image_data, true)),
-                                                          occlusion_roughness_metallic_texture, normal_texture, pipeline));
-                    }
-                    else {
-                        gc::abortGame("Couldn't find {}", texture_name.getString());
-                    }
-                }
-            }
-            {
-                auto base_color_texture = std::make_shared<gc::RenderTexture>(
-                    render_backend.createTexture(content.findAsset(gc::Name("bricks-mortar-albedo.png"), gcpak::GcpakAssetType::TEXTURE_R8G8B8A8), true));
-                auto occlusion_roughness_metallic_texture = std::make_shared<gc::RenderTexture>(
-                    render_backend.createTexture(content.findAsset(gc::Name("bricks-mortar-orm.png"), gcpak::GcpakAssetType::TEXTURE_R8G8B8A8), false));
-                auto normal_texture = std::make_shared<gc::RenderTexture>(
-                    render_backend.createTexture(content.findAsset(gc::Name("bricks-mortar-normal.png"), gcpak::GcpakAssetType::TEXTURE_R8G8B8A8), false));
-                m_floor_material = std::make_unique<gc::RenderMaterial>(
-                    render_backend.createMaterial(base_color_texture, occlusion_roughness_metallic_texture, normal_texture, pipeline));
-            }
-
             std::array<gc::Entity, 36> cubes{};
             const gc::Entity parent = world.createEntity(gc::Name("parent"), gc::ENTITY_NONE, glm::vec3{0.0f, 15.0f, 5.5f});
-            world.addComponent<SpinComponent>(parent).setAxis({0.3f, 0.4f, 1.0f}).setRadiansPerSecond(0.0f);
+            world.addComponent<SpinComponent>(parent).setAxis({0.3f, 0.4f, 1.0f}).setRadiansPerSecond(0.1f);
 
             for (int x = 0; x < 6; ++x) {
                 for (int y = 0; y < 6; ++y) {
                     auto& cube = cubes[x * 6 + y];
                     cube = world.createEntity(gc::Name(std::format("cube{}.{}", x, y)), parent, glm::vec3{(x - 2.5f) * 2.0f, 0.0f, (y - 2.5f) * 2.0f});
-                    world.addComponent<gc::RenderableComponent>(cube).setMesh(m_meshes[1].get()).setMaterial(m_materials[x].get());
+                    world.addComponent<gc::RenderableComponent>(cube).setMesh(gc::Name("sphere")).setMaterial(gc::Name("default_material"));
                     world.addComponent<SpinComponent>(cube).setAxis({1.0f, 0.0f, 0.7f}).setRadiansPerSecond(0.0f);
                 }
             }
 
             // add a floor
             const auto floor = world.createEntity(gc::Name("floor"), gc::ENTITY_NONE, {0.0f, 0.0f, -0.5f}, {}, {100.0f, 100.0f, 1.0f});
-            world.addComponent<gc::RenderableComponent>(floor).setMesh(m_meshes[3].get()).setMaterial(m_floor_material.get());
+            world.addComponent<gc::RenderableComponent>(floor).setMesh(gc::Name("cube")).setMaterial(gc::Name("default_material"));
 
-            const auto shrek_parent = world.createEntity(gc::Name("shrek_parent"), gc::ENTITY_NONE, glm::vec3{0.0f, +100.0f, 5.0f});
-            const auto shrek = world.createEntity(gc::Name("shrek"), shrek_parent, glm::vec3{0.0f, +0.0f, -4.331f});
-            world.addComponent<gc::RenderableComponent>(shrek).setMaterial(m_materials[5].get()).setMesh(m_meshes[0].get());
-            // world.addComponent<FollowComponent>(shrek_parent).setTarget(camera).setMinDistance(25.0f).setSpeed(15.0f);
-
-#endif
+            resource_manager.add<gc::ResourceMesh>(genCuboidMesh(1.0f, 1.0f, 1.0f), gc::Name("cube"));
+            resource_manager.add<gc::ResourceMesh>(genSphereMesh(1.0f, 10), gc::Name("sphere"));
 
             m_loaded = true;
         }

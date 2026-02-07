@@ -179,7 +179,7 @@ public:
     }
 
     GPUDescriptorSet& operator=(const GPUDescriptorSet&) = delete;
-    GPUDescriptorSet& operator=(GPUDescriptorSet&&) = default;
+    GPUDescriptorSet& operator=(GPUDescriptorSet&&) = delete;
 
     ~GPUDescriptorSet()
     {

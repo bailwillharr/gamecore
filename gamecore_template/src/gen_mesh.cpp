@@ -1,9 +1,9 @@
+#include "gamecore/gc_resources.h"
 #define _CRT_SECURE_NO_WARNINGS
 
 #include "gen_mesh.h"
 
 #include <string_view>
-#include <ranges>
 
 #include <gtc/constants.hpp>
 #include <geometric.hpp>
@@ -11,7 +11,6 @@
 #include <gctemplates/gct_sv_stream.h>
 
 #include <gamecore/gc_abort.h>
-#include <gamecore/gc_render_backend.h>
 #include <gamecore/gc_gen_tangents.h>
 
 static void parseV(const std::string& line, std::vector<glm::vec3>& positions)
@@ -84,7 +83,7 @@ static void parseF(const std::string& line, std::span<const glm::vec3> positions
     }
 }
 
-gc::RenderMesh genOBJMesh(gc::RenderBackend& render_backend, std::span<const uint8_t> file_data)
+gc::ResourceMesh genOBJMesh(std::span<const uint8_t> file_data)
 {
     gct::sv_istream stream(std::string_view(reinterpret_cast<const char*>(file_data.data()), file_data.size()));
 
@@ -93,7 +92,8 @@ gc::RenderMesh genOBJMesh(gc::RenderBackend& render_backend, std::span<const uin
     std::vector<glm::vec3> positions{};
     std::vector<glm::vec2> uvs{};
     std::vector<glm::vec3> normals{};
-    std::vector<gc::MeshVertex> vertices{};
+
+    gc::ResourceMesh mesh{};
 
     while (std::getline(stream, line)) {
         switch (line[0]) {
@@ -114,124 +114,121 @@ gc::RenderMesh genOBJMesh(gc::RenderBackend& render_backend, std::span<const uin
                 }
                 break;
             case 'f':
-                parseF(line, positions, uvs, normals, vertices);
+                parseF(line, positions, uvs, normals, mesh.vertices);
                 break;
         }
     }
 
-    auto indices_int32 = gc::genTangents(vertices);
-    std::vector<uint16_t> indices{};
-    indices.reserve(indices_int32.size());
+    auto indices_int32 = gc::genTangents(mesh.vertices);
+    mesh.indices.reserve(indices_int32.size());
     for (uint32_t index : indices_int32) {
         GC_ASSERT(index <= UINT16_MAX);
-        indices.push_back(static_cast<uint16_t>(index));
+        mesh.indices.push_back(static_cast<uint16_t>(index));
     }
-    return render_backend.createMesh(vertices, indices);
+
+    return mesh;
 }
 
-gc::RenderMesh genCuboidMesh(gc::RenderBackend& render_backend, float x, float y, float z, float t, bool wind_inside)
+gc::ResourceMesh genCuboidMesh(float x, float y, float z, float t, bool wind_inside)
 {
-    std::vector<gc::MeshVertex> vertices{};
-    vertices.reserve(36);
+    gc::ResourceMesh mesh{};
+    mesh.vertices.reserve(36);
 
     // XY plane (+Z normal) (TOP)
-    vertices.push_back({{0, 0, z}, {0, 0, 1}, {}, {0, 0}}); // bottom left
-    vertices.push_back({{x, 0, z}, {0, 0, 1}, {}, {t, 0}}); // bottom right
-    vertices.push_back({{0, y, z}, {0, 0, 1}, {}, {0, t}}); // top left
-    vertices.push_back({{0, y, z}, {0, 0, 1}, {}, {0, t}}); // top left
-    vertices.push_back({{x, 0, z}, {0, 0, 1}, {}, {t, 0}}); // bottom right
-    vertices.push_back({{x, y, z}, {0, 0, 1}, {}, {t, t}}); // top right
+    mesh.vertices.push_back({{0, 0, z}, {0, 0, 1}, {}, {0, 0}}); // bottom left
+    mesh.vertices.push_back({{x, 0, z}, {0, 0, 1}, {}, {t, 0}}); // bottom right
+    mesh.vertices.push_back({{0, y, z}, {0, 0, 1}, {}, {0, t}}); // top left
+    mesh.vertices.push_back({{0, y, z}, {0, 0, 1}, {}, {0, t}}); // top left
+    mesh.vertices.push_back({{x, 0, z}, {0, 0, 1}, {}, {t, 0}}); // bottom right
+    mesh.vertices.push_back({{x, y, z}, {0, 0, 1}, {}, {t, t}}); // top right
     // XY plane (-Z normal) (BOTTOM)
-    vertices.push_back({{x, 0, 0}, {0, 0, -1}, {}, {t, t}}); // bottom right
-    vertices.push_back({{0, 0, 0}, {0, 0, -1}, {}, {0, t}}); // bottom left
-    vertices.push_back({{0, y, 0}, {0, 0, -1}, {}, {0, 0}}); // top left
-    vertices.push_back({{x, 0, 0}, {0, 0, -1}, {}, {t, t}}); // bottom right
-    vertices.push_back({{0, y, 0}, {0, 0, -1}, {}, {0, 0}}); // top left
-    vertices.push_back({{x, y, 0}, {0, 0, -1}, {}, {t, 0}}); // top right
+    mesh.vertices.push_back({{x, 0, 0}, {0, 0, -1}, {}, {t, t}}); // bottom right
+    mesh.vertices.push_back({{0, 0, 0}, {0, 0, -1}, {}, {0, t}}); // bottom left
+    mesh.vertices.push_back({{0, y, 0}, {0, 0, -1}, {}, {0, 0}}); // top left
+    mesh.vertices.push_back({{x, 0, 0}, {0, 0, -1}, {}, {t, t}}); // bottom right
+    mesh.vertices.push_back({{0, y, 0}, {0, 0, -1}, {}, {0, 0}}); // top left
+    mesh.vertices.push_back({{x, y, 0}, {0, 0, -1}, {}, {t, 0}}); // top right
     // XZ plane (+Y normal) (BACK)
-    vertices.push_back({{x, y, 0}, {0, 1, 0}, {}, {0, 0}}); // bottom right
-    vertices.push_back({{0, y, 0}, {0, 1, 0}, {}, {t, 0}}); // bottom left
-    vertices.push_back({{0, y, z}, {0, 1, 0}, {}, {t, t}}); // top left
-    vertices.push_back({{x, y, 0}, {0, 1, 0}, {}, {0, 0}}); // bottom right
-    vertices.push_back({{0, y, z}, {0, 1, 0}, {}, {t, t}}); // top left
-    vertices.push_back({{x, y, z}, {0, 1, 0}, {}, {0, t}}); // top right
+    mesh.vertices.push_back({{x, y, 0}, {0, 1, 0}, {}, {0, 0}}); // bottom right
+    mesh.vertices.push_back({{0, y, 0}, {0, 1, 0}, {}, {t, 0}}); // bottom left
+    mesh.vertices.push_back({{0, y, z}, {0, 1, 0}, {}, {t, t}}); // top left
+    mesh.vertices.push_back({{x, y, 0}, {0, 1, 0}, {}, {0, 0}}); // bottom right
+    mesh.vertices.push_back({{0, y, z}, {0, 1, 0}, {}, {t, t}}); // top left
+    mesh.vertices.push_back({{x, y, z}, {0, 1, 0}, {}, {0, t}}); // top right
     // XZ plane (-Y normal) (FRONT)
-    vertices.push_back({{0, 0, 0}, {0, -1, 0}, {}, {0, 0}}); // bottom left
-    vertices.push_back({{x, 0, 0}, {0, -1, 0}, {}, {t, 0}}); // bottom right
-    vertices.push_back({{0, 0, z}, {0, -1, 0}, {}, {0, t}}); // top left
-    vertices.push_back({{0, 0, z}, {0, -1, 0}, {}, {0, t}}); // top left
-    vertices.push_back({{x, 0, 0}, {0, -1, 0}, {}, {t, 0}}); // bottom right
-    vertices.push_back({{x, 0, z}, {0, -1, 0}, {}, {t, t}}); // top right
+    mesh.vertices.push_back({{0, 0, 0}, {0, -1, 0}, {}, {0, 0}}); // bottom left
+    mesh.vertices.push_back({{x, 0, 0}, {0, -1, 0}, {}, {t, 0}}); // bottom right
+    mesh.vertices.push_back({{0, 0, z}, {0, -1, 0}, {}, {0, t}}); // top left
+    mesh.vertices.push_back({{0, 0, z}, {0, -1, 0}, {}, {0, t}}); // top left
+    mesh.vertices.push_back({{x, 0, 0}, {0, -1, 0}, {}, {t, 0}}); // bottom right
+    mesh.vertices.push_back({{x, 0, z}, {0, -1, 0}, {}, {t, t}}); // top right
     // YZ plane (+X normal) (RIGHT)
-    vertices.push_back({{x, 0, 0}, {1, 0, 0}, {}, {0, 0}}); // bottom left
-    vertices.push_back({{x, y, 0}, {1, 0, 0}, {}, {t, 0}}); // bottom right
-    vertices.push_back({{x, 0, z}, {1, 0, 0}, {}, {0, t}}); // top left
-    vertices.push_back({{x, 0, z}, {1, 0, 0}, {}, {0, t}}); // top left
-    vertices.push_back({{x, y, 0}, {1, 0, 0}, {}, {t, 0}}); // bottom right
-    vertices.push_back({{x, y, z}, {1, 0, 0}, {}, {t, t}}); // top right
+    mesh.vertices.push_back({{x, 0, 0}, {1, 0, 0}, {}, {0, 0}}); // bottom left
+    mesh.vertices.push_back({{x, y, 0}, {1, 0, 0}, {}, {t, 0}}); // bottom right
+    mesh.vertices.push_back({{x, 0, z}, {1, 0, 0}, {}, {0, t}}); // top left
+    mesh.vertices.push_back({{x, 0, z}, {1, 0, 0}, {}, {0, t}}); // top left
+    mesh.vertices.push_back({{x, y, 0}, {1, 0, 0}, {}, {t, 0}}); // bottom right
+    mesh.vertices.push_back({{x, y, z}, {1, 0, 0}, {}, {t, t}}); // top right
     // YZ plane (-X normal) (LEFT)
-    vertices.push_back({{0, y, 0}, {-1, 0, 0}, {}, {0, 0}}); // bottom right
-    vertices.push_back({{0, 0, 0}, {-1, 0, 0}, {}, {t, 0}}); // bottom left
-    vertices.push_back({{0, 0, z}, {-1, 0, 0}, {}, {t, t}}); // top left
-    vertices.push_back({{0, y, 0}, {-1, 0, 0}, {}, {0, 0}}); // bottom right
-    vertices.push_back({{0, 0, z}, {-1, 0, 0}, {}, {t, t}}); // top left
-    vertices.push_back({{0, y, z}, {-1, 0, 0}, {}, {0, t}}); // top right
+    mesh.vertices.push_back({{0, y, 0}, {-1, 0, 0}, {}, {0, 0}}); // bottom right
+    mesh.vertices.push_back({{0, 0, 0}, {-1, 0, 0}, {}, {t, 0}}); // bottom left
+    mesh.vertices.push_back({{0, 0, z}, {-1, 0, 0}, {}, {t, t}}); // top left
+    mesh.vertices.push_back({{0, y, 0}, {-1, 0, 0}, {}, {0, 0}}); // bottom right
+    mesh.vertices.push_back({{0, 0, z}, {-1, 0, 0}, {}, {t, t}}); // top left
+    mesh.vertices.push_back({{0, y, z}, {-1, 0, 0}, {}, {0, t}}); // top right
 
     // centre the positions
-    for (auto& v : vertices) {
+    for (auto& v : mesh.vertices) {
         v.position.x -= x * 0.5f;
         v.position.y -= y * 0.5f;
         v.position.z -= z * 0.5f;
     }
 
     if (wind_inside) {
-        for (size_t i = 0; i < vertices.size(); i += 3) {
-            std::swap(vertices[i], vertices[i + 2]);
+        for (size_t i = 0; i < mesh.vertices.size(); i += 3) {
+            std::swap(mesh.vertices[i], mesh.vertices[i + 2]);
         }
     }
 
-    auto indices_int32 = gc::genTangents(vertices);
-    std::vector<uint16_t> indices{};
-    indices.reserve(indices_int32.size());
+    auto indices_int32 = gc::genTangents(mesh.vertices);
+    mesh.indices.reserve(indices_int32.size());
     for (uint32_t index : indices_int32) {
         GC_ASSERT(index <= UINT16_MAX);
-        indices.push_back(static_cast<uint16_t>(index));
+        mesh.indices.push_back(static_cast<uint16_t>(index));
     }
 
-    return render_backend.createMesh(vertices, indices);
+    return mesh;
 }
 
-gc::RenderMesh genPlaneMesh(gc::RenderBackend& render_backend, float t)
+gc::ResourceMesh genPlaneMesh(float t)
 {
     using namespace glm;
 
-    std::vector<gc::MeshVertex> vertices{};
-    vertices.reserve(6);
+    gc::ResourceMesh mesh{};
 
     // XY plane (+Z normal) (TOP)
-    vertices.emplace_back(vec3{-0.5, -0.5, 0.5}, vec3{0, 0, 1}, vec4{}, vec2{0, 0}); // bottom left
-    vertices.emplace_back(vec3{0.5, -0.5, 0.5}, vec3{0, 0, 1}, vec4{}, vec2{t, 0});  // bottom right
-    vertices.emplace_back(vec3{-0.5, 0.5, 0.5}, vec3{0, 0, 1}, vec4{}, vec2{0, t});  // top left
-    vertices.emplace_back(vec3{-0.5, 0.5, 0.5}, vec3{0, 0, 1}, vec4{}, vec2{0, t});  // top left
-    vertices.emplace_back(vec3{0.5, -0.5, 0.5}, vec3{0, 0, 1}, vec4{}, vec2{t, 0});  // bottom right
-    vertices.emplace_back(vec3{0.5, 0.5, 0.5}, vec3{0, 0, 1}, vec4{}, vec2{t, t});   // top right
+    mesh.vertices.emplace_back(vec3{-0.5, -0.5, 0.5}, vec3{0, 0, 1}, vec4{}, vec2{0, 0}); // bottom left
+    mesh.vertices.emplace_back(vec3{0.5, -0.5, 0.5}, vec3{0, 0, 1}, vec4{}, vec2{t, 0});  // bottom right
+    mesh.vertices.emplace_back(vec3{-0.5, 0.5, 0.5}, vec3{0, 0, 1}, vec4{}, vec2{0, t});  // top left
+    mesh.vertices.emplace_back(vec3{-0.5, 0.5, 0.5}, vec3{0, 0, 1}, vec4{}, vec2{0, t});  // top left
+    mesh.vertices.emplace_back(vec3{0.5, -0.5, 0.5}, vec3{0, 0, 1}, vec4{}, vec2{t, 0});  // bottom right
+    mesh.vertices.emplace_back(vec3{0.5, 0.5, 0.5}, vec3{0, 0, 1}, vec4{}, vec2{t, t});   // top right
 
-    auto indices_int32 = gc::genTangents(vertices);
-    std::vector<uint16_t> indices{};
-    indices.reserve(indices_int32.size());
+    auto indices_int32 = gc::genTangents(mesh.vertices);
+    mesh.indices.reserve(indices_int32.size());
     for (uint32_t index : indices_int32) {
         GC_ASSERT(index <= UINT16_MAX);
-        indices.push_back(static_cast<uint16_t>(index));
+        mesh.indices.push_back(static_cast<uint16_t>(index));
     }
 
-    return render_backend.createMesh(vertices, indices);
+    return mesh;
 }
 
-gc::RenderMesh genSphereMesh(gc::RenderBackend& render_backend, float r, int detail, bool flip_normals)
+gc::ResourceMesh genSphereMesh(float r, int detail, bool flip_normals)
 {
     using namespace glm;
 
-    std::vector<gc::MeshVertex> vertices{};
+    gc::ResourceMesh mesh{};
 
     const float angle_step = two_pi<float>() / (float)detail;
 
@@ -255,15 +252,15 @@ gc::RenderMesh genSphereMesh(gc::RenderBackend& render_backend, float r, int det
             const float v_south = 1.0f - (phi2 / glm::pi<float>());
 
             // triangle 1
-            vertices.push_back({north_west, {}, {}, {u_west, v_north}});
-            vertices.push_back({south_west, {}, {}, {u_west, v_south}});
-            vertices.push_back({south_east, {}, {}, {u_east, v_south}});
+            mesh.vertices.push_back({north_west, {}, {}, {u_west, v_north}});
+            mesh.vertices.push_back({south_west, {}, {}, {u_west, v_south}});
+            mesh.vertices.push_back({south_east, {}, {}, {u_east, v_south}});
             // triangle 2
-            vertices.push_back({south_east, {}, {}, {u_east, v_south}});
-            vertices.push_back({north_east, {}, {}, {u_east, v_north}});
-            vertices.push_back({north_west, {}, {}, {u_west, v_north}});
+            mesh.vertices.push_back({south_east, {}, {}, {u_east, v_south}});
+            mesh.vertices.push_back({north_east, {}, {}, {u_east, v_north}});
+            mesh.vertices.push_back({north_west, {}, {}, {u_west, v_north}});
 
-            for (auto it = vertices.end() - 6; it != vertices.end(); ++it) {
+            for (auto it = mesh.vertices.end() - 6; it != mesh.vertices.end(); ++it) {
                 it->normal = normalize(it->position);
                 if (flip_normals) {
                     it->normal = -it->normal;
@@ -272,13 +269,12 @@ gc::RenderMesh genSphereMesh(gc::RenderBackend& render_backend, float r, int det
         }
     }
 
-    auto indices_int32 = gc::genTangents(vertices);
-    std::vector<uint16_t> indices{};
-    indices.reserve(indices_int32.size());
+    auto indices_int32 = gc::genTangents(mesh.vertices);
+    mesh.indices.reserve(indices_int32.size());
     for (uint32_t index : indices_int32) {
         GC_ASSERT(index <= UINT16_MAX);
-        indices.push_back(static_cast<uint16_t>(index));
+        mesh.indices.push_back(static_cast<uint16_t>(index));
     }
 
-    return render_backend.createMesh(vertices, indices);
+    return mesh;
 }
