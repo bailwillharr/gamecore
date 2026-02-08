@@ -4,35 +4,9 @@ Add FrameStates to the ecs to make systems self-contained
 	(Should a mutable FrameState be allowed to be modified by multiple systems?
 	This would introduce dependencies between systems in addition to the component dependencies)
 
-Create a ResourceManager that for any given resource type knows how to automatically construct it.
-	I may need to create manifests for every resource showing how they are made and from what asset files
-	and from what other resources the Resource depends on. Manifests could be stored as assets too.
-	E.g., Material::create() would have the recipe for making a Material.
-	The manifest would contain the names of the shader RESOURCES and texture RESOURCES.
-	The ResourceManager<Material> recipe would then call ResourceManager::get<Shader>(manifest.shader_name)
-	which would create the shader resource.
-	
-	Solution: template <ValidResource T> const T& ResourceManager::get(gc::Name resource_name) where ValidResource is a class that contains:
-
-	// this member function probably should be made private and friended to ResourceManager.
-	static T T::create(const gc::Content& content_manager, gc::Name resource_name)
-
-	It must not be possible for ResourceManager::get() to invalidate previously returned references to resources.
-	This is made possible by having ResourceManager contain a
-	std::unordered_map<Name, std::unique_ptr<T>>
-
-	Additional requirements:
-	ResourceManager::get() should be completely thread safe (requiring no external synchronisation to avoid UB). It will be called
-	potentially hundreds of times in a single frame across multiple threads. So it should be as lightweight as possible in the case that the Resource doesn't exist
-	and needs creating on the fly.
-
-	Preload functionality will be added later, possibly have it use the engine job system to support asynchronous asset loading.
-
-	As the implementation currently stands, these are the rough levels of indirection for the hot path:
-	- `std::vector<std::unique_ptr<IResourceCache>> m_caches{}` `operator[]` lookup
-	- std::unique_ptr<IResourceCache> deference to call ResourceCache<T>::get() // NO VTABLE LOOKUP IN THE HOT PATH, ONLY WHEN DESTRUCTOR IS CALLED
-	- ResourceCache<T>::get() called .find() on unordered map, returning reference
-
 Pipeline variants
 	If a given material doesn't use a normal map, for example, it shouldn't sample a normal texture in the fragment shader.
-	Use multiple pipelines instead or maybe just use null descriptors
+	Use multiple pipelines instead or maybe just use null descriptors.
+	Either way, don't store pipeline in material, just what features are wanted, such as:
+	 - use normal map
+	 - constant roughness vs roughness map

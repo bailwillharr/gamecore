@@ -110,7 +110,7 @@ public:
                             current_texture += 1;
                             ren->m_material = m_rm.add(std::move(new_material));
                             GC_TRACE("Material switched to: {}", ren->m_material.getString());
-                            ren->m_mesh = gc::Name("sphere");
+                            ren->m_mesh = gc::Name("cube");
                         }
                         else {
                             const auto texture_target_t = m_world.getComponent<gc::TransformComponent>(f.m_texture_target);

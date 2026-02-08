@@ -1,5 +1,6 @@
-#include "gamecore/gc_resources.h"
 #define _CRT_SECURE_NO_WARNINGS
+
+#include "gamecore/gc_resources.h"
 
 #include "gen_mesh.h"
 
