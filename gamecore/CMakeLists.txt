@@ -35,7 +35,7 @@ set(SRC_FILES
   "src/gc_vulkan_utils.cpp"
   "src/gc_gen_tangents.cpp"
   "src/gc_resource_manager.cpp"
-)
+ "src/gc_light_system.cpp")
 
 # Public API includes
 # Care must be taken to ensure these headers do not reference private headers
@@ -85,6 +85,8 @@ set(INCLUDE_FILES
   "include/gamecore/gc_render_texture_manager.h"
   "include/gamecore/gc_render_object_manager.h"
   "include/gamecore/gc_resources.h"
+  "include/gamecore/gc_light_component.h"
+  "include/gamecore/gc_light_system.h"
 )
 
 # gamecore is a static library
@@ -113,6 +115,7 @@ if(GC_DEV_BUILD)
     target_compile_definitions(${PROJECT_NAME} PUBLIC GC_LOG_DEBUG)
     target_compile_definitions(${PROJECT_NAME} PUBLIC GC_LOG_TRACE)
     target_compile_definitions(${PROJECT_NAME} PUBLIC GC_LOOKUP_ASSET_IDS)
+    target_compile_definitions(${PROJECT_NAME} PUBLIC GC_CHECK_COLLISIONS)
     #target_compile_definitions(${PROJECT_NAME} PUBLIC GC_VULKAN_VALIDATION)
 endif()
 if (GC_LOG_DEBUG)

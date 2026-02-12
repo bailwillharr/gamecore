@@ -762,8 +762,9 @@ void RenderBackend::submitFrame(bool window_resized, const WorldDrawData& world_
         scissor.extent = swapchain_extent;
         vkCmdSetScissor(stuff.cmd, 0, 1, &scissor);
 
-        recordWorldRenderingCommands(stuff.cmd, m_pipeline_layout, m_pipeline->getHandle(), m_main_timeline_semaphore, m_main_timeline_value + 1,
-                                     world_draw_data);
+        if (m_pipeline) {
+            recordWorldRenderingCommands(stuff.cmd, m_pipeline_layout, *m_pipeline, m_main_timeline_semaphore, m_main_timeline_value + 1, world_draw_data);
+        }
 
         ImGui_ImplVulkan_RenderDrawData(ImGui::GetDrawData(), stuff.cmd);
 

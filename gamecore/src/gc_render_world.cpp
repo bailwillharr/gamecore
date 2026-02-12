@@ -9,11 +9,15 @@
 
 namespace gc {
 
-void recordWorldRenderingCommands(VkCommandBuffer cmd, VkPipelineLayout world_pipeline_layout, VkPipeline world_pipeline, VkSemaphore timeline_semaphore,
+void recordWorldRenderingCommands(VkCommandBuffer cmd, VkPipelineLayout world_pipeline_layout, GPUPipeline& world_pipeline, VkSemaphore timeline_semaphore,
                                   uint64_t signal_value, const WorldDrawData& draw_data)
 {
+    GC_ASSERT(cmd);
+    GC_ASSERT(world_pipeline_layout);
+    GC_ASSERT(timeline_semaphore);
 
-    vkCmdBindPipeline(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, world_pipeline);
+    world_pipeline.useResource(timeline_semaphore, signal_value);
+    vkCmdBindPipeline(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, world_pipeline.getHandle());
 
     vkCmdPushConstants(cmd, world_pipeline_layout, VK_SHADER_STAGE_VERTEX_BIT, 64, 64, &draw_data.getViewMatrix());
     vkCmdPushConstants(cmd, world_pipeline_layout, VK_SHADER_STAGE_VERTEX_BIT, 128, 64, &draw_data.getProjectionMatrix());

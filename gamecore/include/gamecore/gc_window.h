@@ -91,7 +91,7 @@ class Window {
 
     bool m_should_quit = false;
 
-    uint32_t m_mouse_capture_event_index{}; // mouse release event index is this + 1
+    uint32_t m_mouse_capture_event_index{};
     uint32_t m_mouse_release_event_index{};
 
 public:

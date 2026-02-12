@@ -1,6 +1,5 @@
 #pragma once
 
-#include <atomic>
 #include <memory>
 #include <string_view>
 
@@ -15,7 +14,6 @@ namespace gc {
 /* Create with createLoggerSpdlog() */
 class LoggerSpdlog final : public Logger {
     std::unique_ptr<spdlog::logger> m_spdlogger;
-    std::atomic<int64_t> m_frame_number; // -1 means before game loop starts
 
 public:
     LoggerSpdlog();
@@ -24,8 +22,6 @@ public:
     ~LoggerSpdlog() override;
 
     LoggerSpdlog& operator=(const LoggerSpdlog&) = delete;
-
-    void incrementFrameNumber() override;
 
     void setLogFile(const std::filesystem::path& file) override;
 

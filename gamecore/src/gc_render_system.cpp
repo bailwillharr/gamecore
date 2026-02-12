@@ -20,7 +20,7 @@ void RenderSystem::onUpdate(FrameState& frame_state)
 {
     ZoneScoped;
 
-    m_world.forEach<TransformComponent, RenderableComponent>([&]([[maybe_unused]] Entity entity, TransformComponent& t, RenderableComponent& c) {
+    m_world.forEach<TransformComponent, RenderableComponent>([&]([[maybe_unused]] Entity entity, const TransformComponent& t, const RenderableComponent& c) {
         if (c.m_visible && !c.m_mesh.empty() && !c.m_material.empty()) {
             // resolve resources
             const auto mesh_ref = m_render_object_manager.getRenderMesh(c.m_mesh);
@@ -28,9 +28,6 @@ void RenderSystem::onUpdate(FrameState& frame_state)
             mesh_ref->setLastUsedFrame(frame_state.frame_count);
             material_ref->setLastUsedFrame(frame_state.frame_count);
             frame_state.draw_data.drawMesh(t.getWorldMatrix(), mesh_ref, material_ref);
-        }
-        if (t.name == Name("light")) {
-            frame_state.draw_data.setLightPos(t.getWorldPosition());
         }
     });
 

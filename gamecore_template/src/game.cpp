@@ -7,23 +7,26 @@
 #include <tracy/Tracy.hpp>
 
 #include <gamecore/gc_app.h>
-#include <gamecore/gc_render_backend.h>
-#include <gamecore/gc_ecs.h>
-#include <gamecore/gc_world.h>
-#include <gamecore/gc_window.h>
-#include <gamecore/gc_content.h>
-#include <gamecore/gc_render_system.h>
-#include <gamecore/gc_camera_system.h>
-#include <gamecore/gc_renderable_component.h>
 #include <gamecore/gc_camera_component.h>
-#include <gamecore/gc_transform_component.h>
+#include <gamecore/gc_camera_system.h>
+#include <gamecore/gc_content.h>
 #include <gamecore/gc_debug_ui.h>
-#include <gamecore/gc_resource_manager.h>
+#include <gamecore/gc_ecs.h>
 #include <gamecore/gc_gpu_resources.h>
+#include <gamecore/gc_light_component.h>
+#include <gamecore/gc_light_system.h>
+#include <gamecore/gc_name.h>
+#include <gamecore/gc_render_backend.h>
+#include <gamecore/gc_render_system.h>
+#include <gamecore/gc_renderable_component.h>
+#include <gamecore/gc_resource_manager.h>
+#include <gamecore/gc_transform_component.h>
+#include <gamecore/gc_window.h>
+#include <gamecore/gc_world.h>
 
 #include "gen_mesh.h"
-#include "spin.h"
 #include "mouse_move.h"
+#include "spin.h"
 
 class FollowSystem; // forward-dec
 
@@ -111,6 +114,8 @@ public:
                             ren->m_material = m_rm.add(std::move(new_material));
                             GC_TRACE("Material switched to: {}", ren->m_material.getString());
                             ren->m_mesh = gc::Name("cube");
+
+                            [[maybe_unused]] auto testname = gc::Name("testtesttest");
                         }
                         else {
                             const auto texture_target_t = m_world.getComponent<gc::TransformComponent>(f.m_texture_target);
@@ -142,6 +147,9 @@ public:
 
     void onUpdate([[maybe_unused]] gc::FrameState& frame_state) override
     {
+        if (frame_state.frame_count < 60) {
+            return;
+        }
         if (!m_loaded) {
 
             gc::App& app = gc::App::instance();
@@ -155,11 +163,16 @@ public:
 
             world.registerComponent<gc::RenderableComponent, gc::ComponentArrayType::DENSE>();
             world.registerComponent<gc::CameraComponent, gc::ComponentArrayType::SPARSE>();
+            world.registerComponent<gc::LightComponent, gc::ComponentArrayType::SPARSE>();
+
+            world.registerSystem<gc::RenderSystem>(resource_manager, render_backend);
+            world.registerSystem<gc::CameraSystem>();
+            world.registerSystem<gc::LightSystem>();
+
             world.registerComponent<SpinComponent, gc::ComponentArrayType::SPARSE>();
             world.registerComponent<MouseMoveComponent, gc::ComponentArrayType::SPARSE>();
             world.registerComponent<FollowComponent, gc::ComponentArrayType::SPARSE>();
-            world.registerSystem<gc::RenderSystem>(resource_manager, render_backend);
-            world.registerSystem<gc::CameraSystem>();
+
             world.registerSystem<SpinSystem>();
             world.registerSystem<MouseMoveSystem>();
             world.registerSystem<FollowSystem>(resource_manager);
@@ -168,6 +181,7 @@ public:
             auto camera = world.createEntity(gc::Name("light"), gc::ENTITY_NONE, {0.0f, 0.0f, 67.5f * 25.4e-3f});
             world.addComponent<gc::CameraComponent>(camera).setFOV(glm::radians(45.0f)).setNearPlane(0.1f).setActive(true);
             world.addComponent<MouseMoveComponent>(camera).setMoveSpeed(25.0f).setAcceleration(40.0f).setDeceleration(100.0f).setSensitivity(1e-3f);
+            world.addComponent<gc::LightComponent>(camera);
 
             const auto shrek_parent = world.createEntity(gc::Name("shrek_parent"), gc::ENTITY_NONE, glm::vec3{0.0f, +100.0f, 5.0f});
             world.addComponent<FollowComponent>(shrek_parent).setTarget(camera).setMinDistance(5.0f).setSpeed(10.0f);
@@ -228,7 +242,7 @@ void buildAndStartGame(gc::App& app, Options options)
     app.window().setTitle("Hello world!");
     app.window().setIsResizable(true);
     app.window().setMouseCaptured(true);
-    app.window().setSize(0, 0, true);
+    // app.window().setSize(0, 0, true);
     app.window().setWindowVisibility(true);
 
     // app.debugUI().active = true;

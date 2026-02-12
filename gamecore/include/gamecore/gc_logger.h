@@ -1,5 +1,6 @@
 #pragma once
 
+#include <atomic>
 #include <string_view>
 #include <format>
 #include <filesystem>
@@ -35,11 +36,14 @@ namespace gc {
 enum class LogLevel { LVL_TRACE = 0, LVL_DEBUG = 1, LVL_INFO = 2, LVL_WARN = 3, LVL_ERROR = 4, LVL_CRITICAL = 5 };
 
 class Logger {
+    std::atomic<int64_t> m_frame_number{-1}; // -1 means before game loop starts
 
 public:
     virtual ~Logger();
 
-    virtual void incrementFrameNumber();
+    void incrementFrameNumber();
+    int64_t getFrameNumber() const;
+
     virtual void setLogFile(const std::filesystem::path&);
 
     void trace(std::string_view message);

@@ -13,7 +13,7 @@
 
 namespace gc {
 
-LoggerSpdlog::LoggerSpdlog() : m_spdlogger(nullptr), m_frame_number(-1)
+LoggerSpdlog::LoggerSpdlog() : m_spdlogger(nullptr)
 {
     std::vector<spdlog::sink_ptr> sinks;
     sinks.emplace_back(std::make_shared<spdlog::sinks::stdout_color_sink_mt>());
@@ -23,14 +23,6 @@ LoggerSpdlog::LoggerSpdlog() : m_spdlogger(nullptr), m_frame_number(-1)
 }
 
 LoggerSpdlog::~LoggerSpdlog() { GC_TRACE("Destroying LoggerSpdlog..."); }
-
-void LoggerSpdlog::incrementFrameNumber()
-{
-    if (!isMainThread()) {
-        gc::abortGame("Cannot call LoggerSpdlog::incrementFrameNumber() from another thread!");
-    }
-    m_frame_number.fetch_add(1LL, std::memory_order_relaxed);
-}
 
 void LoggerSpdlog::setLogFile(const std::filesystem::path& file)
 {
@@ -44,7 +36,7 @@ void LoggerSpdlog::setLogFile(const std::filesystem::path& file)
 
 void LoggerSpdlog::log(std::string_view message, LogLevel level)
 {
-    const auto formatted_message = std::format("[frame:{}] {}", m_frame_number.load(std::memory_order_relaxed), message);
+    const auto formatted_message = std::format("[frame:{}] {}", getFrameNumber(), message);
     switch (level) {
         case LogLevel::LVL_TRACE:
             m_spdlogger->trace("{}", formatted_message);

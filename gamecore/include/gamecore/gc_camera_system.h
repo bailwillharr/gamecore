@@ -21,7 +21,7 @@ public:
         ZoneScoped;
         const float aspect_ratio =
             static_cast<float>(frame_state.window_state->getWindowSize().x) / static_cast<float>(frame_state.window_state->getWindowSize().y);
-        m_world.forEach<TransformComponent, CameraComponent>([&]([[maybe_unused]] Entity entity, TransformComponent& t, CameraComponent& c) {
+        m_world.forEach<TransformComponent, CameraComponent>([&]([[maybe_unused]] Entity entity, const TransformComponent& t, const CameraComponent& c) {
             if (c.m_active) {
                 // in view space
                 glm::mat4 projection_matrix = glm::infinitePerspectiveRH_NO(c.m_fov_radians, aspect_ratio, c.m_near);

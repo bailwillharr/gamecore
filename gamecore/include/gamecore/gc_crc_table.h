@@ -1,8 +1,22 @@
 #pragma once
 
+// the crc32 function is constexpr to allow for zero string processing/comparison at runtime in release builds.
+// In debug builds, collision detection is performed.
+// Each thread stores its own map of str -> hash entries. These are flushed when the map hits THREAD_LOCAL_MAP_FLUSH_SIZE.
+// Thread-local maps are also flushed every frame.
+
 #include <cstdint>
 
 #include <array>
+
+#ifdef GC_CHECK_COLLISIONS
+#include <mutex>
+#endif
+
+#ifdef GC_CHECK_COLLISIONS
+#include "gamecore/gc_abort.h"
+#include "gamecore/gc_logger.h"
+#endif
 
 namespace gc {
 
@@ -30,11 +44,68 @@ inline constexpr std::array<uint32_t, 256> crc_table = {
     0xbdbdf21cL, 0xcabac28aL, 0x53b39330L, 0x24b4a3a6L, 0xbad03605L, 0xcdd70693L, 0x54de5729L, 0x23d967bfL, 0xb3667a2eL, 0xc4614ab8L, 0x5d681b02L, 0x2a6f2b94L,
     0xb40bbe37L, 0xc30c8ea1L, 0x5a05df1bL, 0x2d02ef8dL};
 
-inline constexpr uint32_t crc32(std::string_view id)
+inline constexpr uint32_t crc32_impl(std::string_view id)
 {
     uint32_t crc = 0xffffffffu;
     for (char c : id) crc = (crc >> 8) ^ crc_table[(crc ^ c) & 0xff];
     return crc ^ 0xffffffff;
 }
+
+#ifdef GC_CHECK_COLLISIONS
+
+struct Crc32GlobalMap {
+    std::mutex mut{};
+    std::unordered_map<uint32_t, std::string> main_map{};
+};
+inline auto g_crc32_global_map = new Crc32GlobalMap; // LEAKED ON PURPOSE
+
+inline void crc32FlushMapAndCheckCollisions(const std::unordered_map<uint32_t, std::string>& local_map)
+{
+    GC_INFO("FLUSHING MAP");
+    std::lock_guard lock(g_crc32_global_map->mut);
+    for (const auto& [hash, id] : local_map) {
+        auto [it, success] = g_crc32_global_map->main_map.try_emplace(hash, id);
+        if (!success && it->second != id) {
+            abortGame("HASH COLLISION: '{}' and '{}' both hash to {}", it->second, id, hash);
+        }
+    }
+}
+
+struct Crc32ThreadLocalMap {
+    std::unordered_map<uint32_t, std::string> local_map{};
+    int64_t last_flushed_frame_count{-1};
+    ~Crc32ThreadLocalMap() { crc32FlushMapAndCheckCollisions(local_map); }
+};
+
+inline uint32_t crc32(std::string_view id)
+{
+    constexpr size_t THREAD_LOCAL_MAP_FLUSH_SIZE = 1000000; // flushes to global map once it reaches this size
+
+    thread_local Crc32ThreadLocalMap t_local_map{};
+
+    const uint32_t hash = crc32_impl(id);
+    auto [it, success] = t_local_map.local_map.try_emplace(hash, id);
+    if (success) {
+        const int64_t frame_count = Logger::instance().getFrameNumber();
+        if (t_local_map.local_map.size() >= THREAD_LOCAL_MAP_FLUSH_SIZE || frame_count != t_local_map.last_flushed_frame_count) {
+            crc32FlushMapAndCheckCollisions(t_local_map.local_map);
+            t_local_map.local_map.clear();
+            t_local_map.last_flushed_frame_count = frame_count;
+        }
+    }
+    else {
+        // check there isn't a collision
+        if (it->second != id) {
+            abortGame("HASH COLLISION: '{}' and '{}' both hash to {}", it->second, id, hash);
+        }
+    }
+    return hash;
+}
+
+#else
+
+inline constexpr uint32_t crc32(std::string_view id) { return crc32_impl(id); }
+
+#endif
 
 } // namespace gc
