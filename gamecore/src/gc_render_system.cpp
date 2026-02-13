@@ -21,13 +21,15 @@ void RenderSystem::onUpdate(FrameState& frame_state)
     ZoneScoped;
 
     m_world.forEach<TransformComponent, RenderableComponent>([&]([[maybe_unused]] Entity entity, const TransformComponent& t, const RenderableComponent& c) {
-        if (c.m_visible && !c.m_mesh.empty() && !c.m_material.empty()) {
+        if (c.m_visible) {
             // resolve resources
-            const auto mesh_ref = m_render_object_manager.getRenderMesh(c.m_mesh);
-            const auto material_ref = m_render_object_manager.getRenderMaterial(c.m_material);
-            mesh_ref->setLastUsedFrame(frame_state.frame_count);
-            material_ref->setLastUsedFrame(frame_state.frame_count);
-            frame_state.draw_data.drawMesh(t.getWorldMatrix(), mesh_ref, material_ref);
+            RenderMesh* const mesh = m_render_object_manager.getRenderMesh(c.m_mesh);
+            RenderMaterial* const material = m_render_object_manager.getRenderMaterial(c.m_material);
+            if (mesh && material) {
+                mesh->setLastUsedFrame(frame_state.frame_count);
+                material->setLastUsedFrame(frame_state.frame_count);
+                frame_state.draw_data.drawMesh(t.getWorldMatrix(), mesh, material);
+            }
         }
     });
 

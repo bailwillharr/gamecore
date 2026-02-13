@@ -8,6 +8,10 @@
 #include <spdlog/sinks/stdout_color_sinks.h>
 #include <spdlog/sinks/basic_file_sink.h>
 
+#ifdef _WIN32
+#include <spdlog/sinks/msvc_sink.h>
+#endif
+
 #include "gamecore/gc_abort.h"
 #include "gamecore/gc_threading.h"
 
@@ -18,6 +22,10 @@ LoggerSpdlog::LoggerSpdlog() : m_spdlogger(nullptr)
     std::vector<spdlog::sink_ptr> sinks;
     sinks.emplace_back(std::make_shared<spdlog::sinks::stdout_color_sink_mt>());
     sinks.back()->set_pattern("[%H:%M:%S.%e] [%^%l%$] [thread:%t] %v");
+#ifdef _WIN32
+    sinks.emplace_back(std::make_shared<spdlog::sinks::msvc_sink_mt>());
+    sinks.back()->set_pattern("[%H:%M:%S.%e] [%^%l%$] [thread:%t] %v");
+#endif
     m_spdlogger = std::make_unique<spdlog::logger>("gamecore", sinks.begin(), sinks.end());
     m_spdlogger->set_level(spdlog::level::trace);
 }
@@ -29,8 +37,9 @@ void LoggerSpdlog::setLogFile(const std::filesystem::path& file)
     if (!isMainThread()) {
         gc::abortGame("Cannot call LoggerSpdlog::setLogFile() from another thread.");
     }
-    if (m_spdlogger->sinks().size() == 1) {
+    if (!m_log_file_set) {
         m_spdlogger->sinks().emplace_back(std::make_shared<spdlog::sinks::basic_file_sink_mt>(file.string()));
+        m_log_file_set = true;
     }
 }
 

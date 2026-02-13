@@ -4,6 +4,8 @@
 #include <string_view>
 #include <optional>
 
+#include <Windows.h>
+
 #include <gctemplates/gct_static_vector.h>
 
 #include <gamecore/gc_app.h>
@@ -41,6 +43,8 @@ int main(int argc, char* argv[])
     init_options.version = "v0.0.0";
 
     gc::App::initialise(init_options);
+
+    OutputDebugString("HELLO WORLD!!!");
 
     buildAndStartGame(gc::App::instance(), options);
 

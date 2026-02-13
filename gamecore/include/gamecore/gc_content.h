@@ -4,6 +4,8 @@
 
 #include <span>
 #include <unordered_map>
+#include <optional>
+#include <filesystem>
 
 #include <gctemplates/gct_static_vector.h>
 
@@ -33,7 +35,7 @@ class Content {
     std::unordered_map<Name, PackageAssetInfo> m_asset_infos;
 
 public:
-    Content();
+    Content(const std::filesystem::path& content_dir);
     Content(const Content&) = delete;
     Content(Content&&) = delete;
 

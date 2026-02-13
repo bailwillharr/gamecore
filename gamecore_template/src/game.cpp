@@ -88,34 +88,38 @@ public:
                 if (t.getParent() == target_t->getParent()) {
                     const glm::vec3 follower_to_target = target_t->getPosition() - t.getPosition();
                     const float distance = glm::length(follower_to_target);
-                    const glm::vec3 follower_to_target_norm = follower_to_target / distance;
-                    t.setRotation(glm::quatLookAtRH(-follower_to_target_norm, glm::vec3{0.0f, 0.0f, 1.0f}) *
+                    const float planar_distance = glm::length(glm::vec3{follower_to_target.x, follower_to_target.y, 0.0f});
+                    const glm::vec3 follower_to_target_planar_norm = glm::normalize(glm::vec3{follower_to_target.x, follower_to_target.y, 0.0f});
+                    t.setRotation(glm::quatLookAtRH(-follower_to_target_planar_norm, glm::vec3{0.0f, 0.0f, 1.0f}) *
                                   glm::angleAxis(-glm::half_pi<float>(), glm::vec3{1.0f, 0.0f, 0.0f}));
 
-                    if (distance < f.m_min_distance) {
-                        t.setPosition(t.getPosition() - follower_to_target_norm * (f.m_min_distance - distance));
+                    if (planar_distance < f.m_min_distance) {
+                        t.setPosition(t.getPosition() - follower_to_target_planar_norm * (f.m_min_distance - planar_distance));
                     }
+                    else {
+                        t.setPosition(t.getPosition() + follower_to_target_planar_norm *
+                                                            fminf(f.m_speed * static_cast<float>(frame_state.delta_time), distance - f.m_min_distance));
+                    }
+
                     if (distance < f.m_min_distance + 1.0f) {
                         if (f.m_time_since_contact > f.m_cooldown_seconds) {
                             f.m_time_since_contact = 0.0f;
                         }
                     }
-                    else {
-                        t.setPosition(t.getPosition() +
-                                      follower_to_target_norm * fminf(f.m_speed * static_cast<float>(frame_state.delta_time), distance - f.m_min_distance));
-                    }
+
                     if (f.m_time_since_contact == 0.0f) {
                         const auto ren = m_world.getComponent<gc::RenderableComponent>(f.m_texture_target);
                         if (ren) {
-                            const auto& old_material = m_rm.get<gc::ResourceMaterial>(ren->m_material);
-                            auto new_material = old_material;
+                            const auto old_material = m_rm.get<gc::ResourceMaterial>(ren->m_material);
+                            gc::ResourceMaterial new_material{};
+                            if (old_material) {
+                                new_material = *old_material;
+                            }
                             new_material.base_color_texture = m_textures[current_texture % m_textures.size()];
                             current_texture += 1;
                             ren->m_material = m_rm.add(std::move(new_material));
                             GC_TRACE("Material switched to: {}", ren->m_material.getString());
                             ren->m_mesh = gc::Name("cube");
-
-                            [[maybe_unused]] auto testname = gc::Name("testtesttest");
                         }
                         else {
                             const auto texture_target_t = m_world.getComponent<gc::TransformComponent>(f.m_texture_target);
@@ -157,9 +161,15 @@ public:
             gc::RenderBackend& render_backend = app.renderBackend();
             gc::Content& content = app.content();
             gc::World& world = app.world();
-
-            render_backend.createPipeline(content.findAsset(gc::Name("fancy.vert"), gcpak::GcpakAssetType::SPIRV_SHADER),
-                                          content.findAsset(gc::Name("fancy.frag"), gcpak::GcpakAssetType::SPIRV_SHADER));
+            {
+                auto vert = content.findAsset(gc::Name("fancy.vert"), gcpak::GcpakAssetType::SPIRV_SHADER);
+                auto frag = content.findAsset(gc::Name("fancy.frag"), gcpak::GcpakAssetType::SPIRV_SHADER);
+                if (vert.empty() || frag.empty()) {
+                    GC_ERROR_ONCE("Could not find fancy.vert or fancy.frag. Cannot load game.");
+                    return;
+                }
+                render_backend.createPipeline(vert, frag);
+            }
 
             world.registerComponent<gc::RenderableComponent, gc::ComponentArrayType::DENSE>();
             world.registerComponent<gc::CameraComponent, gc::ComponentArrayType::SPARSE>();
@@ -195,7 +205,7 @@ public:
             {
                 gc::ResourceMaterial default_material{};
                 default_material.base_color_texture = gc::Name("bricks-mortar-albedo.png");
-                default_material.occlusion_roughness_metallic_texture = gc::Name("bricks-mortar-orm.png");
+                default_material.orm_texture = gc::Name("bricks-mortar-orm.png");
                 default_material.normal_texture = gc::Name("bricks-mortar-normal.png");
                 resource_manager.add<gc::ResourceMaterial>(std::move(default_material), gc::Name("default_material"));
             }
@@ -208,16 +218,19 @@ public:
                 for (int y = 0; y < 6; ++y) {
                     auto& cube = cubes[x * 6 + y];
                     cube = world.createEntity(gc::Name(std::format("cube{}.{}", x, y)), parent, glm::vec3{(x - 2.5f) * 2.0f, 0.0f, (y - 2.5f) * 2.0f});
-                    world.addComponent<gc::RenderableComponent>(cube).setMesh(gc::Name("sphere")).setMaterial(gc::Name("default_material"));
+                    world.addComponent<gc::RenderableComponent>(cube).setMesh(gc::Name("sphere"));
+                    //.setMaterial(gc::Name("default_material"));
                     world.addComponent<SpinComponent>(cube).setAxis({1.0f, 0.0f, 0.7f}).setRadiansPerSecond(0.0f);
                 }
             }
 
             // add a floor
-            const auto floor = world.createEntity(gc::Name("floor"), gc::ENTITY_NONE, {0.0f, 0.0f, -0.5f}, {}, {100.0f, 100.0f, 1.0f});
-            world.addComponent<gc::RenderableComponent>(floor).setMesh(gc::Name("cube")).setMaterial(gc::Name("default_material"));
+            constexpr float FLOOR_SIZE = 100.0f;
+            const auto floor = world.createEntity(gc::Name("floor"), gc::ENTITY_NONE, {0.0f, 0.0f, -0.5f}, {}, {FLOOR_SIZE, FLOOR_SIZE, 1.0f});
+            world.addComponent<gc::RenderableComponent>(floor).setMesh(gc::Name("floor_plane")).setMaterial(gc::Name("default_material"));
 
             resource_manager.add<gc::ResourceMesh>(genCuboidMesh(1.0f, 1.0f, 1.0f), gc::Name("cube"));
+            resource_manager.add<gc::ResourceMesh>(genPlaneMesh(FLOOR_SIZE), gc::Name("floor_plane"));
             resource_manager.add<gc::ResourceMesh>(genSphereMesh(1.0f, 10), gc::Name("sphere"));
 
             m_loaded = true;

@@ -14,6 +14,7 @@ namespace gc {
 /* Create with createLoggerSpdlog() */
 class LoggerSpdlog final : public Logger {
     std::unique_ptr<spdlog::logger> m_spdlogger;
+    bool m_log_file_set = false;
 
 public:
     LoggerSpdlog();

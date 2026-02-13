@@ -30,6 +30,15 @@
         }                                                              \
     } while (0)
 
+#define GC_ERROR_ONCE(...)                                              \
+    do {                                                               \
+        static bool _gc_warn_once_logged = false;                      \
+        if (!_gc_warn_once_logged) {                                   \
+            ::gc::Logger::instance().error(::std::format(__VA_ARGS__)); \
+            _gc_warn_once_logged = true;                               \
+        }                                                              \
+    } while (0)
+
 namespace gc {
 
 /* 'ERROR' is defined as a macro in Windows.h so LVL_ is prepended */

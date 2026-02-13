@@ -1,6 +1,6 @@
 #pragma once
 
-// the crc32 function is constexpr to allow for zero string processing/comparison at runtime in release builds.
+// the crc32 function is constexpr to allow for zero string processing or comparisons at runtime in release builds.
 // In debug builds, collision detection is performed.
 // Each thread stores its own map of str -> hash entries. These are flushed when the map hits THREAD_LOCAL_MAP_FLUSH_SIZE.
 // Thread-local maps are also flushed every frame.
@@ -79,7 +79,7 @@ struct Crc32ThreadLocalMap {
 
 inline uint32_t crc32(std::string_view id)
 {
-    constexpr size_t THREAD_LOCAL_MAP_FLUSH_SIZE = 1000000; // flushes to global map once it reaches this size
+    constexpr size_t THREAD_LOCAL_MAP_FLUSH_SIZE = 1024; // flushes to global map once it reaches this size
 
     thread_local Crc32ThreadLocalMap t_local_map{};
 

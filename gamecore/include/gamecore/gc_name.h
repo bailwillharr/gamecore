@@ -16,6 +16,7 @@
 #include <filesystem>
 #include <fstream>
 #include <unordered_map>
+#include <format>
 
 #include "gamecore/gc_crc_table.h"
 #include "gamecore/gc_logger.h"
@@ -88,4 +89,10 @@ inline void loadNameLookupTable(const std::filesystem::path& file_path)
 template <>
 struct std::hash<gc::Name> {
     constexpr std::size_t operator()(const gc::Name& key) const noexcept { return static_cast<size_t>(key.getHash()); }
+};
+
+template <>
+struct std::formatter<gc::Name> {
+    constexpr auto parse(std::format_parse_context& ctx) const { return ctx.begin(); }
+    auto format(const gc::Name& name, std::format_context& ctx) const { return std::format_to(ctx.out(), "{}", name.getString()); }
 };

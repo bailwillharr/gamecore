@@ -45,6 +45,7 @@ class App {
     std::unique_ptr<ResourceManager> m_resource_manager{};
 
     std::filesystem::path m_save_directory{};
+    std::filesystem::path m_application_directory{};
 
 private:
     /* application lifetime is controlled by static variable 'instance' in instance() static method */

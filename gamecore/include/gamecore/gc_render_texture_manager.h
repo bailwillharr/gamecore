@@ -23,18 +23,25 @@ public:
     RenderTextureManager& operator=(const RenderTextureManager&) = delete;
     RenderTextureManager& operator=(RenderTextureManager&&) = delete;
 
-    RenderTexture& acquire(ResourceManager& resource_manager, RenderBackend& render_backend, Name name)
+    // Do not call release() if this fails.
+    // Returns nullptr on failure.
+    RenderTexture* acquire(ResourceManager& resource_manager, RenderBackend& render_backend, Name name)
     {
         auto it = m_textures.find(name);
         if (it != m_textures.end()) {
             // Already exists, increment ref count
             it->second.ref_count += 1;
-            return it->second.texture;
+            return &it->second.texture;
         }
 
         // Not found, create new texture
-        auto inserted = m_textures.emplace(name, TextureEntry{createRenderTexture(resource_manager, render_backend, name), 1});
-        return inserted.first->second.texture;
+        const ResourceTexture* texture_resource = resource_manager.get<ResourceTexture>(name);
+        if (!texture_resource) {
+            GC_ERROR("Could not find texture resource: {}", name);
+            return nullptr;
+        }
+        auto inserted = m_textures.emplace(name, TextureEntry{createRenderTexture(render_backend, *texture_resource), 1});
+        return &inserted.first->second.texture;
     }
 
     void release(Name name)
@@ -49,10 +56,9 @@ public:
     }
 
 private:
-    RenderTexture createRenderTexture(ResourceManager& resource_manager, RenderBackend& render_backend, Name name)
+    RenderTexture createRenderTexture(RenderBackend& render_backend, const ResourceTexture& texture)
     {
-        const auto& texture_resource = resource_manager.get<ResourceTexture>(name);
-        return render_backend.createTexture(texture_resource.data, texture_resource.srgb);
+        return render_backend.createTexture(texture.data, texture.srgb);
     }
 };
 

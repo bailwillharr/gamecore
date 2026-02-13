@@ -30,6 +30,18 @@ namespace gc {
 // empty ptr, it is initialised manually in application
 App* App::s_app = nullptr;
 
+static std::filesystem::path findApplicationDirectory()
+{
+    const char* const base_path = SDL_GetBasePath();
+    if (base_path) {
+        return std::filesystem::path(base_path);
+    }
+    else {
+        GC_ERROR("Failed to find application dir: SDL_GetBasePath() error: {}", SDL_GetError());
+        return {};
+    }
+}
+
 App::App(const AppInitOptions& options)
 {
 
@@ -46,7 +58,13 @@ App::App(const AppInitOptions& options)
         m_save_directory = std::filesystem::current_path();
     }
 
+    m_application_directory = findApplicationDirectory();
+
+#ifdef GC_LOG_FILE_CWD
+    Logger::instance().setLogFile(m_application_directory / "logfile.txt");
+#else
     Logger::instance().setLogFile(m_save_directory / "logfile.txt");
+#endif
 
     GC_INFO("STARTING GAME");
 
@@ -67,7 +85,7 @@ App::App(const AppInitOptions& options)
     /* SUBSYSTEM INITIALISATION */
 
     m_jobs = std::make_unique<Jobs>(std::thread::hardware_concurrency());
-    m_content = std::make_unique<Content>();
+    m_content = std::make_unique<Content>(m_application_directory / "content");
     WindowInitInfo window_init_info{};
     window_init_info.vulkan_support = true;
     window_init_info.resizable = false;

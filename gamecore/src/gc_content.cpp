@@ -19,25 +19,6 @@
 
 namespace gc {
 
-static std::optional<std::filesystem::path> findContentDir()
-{
-    const char* const base_path = SDL_GetBasePath();
-    if (base_path) {
-        const std::filesystem::path content_dir = std::filesystem::path(base_path) / "content";
-        if (std::filesystem::is_directory(content_dir)) {
-            return content_dir;
-        }
-        else {
-            GC_ERROR("Failed to find content dir: {} is not a directory", content_dir.string());
-            return {};
-        }
-    }
-    else {
-        GC_ERROR("Failed to find content dir: SDL_GetBasePath() error: {}", SDL_GetError());
-        return {};
-    }
-}
-
 // returns ummap_source and number of entries in file
 static std::optional<std::pair<mio::ummap_source, std::uint32_t>> openAndValidateGcpak(const std::filesystem::path& file_path)
 {
@@ -85,12 +66,11 @@ static gcpak::GcpakAssetEntry getAssetEntry(const mio::ummap_source& map, const 
     return gcpak::GcpakAssetEntry::deserialize(ss);
 }
 
-Content::Content()
+Content::Content(const std::filesystem::path& content_dir)
 {
-    auto content_dir_opt = findContentDir();
-    if (content_dir_opt) { // if findContentDir() hasn't failed
+    if (!content_dir.empty()) { // if findContentDir() hasn't failed
         // Iterate through the .gcpak files found in content/
-        for (const auto& dir_entry : std::filesystem::directory_iterator(content_dir_opt.value())) {
+        for (const auto& dir_entry : std::filesystem::directory_iterator(content_dir)) {
             if (dir_entry.is_regular_file() && dir_entry.path().extension() == std::string{".gcpak"}) {
 
                 GC_ASSERT(!m_package_file_maps.full());

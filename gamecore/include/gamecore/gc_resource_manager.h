@@ -11,8 +11,12 @@
 
 namespace gc {
 
+// create() should have the following signature:
+// static std::optional<ValidResource> create(const Content& content_manager, Name name);
+
 // register different types with the resource manager at runtime.
 // Resources are immutable objects that are only stored by the resource manager and fetched with gc::Name handles.
+// However it is completely valid to copy a resource, modify the copy, and add the copy to the resource manager with a different name.
 // T::create() is defined for all resources.
 
 class Content;         // forward-dec
@@ -20,7 +24,7 @@ class ResourceManager; // forward-dec
 
 template <typename T>
 concept ValidResource = requires(const Content& content_manager, Name name) {
-    { T::create(content_manager, name) } -> std::same_as<T>;
+    { T::create(content_manager, name) } -> std::same_as<std::optional<T>>;
 };
 
 extern std::atomic<uint32_t> g_next_resource_index;
@@ -45,16 +49,19 @@ class ResourceCache : public IResourceCache {
     std::unordered_map<Name, std::unique_ptr<T>> m_resources{};
 
 public:
-    const T& get(const Content& content_manager, Name name)
+    const T* get(const Content& content_manager, Name name)
     {
         auto it = m_resources.find(name);
-        if (it != m_resources.end()) {
-            return *(it->second);
+        if (it == m_resources.end()) {
+            auto resource_opt = T::create(content_manager, name);
+            if (resource_opt.has_value()) {
+                it = m_resources.emplace(name, std::make_unique<T>(std::move(resource_opt.value()))).first;
+            }
+            else {
+                return nullptr;
+            }
         }
-        else {
-            it = m_resources.emplace(name, std::make_unique<T>(T::create(content_manager, name))).first;
-            return *(it->second);
-        }
+        return it->second.get();
     }
 
     // returns false if already exists
@@ -73,8 +80,11 @@ public:
     ~ResourceManager() { GC_TRACE("Destroying resource manager..."); };
 
     template <ValidResource T>
-    const T& get(Name name)
+    const T* get(Name name)
     {
+        if (name.empty()) {
+            return nullptr;
+        }
         uint32_t index = getResourceIndex<T>();
         if (index >= m_caches.size()) {
             m_caches.emplace_back(std::make_unique<ResourceCache<T>>());

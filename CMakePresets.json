@@ -41,8 +41,7 @@
       "inherits": "x64-debug-windows",
       "cacheVariables": {
         "CMAKE_BUILD_TYPE": "RelWithDebInfo",
-        "GC_DEV_BUILD": "OFF",
-        "GC_LOG_DEBUG": "ON",
+        "GC_DEV_BUILD": "ON",
         "GC_PROFILING": "OFF"
       },
       "condition": {
@@ -59,8 +58,7 @@
       "cacheVariables": {
         "CMAKE_BUILD_TYPE": "Release",
         "GC_DEV_BUILD": "OFF",
-        "GC_PROFILING": "OFF",
-        "GAMECORE_TEMPLATE_WIN32_BUILD": "ON"
+        "GC_PROFILING": "OFF"
       },
       "condition": {
         "type": "equals",
@@ -76,8 +74,7 @@
       "cacheVariables": {
         "CMAKE_BUILD_TYPE": "Release",
         "GC_DEV_BUILD": "OFF",
-        "GC_PROFILING": "ON",
-        "GAMECORE_TEMPLATE_WIN32_BUILD": "ON"
+        "GC_PROFILING": "ON"
       },
       "condition": {
         "type": "equals",

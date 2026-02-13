@@ -875,6 +875,10 @@ void RenderBackend::createPipeline(std::span<const uint8_t> vertex_spv, std::spa
         abortGame("Pipeline already created!");
     }
 
+    if (vertex_spv.empty() || fragment_spv.empty()) {
+        gc::abortGame("createPipeline() called with empty SPIRV code");
+    }
+
     VkShaderModuleCreateInfo module_info{};
     module_info.sType = VK_STRUCTURE_TYPE_SHADER_MODULE_CREATE_INFO;
     module_info.pNext = nullptr;
@@ -1532,6 +1536,7 @@ RenderMesh RenderBackend::createMesh(std::span<const MeshVertex> vertices, std::
     return RenderMesh(std::move(managed_buffer), static_cast<VkDeviceSize>(vertices_size), VK_INDEX_TYPE_UINT16, num_indices);
 }
 
+// textures passed as parameters must outlive the material!
 RenderMaterial RenderBackend::createMaterial(RenderTexture& base_color, RenderTexture& orm, RenderTexture& normal)
 {
     VkDescriptorSet descriptor_set{};
