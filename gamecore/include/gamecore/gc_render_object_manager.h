@@ -30,12 +30,25 @@ public:
     RenderObjectManager(ResourceManager& resource_manager, RenderBackend& render_backend)
         : m_resource_manager(resource_manager), m_render_backend(render_backend)
     {
-        m_fallback_textures[0] =
-            std::make_unique<RenderTexture>(render_backend.createTexture(std::array<uint8_t, 12>{1, 0, 0, 0, 1, 0, 0, 0, 255, 255, 255, 255}, true));
+        std::array<uint8_t, 8 + 4 * 64 * 64> missing_texture{};
+        missing_texture[0] = 64; // width
+        missing_texture[4] = 64; // height
+        for (int y = 0; y < 64; ++y) {
+            for (int x = 0; x < 64; ++x) {
+                const int color_index = 2 * 4 + y * 64 * 4 + x * 4;
+                uint8_t& r = missing_texture[color_index + 0];
+                uint8_t& g = missing_texture[color_index + 1];
+                uint8_t& b = missing_texture[color_index + 2];
+                r = (((x >> 3) ^ (y >> 3)) & 1) * 255;
+                g = 0;
+                b = r;
+            }
+        }
+        m_fallback_textures[0] = std::make_unique<RenderTexture>(render_backend.createTexture(missing_texture, true));
         m_fallback_textures[1] =
-            std::make_unique<RenderTexture>(render_backend.createTexture(std::array<uint8_t, 12>{1, 0, 0, 0, 1, 0, 0, 0, 255, 50, 0, 255}, true));
+            std::make_unique<RenderTexture>(render_backend.createTexture(std::array<uint8_t, 12>{1, 0, 0, 0, 1, 0, 0, 0, 255, 50, 0, 255}, false));
         m_fallback_textures[2] =
-            std::make_unique<RenderTexture>(render_backend.createTexture(std::array<uint8_t, 12>{1, 0, 0, 0, 1, 0, 0, 0, 0, 0, 128, 255}, true));
+            std::make_unique<RenderTexture>(render_backend.createTexture(std::array<uint8_t, 12>{1, 0, 0, 0, 1, 0, 0, 0, 128, 128, 255, 255}, false));
         m_fallback_material =
             std::make_unique<RenderMaterial>(render_backend.createMaterial(*m_fallback_textures[0], *m_fallback_textures[1], *m_fallback_textures[2]));
     }

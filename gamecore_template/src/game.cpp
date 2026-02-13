@@ -225,12 +225,11 @@ public:
             }
 
             // add a floor
-            constexpr float FLOOR_SIZE = 100.0f;
-            const auto floor = world.createEntity(gc::Name("floor"), gc::ENTITY_NONE, {0.0f, 0.0f, -0.5f}, {}, {FLOOR_SIZE, FLOOR_SIZE, 1.0f});
+            const auto floor = world.createEntity(gc::Name("floor"), gc::ENTITY_NONE, {0.0f, 0.0f, 0.0f});
             world.addComponent<gc::RenderableComponent>(floor).setMesh(gc::Name("floor_plane")).setMaterial(gc::Name("default_material"));
 
             resource_manager.add<gc::ResourceMesh>(genCuboidMesh(1.0f, 1.0f, 1.0f), gc::Name("cube"));
-            resource_manager.add<gc::ResourceMesh>(genPlaneMesh(FLOOR_SIZE), gc::Name("floor_plane"));
+            resource_manager.add<gc::ResourceMesh>(genCuboidMesh(100.0f, 100.0f, 100.0f, 100.0f), gc::Name("floor_plane"));
             resource_manager.add<gc::ResourceMesh>(genSphereMesh(1.0f, 10), gc::Name("sphere"));
 
             m_loaded = true;
@@ -248,7 +247,7 @@ void buildAndStartGame(gc::App& app, Options options)
 #ifdef WIN32
         app.renderBackend().setSyncMode(gc::RenderSyncMode::VSYNC_ON_DOUBLE_BUFFERED);
 #else
-        app.renderBackend().setSyncMode(gc::RenderSyncMode::VSYNC_ON_TRIPLE_BUFFERED_UNTHROTTLED);
+        app.renderBackend().setSyncMode(gc::RenderSyncMode::VSYNC_ON_DOUBLE_BUFFERED);
 #endif
     }
 

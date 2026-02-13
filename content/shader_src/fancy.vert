@@ -22,11 +22,11 @@ void main() {
 	vec4 worldPosition = pc.world_transform * vec4(inPosition, 1.0);
 	gl_Position = pc.projection * pc.view * worldPosition;
 	
-	mat3 normal_matrix = transpose(inverse(mat3(pc.world_transform)));
+    mat3 normalMatrix = transpose(inverse(mat3(pc.world_transform))); // correct normal transform as learned in previous tutorials here
+    vec3 N = normalize(normalMatrix * inNorm);
+    vec3 T = normalize(normalMatrix * inTangent.xyz);
+    vec3 B = normalize(cross(N, T)) * inTangent.w;
 
-	vec3 T = normalize(normal_matrix * inTangent.xyz);
-	vec3 N = normalize(normal_matrix * inNorm);
-	vec3 B = cross(T, N) * inTangent.w;
 	mat3 worldToTangentSpace = transpose(mat3(T, B, N));
 	
 	fragUV.x = inUV.x;
