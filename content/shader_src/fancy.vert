@@ -7,34 +7,32 @@ layout(push_constant) uniform PushConstants {
 	vec3 light_pos;
 } pc;
 
-layout(location = 0) in vec3 inPosition;
-layout(location = 1) in vec3 inNorm;
-layout(location = 2) in vec4 inTangent;
-layout(location = 3) in vec2 inUV;
+layout(location = 0) in vec3 in_position;
+layout(location = 1) in vec3 in_normal;
+layout(location = 2) in vec4 in_tangent;
+layout(location = 3) in vec2 in_uv;
 
-layout(location = 0) out vec2 fragUV; // for looking up textures
-layout(location = 1) out vec3 fragPosTangentSpace; // finding view vector
-layout(location = 2) out vec3 fragViewPosTangentSpace; // finding view vector
-layout(location = 3) out vec3 fragLightPosTangentSpace; // point light
-layout(location = 4) out vec3 fragLightDirTangentSpace; // directional light
+layout(location = 0) out Vertex {
+    vec3 position;
+    mat3 tangent_basis;
+    vec2 texcoord;
+    vec3 eye_position;
+    vec3 light_position;
+} vout;
 
 void main() {
-	vec4 worldPosition = pc.world_transform * vec4(inPosition, 1.0);
-	gl_Position = pc.projection * pc.view * worldPosition;
-	
-    mat3 normalMatrix = transpose(inverse(mat3(pc.world_transform))); // correct normal transform as learned in previous tutorials here
-    vec3 N = normalize(normalMatrix * inNorm);
-    vec3 T = normalize(normalMatrix * inTangent.xyz);
-    vec3 B = normalize(cross(N, T)) * inTangent.w;
+    mat3 normal_matrix = transpose(inverse(mat3(pc.world_transform)));
 
-	mat3 worldToTangentSpace = transpose(mat3(T, B, N));
-	
-	fragUV.x = inUV.x;
-	fragUV.y = 1.0 - inUV.y; // pbr textures treat V=0 as bottom
-	fragPosTangentSpace = worldToTangentSpace * vec3(worldPosition);
-	fragViewPosTangentSpace = worldToTangentSpace * vec3(inverse(pc.view) * vec4(0.0, 0.0, 0.0, 1.0));
-	fragLightPosTangentSpace = worldToTangentSpace * pc.light_pos;
-	fragLightDirTangentSpace = worldToTangentSpace * normalize(vec3(0.5, 0.3, 1.0));
+    vec3 N = normalize(normal_matrix * in_normal);
+    vec3 T = normalize(normal_matrix * in_tangent.xyz);
+    T = normalize(T - dot(T, N) * N); // re-orthogonalise tangent
+    vec3 B = cross(N, T) * in_tangent.w;
 
-//	gl_Position.y *= -1.0;
+    vout.position = vec3(pc.world_transform * vec4(in_position, 1.0));
+    vout.tangent_basis = mat3(T, B, N);
+    vout.texcoord = vec2(in_uv.x, 1.0 - in_uv.y);
+    vout.eye_position = vec3(inverse(pc.view) * vec4(0.0, 0.0, 0.0, 1.0));
+    vout.light_position = pc.light_pos;
+
+    gl_Position = pc.projection * pc.view * pc.world_transform * vec4(in_position, 1.0);
 }

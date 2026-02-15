@@ -1,118 +1,164 @@
 #version 450
 
-#define PI 3.1415926535897932384626433832795
-#define PI_INV 0.31830988618379067153776752674503
+// Physically Based Rendering
+// Copyright (c) 2017-2018 Michał Siejak
+
+// Physically Based shading model: Lambetrtian diffuse BRDF + Cook-Torrance microfacet specular BRDF + IBL for ambient.
+
+// This implementation is based on "Real Shading in Unreal Engine 4" SIGGRAPH 2013 course notes by Epic Games.
+// See: http://blog.selfshadow.com/publications/s2013-shading-course/karis/s2013_pbs_epic_notes_v2.pdf
+
+const float PI = 3.141592;
+const float Epsilon = 0.00001;
+
+// Constant normal incidence Fresnel factor for all dielectrics.
+const vec3 Fdielectric = vec3(0.04);
 
 layout(set = 0, binding = 0) uniform sampler2D materialSetBaseColorSampler;
 layout(set = 0, binding = 1) uniform sampler2D materialSetORMSampler;
 layout(set = 0, binding = 2) uniform sampler2D materialSetNormalSampler;
 
-layout(location = 0) in vec2 fragUV; // for looking up textures
-layout(location = 1) in vec3 fragPosTangentSpace; // finding view vector
-layout(location = 2) in vec3 fragViewPosTangentSpace; // finding view vector
-layout(location = 3) in vec3 fragLightPosTangentSpace; // point light
-layout(location = 4) in vec3 fragLightDirTangentSpace; // directional light
+layout(location = 0) in Vertex {
+    vec3 position;
+    mat3 tangent_basis;
+    vec2 texcoord;
+    vec3 eye_position;
+    vec3 light_position;
+} vin;
 
-layout(location = 0) out vec4 outColor;
+layout(location = 0) out vec4 color;
 
-vec3 fresnelSchlick(float cosTheta, vec3 F0)
+// GGX/Towbridge-Reitz normal distribution function.
+// Uses Disney's reparametrization of alpha = roughness^2.
+float ndfGGX(float cosLh, float roughness)
 {
-    // Schlick approximation
-    return F0 + (1.0 - F0) * pow(1.0 - cosTheta, 5.0);
+	float alpha   = roughness * roughness;
+	float alphaSq = alpha * alpha;
+
+	float denom = (cosLh * cosLh) * (alphaSq - 1.0) + 1.0;
+	return alphaSq / (PI * denom * denom);
 }
 
-float distributionGGX(vec3 N, vec3 H, float roughness)
+// Single term for separable Schlick-GGX below.
+float gaSchlickG1(float cosTheta, float k)
 {
-    float a      = roughness*roughness;
-    float a2     = a*a;
-    float NdotH  = max(dot(N, H), 0.0);
-    float NdotH2 = NdotH*NdotH;
-
-    float num   = a2;
-    float denom = (NdotH2 * (a2 - 1.0) + 1.0);
-    denom = 3.141592 * denom * denom;
-
-    return num / denom;
+	return cosTheta / (cosTheta * (1.0 - k) + k);
 }
 
-float geometrySchlickGGX(float NdotV, float roughness)
+// Schlick-GGX approximation of geometric attenuation function using Smith's method.
+float gaSchlickGGX(float cosLi, float cosLo, float roughness)
 {
-    float r = roughness + 1.0;
-    float k = (r*r) / 8.0;
-
-    return NdotV / (NdotV * (1.0 - k) + k);
+	float r = roughness + 1.0;
+	float k = (r * r) / 8.0; // Epic suggests using this roughness remapping for analytic lights.
+	return gaSchlickG1(cosLi, k) * gaSchlickG1(cosLo, k);
 }
 
-float geometrySmith(vec3 N, vec3 V, vec3 L, float roughness)
+// Shlick's approximation of the Fresnel factor.
+vec3 fresnelSchlick(vec3 F0, float cosTheta)
 {
-    float NdotV = max(dot(N, V), 0.0);
-    float NdotL = max(dot(N, L), 0.0);
-    float ggxV = geometrySchlickGGX(NdotV, roughness);
-    float ggxL = geometrySchlickGGX(NdotL, roughness);
-    return ggxV * ggxL;
+	return F0 + (vec3(1.0) - F0) * pow(1.0 - cosTheta, 5.0);
 }
 
-vec3 BRDF_PBR(vec3 N, vec3 V, vec3 L, vec3 albedo, float metallic, float roughness)
+vec3 linearToSRGB(vec3 c)
 {
-    vec3 H = normalize(V + L);
-    
-    // Fresnel
-    vec3 F0 = mix(vec3(0.04), albedo, metallic); // F0 = 0.04 for dielectrics, albedo for metals
-    vec3 F  = fresnelSchlick(max(dot(H, V), 0.0), F0);
-
-    // Distribution & Geometry
-    float D = distributionGGX(N, H, roughness);
-    float G = geometrySmith(N, V, L, roughness);
-
-    // Specular
-    float NdotL = max(dot(N, L), 0.0);
-    float NdotV = max(dot(N, V), 0.0);
-    vec3 spec = (D * G * F) / max(4.0 * NdotV * NdotL, 0.001);
-
-    // Diffuse
-    vec3 kD = (1.0 - F) * (1.0 - metallic);  // remove diffuse for metals
-
-    float LdotH = max(dot(L, H), 0.0);
-    float R_R = 2.0 * roughness * LdotH * LdotH;
-	float one_minus_L_dot_N = 1.0 - NdotL;
-	float one_minus_V_dot_N = 1.0 - NdotV;
-	float F_L = one_minus_L_dot_N * one_minus_L_dot_N * one_minus_L_dot_N * one_minus_L_dot_N * one_minus_L_dot_N;
-	float F_V = one_minus_V_dot_N * one_minus_V_dot_N * one_minus_V_dot_N * one_minus_V_dot_N * one_minus_V_dot_N;
-	vec3 f_retro_reflection = albedo * PI_INV * R_R * (F_L + F_V + F_L*F_V*(R_R - 1.0) );
-	vec3 diffuse_brdf = albedo * PI_INV * (1.0 - 0.5 * F_L) * (1.0 - 0.5 * F_V) + f_retro_reflection;
-    vec3 diffuse = kD * diffuse_brdf;
-
-    // Final
-    return (diffuse + spec) * NdotL;
+    vec3 s = vec3(0.0);
+    for (int i = 0; i < 3; ++i)
+    {
+        if (c[i] <= 0.0031308)
+            s[i] = 12.92 * c[i];
+        else
+            s[i] = 1.055 * pow(c[i], 1.0/2.4) - 0.055;
+    }
+    return s;
 }
 
-void main() {
+vec3 Uncharted2Tonemap(vec3 x)
+{
+    float A = 0.15;
+    float B = 0.50;
+    float C = 0.10;
+    float D = 0.20;
+    float E = 0.02;
+    float F = 0.30;
+    return ((x*(A*x+C*B)+D*E)/(x*(A*x+B)+D*F)) - E/F;
+}
 
-	const vec3 BASE_COLOR = vec3(texture(materialSetBaseColorSampler, fragUV));
-	const vec3 orm = vec3(texture(materialSetORMSampler, fragUV));
-	const float AO = orm.r;
-	const float ROUGHNESS = orm.g;
-	const float METALLIC = orm.b;
+void main()
+{
+	// Sample input textures to get shading model params.
+	vec3 albedo = texture(materialSetBaseColorSampler, vin.texcoord).rgb;
+    albedo = linearToSRGB(albedo);
+    vec3 orm = texture(materialSetORMSampler, vin.texcoord).rgb;
+	float metalness = orm.z;
+	float roughness = orm.y;
+
+	// Outgoing light direction (vector from world-space fragment position to the "eye").
+	vec3 Lo = normalize(vin.eye_position - vin.position);
+
+	// Get current fragment's normal and transform to world space.
+	vec3 N = normalize(2.0 * texture(materialSetNormalSampler, vin.texcoord).rgb - 1.0);
+	N = normalize(vin.tangent_basis * N);
 	
-	const vec3 N = normalize(vec3(texture(materialSetNormalSampler, fragUV)) * 2.0 - 1.0);
-	const vec3 V = normalize(fragViewPosTangentSpace - fragPosTangentSpace);
+	// Angle between surface normal and outgoing light direction.
+	float cosLo = max(0.0, dot(N, Lo));
+		
+	// Specular reflection vector.
+	vec3 Lr = 2.0 * cosLo * N - Lo;
 
-	const vec3 light_colour = normalize(vec3(1.0, 0.8, 0.6));
-	const float light_intensity = 2.2 * 25.0;
-	const vec3 light_vec = fragLightPosTangentSpace - fragPosTangentSpace;
-	const float light_distance = length(light_vec);
-	const float attenuation = 1.0 / (0.5 + 0.2 * light_distance + 0.05 * light_distance * light_distance);
-	const vec3 point_light = light_colour * light_intensity * attenuation;
+	// Fresnel reflectance at normal incidence (for metals use albedo color).
+	vec3 F0 = mix(Fdielectric, albedo, metalness);
 
-	vec3 L = normalize(light_vec);
-	//vec3 hdr_color = BRDF_PBR(N, V, L, BASE_COLOR, METALLIC, ROUGHNESS);
-    
-    //vec3 hdr_color = vec3(1.0, 1.0, 1.0) * fragPosTangentSpace;
+	// Direct lighting calculation for analytical lights.
+	vec3 directLighting = vec3(0);
+	{
+		vec3 Li = normalize(vin.light_position - vin.position);
+        vec3 Lradiance = vec3(1.0, 0.8, 0.8) * 10.0; // W/m^2/steradian
+        float light_distance = distance(vin.light_position, vin.position);
+		vec3 Lirradiance = Lradiance / (light_distance * light_distance); // W/m^2
 
-    //L = normalize(fragLightDirTangentSpace);
-    //hdr_color += BRDF_PBR(N, V, L, BASE_COLOR, METALLIC, ROUGHNESS) * vec3(1.0, 0.9, 1.0) * 2.2;
-    
-	//outColor = vec4(hdr_color / (hdr_color + 1.0), 1.0);
+		// Half-vector between Li and Lo.
+		vec3 Lh = normalize(Li + Lo);
 
-	outColor = vec4(fragPosTangentSpace, 1.0);
+		// Calculate angles between surface normal and various light vectors.
+		float cosLi = max(0.0, dot(N, Li));
+		float cosLh = max(0.0, dot(N, Lh));
+
+		// Calculate Fresnel term for direct lighting. 
+		vec3 F  = fresnelSchlick(F0, max(0.0, dot(Lh, Lo)));
+		// Calculate normal distribution for specular BRDF.
+		float D = ndfGGX(cosLh, roughness);
+		// Calculate geometric attenuation for specular BRDF.
+		float G = gaSchlickGGX(cosLi, cosLo, roughness);
+
+		// Diffuse scattering happens due to light being refracted multiple times by a dielectric medium.
+		// Metals on the other hand either reflect or absorb energy, so diffuse contribution is always zero.
+		// To be energy conserving we must scale diffuse BRDF contribution based on Fresnel factor & metalness.
+		vec3 kd = mix(vec3(1.0) - F, vec3(0.0), metalness);
+
+		// Lambert diffuse BRDF.
+		// We don't scale by 1/PI for lighting & material units to be more convenient.
+		// See: https://seblagarde.wordpress.com/2012/01/08/pi-or-not-to-pi-in-game-lighting-equation/
+		vec3 diffuseBRDF = kd * albedo;
+
+		// Cook-Torrance specular microfacet BRDF.
+		vec3 specularBRDF = (F * D * G) / max(Epsilon, 4.0 * cosLi * cosLo);
+
+		// Total contribution for this light.
+		directLighting += (diffuseBRDF + specularBRDF) * Lradiance * cosLi;
+	}
+
+    vec3 ambient;
+    {
+        vec3 skyColor   = vec3(0.6, 0.7, 0.9);  // bluish sky
+        vec3 groundColor= vec3(0.3, 0.25, 0.2); // brownish ground
+        float NdotY = 0.5 * (N.y + 1.0); // remap [-1,1] → [0,1]
+        float ambient_strength = 1.0;
+        ambient = mix(groundColor, skyColor, NdotY) * ambient_strength * albedo;
+    }
+    vec3 ambient_lighting = vec3(0.05, 0.05, 0.05) * albedo;
+
+    vec3 total_lighting = directLighting + ambient_lighting;
+
+	// Final fragment color.
+	color = vec4(Uncharted2Tonemap(total_lighting), 1.0);
 }

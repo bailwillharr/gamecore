@@ -82,6 +82,9 @@ public:
     void onUpdate(gc::FrameState& frame_state) override
     {
         ZoneScoped;
+
+        constexpr float EPSILON = 0.001f;
+
         m_world.forEach<gc::TransformComponent, FollowComponent>([&](gc::Entity, gc::TransformComponent& t, FollowComponent& f) {
             if (f.m_target != gc::ENTITY_NONE) {
                 const gc::TransformComponent* const target_t = m_world.getComponent<gc::TransformComponent>(f.m_target);
@@ -93,10 +96,10 @@ public:
                     t.setRotation(glm::quatLookAtRH(-follower_to_target_planar_norm, glm::vec3{0.0f, 0.0f, 1.0f}) *
                                   glm::angleAxis(-glm::half_pi<float>(), glm::vec3{1.0f, 0.0f, 0.0f}));
 
-                    if (planar_distance < f.m_min_distance) {
+                    if (planar_distance < f.m_min_distance - EPSILON) {
                         t.setPosition(t.getPosition() - follower_to_target_planar_norm * (f.m_min_distance - planar_distance));
                     }
-                    else {
+                    else if (planar_distance > f.m_min_distance + EPSILON) {
                         t.setPosition(t.getPosition() + follower_to_target_planar_norm *
                                                             fminf(f.m_speed * static_cast<float>(frame_state.delta_time), distance - f.m_min_distance));
                     }
@@ -119,7 +122,6 @@ public:
                             current_texture += 1;
                             ren->m_material = m_rm.add(std::move(new_material));
                             GC_TRACE("Material switched to: {}", ren->m_material.getString());
-                            ren->m_mesh = gc::Name("cube");
                         }
                         else {
                             const auto texture_target_t = m_world.getComponent<gc::TransformComponent>(f.m_texture_target);
@@ -191,13 +193,13 @@ public:
             auto camera = world.createEntity(gc::Name("light"), gc::ENTITY_NONE, {0.0f, 0.0f, 67.5f * 25.4e-3f});
             world.addComponent<gc::CameraComponent>(camera).setFOV(glm::radians(45.0f)).setNearPlane(0.1f).setActive(true);
             world.addComponent<MouseMoveComponent>(camera).setMoveSpeed(25.0f).setAcceleration(40.0f).setDeceleration(100.0f).setSensitivity(1e-3f);
-            world.addComponent<gc::LightComponent>(camera);
 
             const auto shrek_parent = world.createEntity(gc::Name("shrek_parent"), gc::ENTITY_NONE, glm::vec3{0.0f, +100.0f, 5.0f});
             world.addComponent<FollowComponent>(shrek_parent).setTarget(camera).setMinDistance(5.0f).setSpeed(10.0f);
 
             const auto shrek = world.createEntity(gc::Name("shrek"), shrek_parent, glm::vec3{0.0f, +0.0f, -4.331f});
             world.addComponent<gc::RenderableComponent>(shrek).setMaterial(gc::Name("default_material")).setMesh(gc::Name("shrek.obj"));
+            world.addComponent<gc::LightComponent>(shrek);
 
             world.getComponent<FollowComponent>(shrek_parent)->setTextureTarget(shrek);
 
@@ -226,11 +228,17 @@ public:
 
             // add a floor
             const auto floor = world.createEntity(gc::Name("floor"), gc::ENTITY_NONE, {0.0f, 0.0f, 0.0f});
+            world.getComponent<gc::TransformComponent>(floor)->setScale(glm::vec3{100.0f});
             world.addComponent<gc::RenderableComponent>(floor).setMesh(gc::Name("floor_plane")).setMaterial(gc::Name("default_material"));
 
-            resource_manager.add<gc::ResourceMesh>(genCuboidMesh(1.0f, 1.0f, 1.0f), gc::Name("cube"));
-            resource_manager.add<gc::ResourceMesh>(genCuboidMesh(100.0f, 100.0f, 100.0f, 100.0f), gc::Name("floor_plane"));
-            resource_manager.add<gc::ResourceMesh>(genSphereMesh(1.0f, 10), gc::Name("sphere"));
+            const auto mycube = world.createEntity(gc::Name("mycube"), gc::ENTITY_NONE, {0.0f, 0.0f, 0.0f});
+            world.addComponent<gc::RenderableComponent>(mycube).setMaterial(gc::Name("default_material")).setMesh(gc::Name("cube"));
+
+            GC_INFO("TEST!!");
+
+            resource_manager.add<gc::ResourceMesh>(genCuboidMesh(1.0f), gc::Name("cube"));
+            resource_manager.add<gc::ResourceMesh>(genPlaneMesh(100.0f), gc::Name("floor_plane"));
+            resource_manager.add<gc::ResourceMesh>(genSphereMesh(30), gc::Name("sphere"));
 
             m_loaded = true;
         }

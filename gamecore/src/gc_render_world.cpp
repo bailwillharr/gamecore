@@ -22,8 +22,6 @@ void recordWorldRenderingCommands(VkCommandBuffer cmd, VkPipelineLayout world_pi
 
     vkCmdPushConstants(cmd, world_pipeline_layout, VK_SHADER_STAGE_VERTEX_BIT, 64, 64, &draw_data.getViewMatrix());
     vkCmdPushConstants(cmd, world_pipeline_layout, VK_SHADER_STAGE_VERTEX_BIT, 128, 64, &draw_data.getProjectionMatrix());
-
-    GC_INFO("Light pos: {}", draw_data.getLightPos());
     vkCmdPushConstants(cmd, world_pipeline_layout, VK_SHADER_STAGE_VERTEX_BIT, 192, sizeof(glm::vec3), &draw_data.getLightPos());
 
     for (const auto& entry : draw_data.getDrawEntries()) {

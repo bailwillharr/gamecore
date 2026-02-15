@@ -5,6 +5,7 @@
 
 #include <span>
 #include <optional>
+#include <variant>
 
 #include <gcpak/gcpak.h>
 
@@ -12,7 +13,6 @@
 #include "gamecore/gc_content.h"
 #include "gamecore/gc_name.h"
 #include "gamecore/gc_mesh_vertex.h"
-#include "gamecore/gc_abort.h"
 
 // NB
 // Resources don't need to be serialisable, but they should be copyable and loadable from disk.
@@ -27,7 +27,7 @@ struct ResourceTexture {
     {
         ResourceTexture tex{};
         tex.data = content_manager.findAsset(name, gcpak::GcpakAssetType::TEXTURE_R8G8B8A8);
-        tex.srgb = true; // TODO read from asset
+        tex.srgb = false; // TODO read from asset
 
         if (tex.data.empty()) {
             return {};
@@ -52,8 +52,65 @@ struct ResourceMaterial {
 
 struct ResourceMesh {
 
-    std::vector<MeshVertex> vertices;
-    std::vector<uint16_t> indices;
+    struct OwningMeshData {
+        std::vector<MeshVertex> vertices;
+        std::vector<uint16_t> indices;
+    };
+
+    struct NonOwningMeshData {
+        std::span<const MeshVertex> vertices;
+        std::span<const uint16_t> indices;
+    };
+
+    std::variant<OwningMeshData, NonOwningMeshData> mesh_data;
+
+    ResourceMesh() = default;
+
+    ResourceMesh(std::vector<MeshVertex> vertices, std::vector<uint16_t> indices)
+    {
+        mesh_data.emplace<OwningMeshData>(std::move(vertices), std::move(indices));
+    }
+
+    ResourceMesh(const ResourceMesh& other, bool force_copy = true)
+    {
+        if (force_copy && std::holds_alternative<NonOwningMeshData>(other.mesh_data)) {
+            const auto& other_mesh_data = std::get<NonOwningMeshData>(other.mesh_data);
+            mesh_data.emplace<OwningMeshData>(std::vector<MeshVertex>(other_mesh_data.vertices.begin(), other_mesh_data.vertices.end()),
+                                              std::vector<uint16_t>(other_mesh_data.indices.begin(), other_mesh_data.indices.end()));
+        }
+        else {
+            mesh_data = other.mesh_data;
+        }
+    }
+
+    ResourceMesh(ResourceMesh&&) = default;
+
+    ResourceMesh& operator=(const ResourceMesh& other)
+    {
+        if (this != &other) {
+            if (std::holds_alternative<NonOwningMeshData>(other.mesh_data)) {
+                const auto& other_mesh_data = std::get<NonOwningMeshData>(other.mesh_data);
+                mesh_data.emplace<OwningMeshData>(std::vector<MeshVertex>(other_mesh_data.vertices.begin(), other_mesh_data.vertices.end()),
+                                                  std::vector<uint16_t>(other_mesh_data.indices.begin(), other_mesh_data.indices.end()));
+            }
+            else {
+                mesh_data = other.mesh_data;
+            }
+        }
+        return *this;
+    }
+
+    ResourceMesh& operator=(ResourceMesh&&) = default;
+
+    std::span<const MeshVertex> getVertices() const
+    {
+        return std::visit([](auto&& data) -> std::span<const MeshVertex> { return data.vertices; }, mesh_data);
+    }
+
+    std::span<const uint16_t> getIndices() const
+    {
+        return std::visit([](auto&& data) -> std::span<const uint16_t> { return data.indices; }, mesh_data);
+    }
 
     static std::optional<ResourceMesh> create(const Content& content_manager, Name name)
     {
@@ -78,9 +135,11 @@ struct ResourceMesh {
         const auto indices_begin = reinterpret_cast<const uint16_t*>(indices_location);
         const auto indices_end = indices_begin + index_count;
 
+        const std::span<const MeshVertex> vertices(vertices_begin, vertices_end);
+        const std::span<const uint16_t> indices(indices_begin, indices_end);
+
         ResourceMesh mesh;
-        mesh.vertices.insert(mesh.vertices.begin(), vertices_begin, vertices_end);
-        mesh.indices.insert(mesh.indices.begin(), indices_begin, indices_end);
+        mesh.mesh_data.emplace<NonOwningMeshData>(vertices, indices);
 
         return mesh;
     }

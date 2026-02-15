@@ -105,7 +105,8 @@ public:
         // Not found, create new mesh
         const ResourceMesh* mesh_resource = m_resource_manager.get<ResourceMesh>(name);
         if (mesh_resource) {
-            auto inserted = m_meshes.emplace(name, std::make_unique<RenderMesh>(m_render_backend.createMesh(mesh_resource->vertices, mesh_resource->indices)));
+            auto inserted =
+                m_meshes.emplace(name, std::make_unique<RenderMesh>(m_render_backend.createMesh(mesh_resource->getVertices(), mesh_resource->getIndices())));
             return inserted.first->second.get();
         }
         else {

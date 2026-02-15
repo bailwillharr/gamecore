@@ -2,25 +2,39 @@
 
 layout(push_constant) uniform PushConstants {
     mat4 world_transform;
+	mat4 view;
 	mat4 projection;
+	vec3 light_pos;
 } pc;
 
-layout(location = 0) in vec3 inPosition;
-layout(location = 1) in vec3 inNorm;
-layout(location = 2) in vec4 inTangent;
-layout(location = 3) in vec2 inUV;
+layout(location = 0) in vec3 in_position;
+layout(location = 1) in vec3 in_normal;
+layout(location = 2) in vec4 in_tangent;
+layout(location = 3) in vec2 in_uv;
 
-layout(location = 0) out vec2 fragUV;
-layout(location = 1) out vec3 fragNorm;
-layout(location = 2) out vec3 fragPos;
+layout(location = 0) out Vertex {
+    vec3 position;
+    vec2 texcoord;
+    vec3 light_position;
+    vec3 tangent;
+    vec3 bitangent;
+    vec3 normal;
+} vout;
 
 void main() {
-	fragUV = inUV;
+    mat3 normal_matrix = transpose(inverse(mat3(pc.world_transform)));
 
-	fragNorm = mat3(transpose(inverse(pc.world_transform))) * inNorm;
+    vec3 N = normalize(normal_matrix * in_normal);
+    vec3 T = normalize(normal_matrix * in_tangent.xyz);
+    T = normalize(T - dot(T, N) * N); // re-orthogonalise tangent
+    vec3 B = cross(N, T) * in_tangent.w;
 
-	vec4 worldPosition = pc.world_transform * vec4(inPosition, 1.0);
-	fragPos = vec3(worldPosition);
-	gl_Position = pc.projection * worldPosition;
-	gl_Position.y *= -1.0;
+    vout.position = vec3(pc.world_transform * vec4(in_position, 1.0));
+    vout.texcoord = vec2(in_uv.x, 1.0 - in_uv.y);
+    vout.light_position = pc.light_pos;
+    vout.tangent = T;
+    vout.bitangent = B;
+    vout.normal = N;
+
+    gl_Position = pc.projection * pc.view * pc.world_transform * vec4(in_position, 1.0);
 }
