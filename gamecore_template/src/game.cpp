@@ -194,51 +194,36 @@ public:
             world.addComponent<gc::CameraComponent>(camera).setFOV(glm::radians(45.0f)).setNearPlane(0.1f).setActive(true);
             world.addComponent<MouseMoveComponent>(camera).setMoveSpeed(25.0f).setAcceleration(40.0f).setDeceleration(100.0f).setSensitivity(1e-3f);
 
+            // shrek
             const auto shrek_parent = world.createEntity(gc::Name("shrek_parent"), gc::ENTITY_NONE, glm::vec3{0.0f, +100.0f, 5.0f});
             world.addComponent<FollowComponent>(shrek_parent).setTarget(camera).setMinDistance(5.0f).setSpeed(10.0f);
-
             const auto shrek = world.createEntity(gc::Name("shrek"), shrek_parent, glm::vec3{0.0f, +0.0f, -4.331f});
             world.addComponent<gc::RenderableComponent>(shrek).setMaterial(gc::Name("default_material")).setMesh(gc::Name("shrek.obj"));
             world.addComponent<gc::LightComponent>(shrek);
-
             world.getComponent<FollowComponent>(shrek_parent)->setTextureTarget(shrek);
 
-            // but cannot load materials from disk yet, so create manually:
             {
-                gc::ResourceMaterial default_material{};
-                default_material.base_color_texture = gc::Name("bricks-mortar-albedo.png");
-                default_material.orm_texture = gc::Name("bricks-mortar-orm.png");
-                default_material.normal_texture = gc::Name("bricks-mortar-normal.png");
-                resource_manager.add<gc::ResourceMaterial>(std::move(default_material), gc::Name("default_material"));
+                gc::ResourceMaterial material{};
+                material.base_color_texture = gc::Name("bricks-mortar-albedo.png");
+                material.orm_texture = gc::Name("bricks-mortar-orm.png");
+                material.normal_texture = gc::Name("bricks-mortar-normal.png");
+                resource_manager.add<gc::ResourceMaterial>(std::move(material), gc::Name("bricks-mortar"));
             }
-
-            std::array<gc::Entity, 36> cubes{};
-            const gc::Entity parent = world.createEntity(gc::Name("parent"), gc::ENTITY_NONE, glm::vec3{0.0f, 15.0f, 5.5f});
-            world.addComponent<SpinComponent>(parent).setAxis({0.3f, 0.4f, 1.0f}).setRadiansPerSecond(0.1f);
-
-            for (int x = 0; x < 6; ++x) {
-                for (int y = 0; y < 6; ++y) {
-                    auto& cube = cubes[x * 6 + y];
-                    cube = world.createEntity(gc::Name(std::format("cube{}.{}", x, y)), parent, glm::vec3{(x - 2.5f) * 2.0f, 0.0f, (y - 2.5f) * 2.0f});
-                    world.addComponent<gc::RenderableComponent>(cube).setMesh(gc::Name("sphere"));
-                    //.setMaterial(gc::Name("default_material"));
-                    world.addComponent<SpinComponent>(cube).setAxis({1.0f, 0.0f, 0.7f}).setRadiansPerSecond(0.0f);
-                }
+            {
+                gc::ResourceMaterial material{};
+                material.base_color_texture = gc::Name("laminate-flooring-brown_albedo.png");
+                material.orm_texture = gc::Name("laminate-flooring-brown_orm.png");
+                material.normal_texture = gc::Name("laminate-flooring-brown_normal.png");
+                resource_manager.add<gc::ResourceMaterial>(std::move(material), gc::Name("laminate-flooring-brown"));
+            }
+            {
+                resource_manager.add<gc::ResourceMesh>(genPlaneMesh(10.0f), gc::Name("floor"));
             }
 
             // add a floor
-            const auto floor = world.createEntity(gc::Name("floor"), gc::ENTITY_NONE, {0.0f, 0.0f, 0.0f});
-            world.getComponent<gc::TransformComponent>(floor)->setScale(glm::vec3{100.0f});
-            world.addComponent<gc::RenderableComponent>(floor).setMesh(gc::Name("floor_plane")).setMaterial(gc::Name("default_material"));
-
-            const auto mycube = world.createEntity(gc::Name("mycube"), gc::ENTITY_NONE, {0.0f, 0.0f, 0.0f});
-            world.addComponent<gc::RenderableComponent>(mycube).setMaterial(gc::Name("default_material")).setMesh(gc::Name("cube"));
-
-            GC_INFO("TEST!!");
-
-            resource_manager.add<gc::ResourceMesh>(genCuboidMesh(1.0f), gc::Name("cube"));
-            resource_manager.add<gc::ResourceMesh>(genPlaneMesh(100.0f), gc::Name("floor_plane"));
-            resource_manager.add<gc::ResourceMesh>(genSphereMesh(30), gc::Name("sphere"));
+            const auto floor = world.createEntity(gc::Name("floor"));
+            world.getComponent<gc::TransformComponent>(floor)->setScale({10, 10, 1});
+            world.addComponent<gc::RenderableComponent>(floor).setMesh(gc::Name("floor")).setMaterial(gc::Name("laminate-flooring-brown"));
 
             m_loaded = true;
         }

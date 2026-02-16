@@ -72,7 +72,6 @@ void MouseMoveSystem::onUpdate(gc::FrameState& frame_state)
 
         glm::vec3 position = t.getPosition();
         position += mr.m_current_velocity * static_cast<float>(frame_state.delta_time);
-        frame_state.current_velocity = mr.m_current_velocity;
         t.setRotation(rotation);
         t.setPosition(position);
     });

@@ -17,7 +17,6 @@ struct FrameState {
     double delta_time{};
     double average_frame_time{};
     WorldDrawData draw_data{};
-    glm::vec3 current_velocity{};
 };
 
 } // namespace gc

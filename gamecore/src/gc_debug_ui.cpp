@@ -117,8 +117,6 @@ void DebugUI::update(FrameState& frame_state, const Content& content)
                     static_cast<int>(std::round(1.0 / frame_state.average_frame_time)));
         ImGui::Checkbox("Disable world rendering", &m_clear_draw_data);
         ImGui::Checkbox("Show ImGui Demo", &m_show_demo);
-        ImGui::Text("Velocity: (%f, %f, %f} MAG: %f", frame_state.current_velocity.x, frame_state.current_velocity.y,
-                    frame_state.current_velocity.z, glm::length(frame_state.current_velocity));
         ImGui::End();
 
         if (m_show_demo) {

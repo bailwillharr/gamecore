@@ -69,20 +69,20 @@ public:
             const ResourceMaterial* material_resource = m_resource_manager.get<ResourceMaterial>(name);
             if (material_resource) {
 
-                RenderTexture* const base_color = m_texture_manager.acquire(m_resource_manager, m_render_backend, material_resource->base_color_texture);
+                RenderTexture* base_color = m_texture_manager.acquire(m_resource_manager, m_render_backend, material_resource->base_color_texture);
                 if (!base_color) {
                     GC_ERROR("Could not find base color texture: {}", material_resource->base_color_texture);
-                    return nullptr;
+                    base_color = m_fallback_textures[0].get();
                 }
-                RenderTexture* const orm = m_texture_manager.acquire(m_resource_manager, m_render_backend, material_resource->orm_texture);
+                RenderTexture* orm = m_texture_manager.acquire(m_resource_manager, m_render_backend, material_resource->orm_texture);
                 if (!orm) {
                     GC_ERROR("Could not find ORM texture: {}", material_resource->orm_texture);
-                    return nullptr;
+                    orm = m_fallback_textures[1].get();
                 }
-                RenderTexture* const normal = m_texture_manager.acquire(m_resource_manager, m_render_backend, material_resource->normal_texture);
+                RenderTexture* normal = m_texture_manager.acquire(m_resource_manager, m_render_backend, material_resource->normal_texture);
                 if (!normal) {
                     GC_ERROR("Could not find normal texture: {}", material_resource->normal_texture);
-                    return nullptr;
+                    normal = m_fallback_textures[2].get();
                 }
 
                 it = m_materials.emplace(name, std::make_unique<RenderMaterial>(m_render_backend.createMaterial(*base_color, *orm, *normal))).first;
