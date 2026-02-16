@@ -6,6 +6,8 @@
 #include <ostream>
 #include <bit>
 #include <vector>
+#include <optional>
+#include <string>
 
 /*
  * The gcpak file format contains many game assets
@@ -99,14 +101,22 @@ class GcpakCreator {
 public:
     struct Asset {
         std::string name;
+        uint32_t hash; // only used if name is empty
         std::vector<uint8_t> data;
         GcpakAssetType type;
     };
 
 private:
     std::vector<Asset> m_assets{};
+    std::optional<std::string> m_existing_file_load_error{};
 
 public:
+    GcpakCreator() = default;
+
+    GcpakCreator(const std::filesystem::path& existing_file);
+
+    std::optional<std::string> getError() const;
+
     void addAsset(const Asset& asset);
 
     /* Also saves a .txt file containing hashes, returns false if there was an IO error. */

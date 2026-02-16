@@ -1,19 +1,18 @@
-#include "gamecore/gc_mesh_vertex.h"
 #define _CRT_SECURE_NO_WARNINGS
-
-#include "gamecore/gc_resources.h"
 
 #include "gen_mesh.h"
 
 #include <string_view>
 
-#include <gtc/constants.hpp>
 #include <geometric.hpp>
+#include <gtc/constants.hpp>
 
 #include <gctemplates/gct_sv_stream.h>
 
 #include <gamecore/gc_abort.h>
 #include <gamecore/gc_gen_tangents.h>
+#include <gamecore/gc_mesh_vertex.h>
+#include <gamecore/gc_resources.h>
 
 static void parseV(const std::string& line, std::vector<glm::vec3>& positions)
 {
@@ -206,7 +205,7 @@ gc::ResourceMesh genCuboidMesh(float t, bool wind_inside)
     return gc::ResourceMesh(std::move(vertices), std::move(indices));
 }
 
-gc::ResourceMesh genPlaneMesh(float t)
+gc::ResourceMesh genPlaneMesh(float tiling_x, float tiling_y)
 {
     using namespace glm;
 
@@ -214,12 +213,12 @@ gc::ResourceMesh genPlaneMesh(float t)
     vertices.reserve(6);
 
     // XY plane (+Z normal) (TOP)
-    vertices.emplace_back(vec3{-0.5, -0.5, 0.0}, vec3{0, 0, 1}, vec4{}, vec2{0, 0}); // bottom left
-    vertices.emplace_back(vec3{0.5, -0.5, 0.0}, vec3{0, 0, 1}, vec4{}, vec2{t, 0});  // bottom right
-    vertices.emplace_back(vec3{-0.5, 0.5, 0.0}, vec3{0, 0, 1}, vec4{}, vec2{0, t});  // top left
-    vertices.emplace_back(vec3{-0.5, 0.5, 0.0}, vec3{0, 0, 1}, vec4{}, vec2{0, t});  // top left
-    vertices.emplace_back(vec3{0.5, -0.5, 0.0}, vec3{0, 0, 1}, vec4{}, vec2{t, 0});  // bottom right
-    vertices.emplace_back(vec3{0.5, 0.5, 0.0}, vec3{0, 0, 1}, vec4{}, vec2{t, t});   // top right
+    vertices.emplace_back(vec3{-0.5, -0.5, 0.0}, vec3{0, 0, 1}, vec4{}, vec2{0, 0});             // bottom left
+    vertices.emplace_back(vec3{0.5, -0.5, 0.0}, vec3{0, 0, 1}, vec4{}, vec2{tiling_x, 0});       // bottom right
+    vertices.emplace_back(vec3{-0.5, 0.5, 0.0}, vec3{0, 0, 1}, vec4{}, vec2{0, tiling_y});       // top left
+    vertices.emplace_back(vec3{-0.5, 0.5, 0.0}, vec3{0, 0, 1}, vec4{}, vec2{0, tiling_y});       // top left
+    vertices.emplace_back(vec3{0.5, -0.5, 0.0}, vec3{0, 0, 1}, vec4{}, vec2{tiling_x, 0});       // bottom right
+    vertices.emplace_back(vec3{0.5, 0.5, 0.0}, vec3{0, 0, 1}, vec4{}, vec2{tiling_x, tiling_y}); // top right
 
     auto indices_int32 = gc::genTangents(vertices);
     std::vector<uint16_t> indices{};

@@ -72,6 +72,36 @@ vec3 linearToSRGB(vec3 c)
     return s;
 }
 
+// Cubic approximation of the planckian (black body) locus. This is a very good approximation for most purposes.
+// Returns chromaticity vec2 (x/y, no luminance) in xyY space.
+// Technically only designed for 1667K < T < 25000K, but you can push it further.
+
+// Credit to B. Kang et al. (2002) (https://api.semanticscholar.org/CorpusID:4489377)
+// Note: there may be a patent associated with this function
+// TODO: if()s are not shader-friendly. find faster method.
+vec2 PLANCKIAN_LOCUS_CUBIC_XY(float T) {
+    vec2 xy = vec2(0.0, 0.0);
+    if(T < 4000.0) {
+        xy.x = -0.2661239*1000000000.0/(T*T*T) - 0.2343589*1000000.0/(T*T) + 0.8776956*1000.0/T + 0.179910;
+
+        if(T < 2222.0) xy.y = -1.1063814*xy.x*xy.x*xy.x - 1.34811020*xy.x*xy.x + 2.18555832*xy.x - 0.20219683; 
+        else           xy.y = -0.9549476*xy.x*xy.x*xy.x - 1.37418593*xy.x*xy.x + 2.09137015*xy.x -  0.16748867;
+    } else {
+        xy.x = -3.0258469*1000000000.0/(T*T*T) + 2.1070379*1000000.0/(T*T) + 0.2226347*1000.0/T + 0.24039;
+
+        xy.y = 3.08175806*xy.x*xy.x*xy.x - 5.8733867*xy.x*xy.x + 3.75112997*xy.x - 0.37001483;
+    }
+    return xy;
+}
+
+vec3 XYY_TO_XYZ(vec3 xyY) {
+    return vec3(
+        xyY.z * xyY.x / xyY.y,
+        xyY.z,
+        xyY.z * (1.0 - xyY.x - xyY.y) / xyY.y
+    );
+}
+
 vec3 Uncharted2Tonemap(vec3 x)
 {
     float A = 0.15;
@@ -108,11 +138,12 @@ void main()
 	// Fresnel reflectance at normal incidence (for metals use albedo color).
 	vec3 F0 = mix(Fdielectric, albedo, metalness);
 
-	// Direct lighting calculation for analytical lights.
+	// point light
 	vec3 directLighting = vec3(0);
 	{
 		vec3 Li = normalize(vin.light_position - vin.position);
-        vec3 Lradiance = vec3(1.0, 0.8, 0.8) * 10.0; // W/m^2/steradian
+		float LIGHT_BRIGHTNESS = 10.0;
+        vec3 Lradiance = XYY_TO_XYZ(vec3(PLANCKIAN_LOCUS_CUBIC_XY(2000.0), LIGHT_BRIGHTNESS)); // W/m^2/steradian
         float light_distance = distance(vin.light_position, vin.position);
 		vec3 Lirradiance = Lradiance / (light_distance * light_distance); // W/m^2
 
@@ -144,7 +175,44 @@ void main()
 		vec3 specularBRDF = (F * D * G) / max(Epsilon, 4.0 * cosLi * cosLo);
 
 		// Total contribution for this light.
-		directLighting += (diffuseBRDF + specularBRDF) * Lradiance * cosLi;
+		directLighting += (diffuseBRDF + specularBRDF) * Lirradiance * cosLi;
+	}
+
+	// directional light
+	{
+		vec3 Li = normalize(-vec3(-0.4, -0.3, -0.85));
+		float LIGHT_BRIGHTNESS = 10.0;
+        vec3 Lirradiance = XYY_TO_XYZ(vec3(PLANCKIAN_LOCUS_CUBIC_XY(5800.0), LIGHT_BRIGHTNESS)); // W/m^2
+
+		// Half-vector between Li and Lo.
+		vec3 Lh = normalize(Li + Lo);
+
+		// Calculate angles between surface normal and various light vectors.
+		float cosLi = max(0.0, dot(N, Li));
+		float cosLh = max(0.0, dot(N, Lh));
+
+		// Calculate Fresnel term for direct lighting. 
+		vec3 F  = fresnelSchlick(F0, max(0.0, dot(Lh, Lo)));
+		// Calculate normal distribution for specular BRDF.
+		float D = ndfGGX(cosLh, roughness);
+		// Calculate geometric attenuation for specular BRDF.
+		float G = gaSchlickGGX(cosLi, cosLo, roughness);
+
+		// Diffuse scattering happens due to light being refracted multiple times by a dielectric medium.
+		// Metals on the other hand either reflect or absorb energy, so diffuse contribution is always zero.
+		// To be energy conserving we must scale diffuse BRDF contribution based on Fresnel factor & metalness.
+		vec3 kd = mix(vec3(1.0) - F, vec3(0.0), metalness);
+
+		// Lambert diffuse BRDF.
+		// We don't scale by 1/PI for lighting & material units to be more convenient.
+		// See: https://seblagarde.wordpress.com/2012/01/08/pi-or-not-to-pi-in-game-lighting-equation/
+		vec3 diffuseBRDF = kd * albedo;
+
+		// Cook-Torrance specular microfacet BRDF.
+		vec3 specularBRDF = (F * D * G) / max(Epsilon, 4.0 * cosLi * cosLo);
+
+		// Total contribution for this light.
+		directLighting += (diffuseBRDF + specularBRDF) * Lirradiance * cosLi;
 	}
 
     vec3 ambient;

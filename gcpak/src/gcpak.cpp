@@ -39,6 +39,59 @@ static constexpr std::uint32_t crc32(std::string_view id)
     return crc ^ 0xffffffff;
 }
 
+GcpakCreator::GcpakCreator(const std::filesystem::path& existing_file)
+{
+    std::ifstream file(existing_file, std::ios::binary);
+    if (!file) {
+        m_existing_file_load_error = "failed to open file";
+        return;
+    }
+
+    file.seekg(0, std::ios::end);
+    const std::streampos file_size = file.tellg();
+
+    const auto header = GcpakHeader::deserialize(file);
+    if (!file) {
+        m_existing_file_load_error = "failed to read header";
+        return;
+    }
+
+    if (header.format_identifier != GCPAK_VALID_IDENTIFIER) {
+        m_existing_file_load_error = "file header invalid";
+        return;
+    }
+    if (header.format_version != 1) {
+        m_existing_file_load_error = "file version unsupported";
+        return;
+    }
+
+    for (int i = 0; i < header.num_entries; ++i) {
+        const size_t asset_entry_offset = size_t(file_size) - (GcpakAssetEntry::getSerializedSize() * (size_t(i) + 1));
+
+        const auto asset_entry = GcpakAssetEntry::deserialize(file);
+        if (!file) {
+            m_existing_file_load_error = "failed to read asset entry";
+            return;
+        }
+
+        Asset asset{};
+        asset.name = {};
+        asset.hash = asset_entry.crc32_id;
+        asset.data.resize(asset_entry.size);
+        asset.type = asset_entry.asset_type;
+
+        file.read(reinterpret_cast<char*>(asset.data.data()), asset.data.size());
+        if (!file) {
+            m_existing_file_load_error = "failed to read asset data";
+            return;
+        }
+
+        m_assets.emplace_back(std::move(asset));
+    }
+}
+
+std::optional<std::string> GcpakCreator::getError() const { return m_existing_file_load_error; }
+
 void GcpakCreator::addAsset(const Asset& asset) { m_assets.push_back(asset); }
 
 bool GcpakCreator::saveFile(const std::filesystem::path& path)
@@ -74,7 +127,12 @@ bool GcpakCreator::saveFile(const std::filesystem::path& path)
         for (uint32_t i = 0; i < m_assets.size(); ++i) {
             GcpakAssetEntry entry{};
             entry.offset = offsets[i];
-            entry.crc32_id = crc32(m_assets[i].name);
+            if (m_assets[i].name.empty()) {
+                entry.crc32_id = m_assets[i].hash;
+            }
+            else {
+                entry.crc32_id = crc32(m_assets[i].name);
+            }
             entry.asset_type = m_assets[i].type;
             entry.size = static_cast<uint32_t>(m_assets[i].data.size());
             entry.serialize(file);
