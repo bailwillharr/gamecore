@@ -82,7 +82,7 @@ int main([[maybe_unused]] int argc, [[maybe_unused]] char* argv[])
         }
 
         std::cout << "Adding image: " << dir_entry.path().filename() << "\n";
-        gcpak_creator.addAsset(gcpak::GcpakCreator::Asset{dir_entry.path().filename().string(), data, gcpak::GcpakAssetType::TEXTURE_R8G8B8A8});
+        gcpak_creator.addAsset(gcpak::GcpakCreator::Asset{dir_entry.path().filename().string(), 0, data, gcpak::GcpakAssetType::TEXTURE_R8G8B8A8});
     }
 
     if (!gcpak_creator.saveFile(gcpak_path)) {

@@ -119,7 +119,7 @@ int main([[maybe_unused]] int argc, [[maybe_unused]] char* argv[])
         }
 
         std::cout << "Compiled shader: " << dir_entry.path().filename() << "\n";
-        gcpak_creator.addAsset(gcpak::GcpakCreator::Asset{dir_entry.path().filename().string(), binary, gcpak::GcpakAssetType::SPIRV_SHADER});
+        gcpak_creator.addAsset(gcpak::GcpakCreator::Asset{dir_entry.path().filename().string(), 0, binary, gcpak::GcpakAssetType::SPIRV_SHADER});
     }
 
     if (!gcpak_creator.saveFile(gcpak_path)) {

@@ -194,9 +194,10 @@ public:
             // shrek
             const auto shrek = world.createEntity(gc::Name("shrek"), gc::ENTITY_NONE, glm::vec3{0.0f, +10.0f, 0.0f}, {}, {0.5f, 0.5f, 0.5f});
             world.addComponent<gc::RenderableComponent>(shrek).setMaterial(gc::Name("default_material")).setMesh(gc::Name("shrek.obj"));
-            world.addComponent<gc::LightComponent>(shrek);
             world.addComponent<FollowComponent>(shrek).setTarget(camera).setMinDistance(2.0f).setSpeed(1.0f);
             world.getComponent<FollowComponent>(shrek)->setTextureTarget(shrek);
+            const auto shrek_light = world.createEntity(gc::Name("shrek_light"), shrek, {0.0f, -1.26688, 4.61091});
+            world.addComponent<gc::LightComponent>(shrek_light);
 
             {
                 gc::ResourceMaterial material{};

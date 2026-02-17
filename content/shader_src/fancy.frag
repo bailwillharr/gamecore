@@ -142,7 +142,7 @@ void main()
 	vec3 directLighting = vec3(0);
 	{
 		vec3 Li = normalize(vin.light_position - vin.position);
-		float LIGHT_BRIGHTNESS = 10.0;
+		float LIGHT_BRIGHTNESS = 1.0;
         vec3 Lradiance = XYY_TO_XYZ(vec3(PLANCKIAN_LOCUS_CUBIC_XY(2000.0), LIGHT_BRIGHTNESS)); // W/m^2/steradian
         float light_distance = distance(vin.light_position, vin.position);
 		vec3 Lirradiance = Lradiance / (light_distance * light_distance); // W/m^2
@@ -181,7 +181,7 @@ void main()
 	// directional light
 	{
 		vec3 Li = normalize(-vec3(-0.4, -0.3, -0.85));
-		float LIGHT_BRIGHTNESS = 10.0;
+		float LIGHT_BRIGHTNESS = 0.0;
         vec3 Lirradiance = XYY_TO_XYZ(vec3(PLANCKIAN_LOCUS_CUBIC_XY(5800.0), LIGHT_BRIGHTNESS)); // W/m^2
 
 		// Half-vector between Li and Lo.
@@ -217,15 +217,14 @@ void main()
 
     vec3 ambient;
     {
-        vec3 skyColor   = vec3(0.6, 0.7, 0.9);  // bluish sky
-        vec3 groundColor= vec3(0.3, 0.25, 0.2); // brownish ground
+        vec3 skyColor    = XYY_TO_XYZ(vec3(PLANCKIAN_LOCUS_CUBIC_XY(5800.0), 1.0));  // bluish sky
+        vec3 groundColor = XYY_TO_XYZ(vec3(PLANCKIAN_LOCUS_CUBIC_XY(5800.0), 0.5)); // brownish ground
         float NdotY = 0.5 * (N.y + 1.0); // remap [-1,1] → [0,1]
-        float ambient_strength = 1.0;
+        float ambient_strength = 0.0;
         ambient = mix(groundColor, skyColor, NdotY) * ambient_strength * albedo;
     }
-    vec3 ambient_lighting = vec3(0.05, 0.05, 0.05) * albedo;
 
-    vec3 total_lighting = directLighting + ambient_lighting;
+    vec3 total_lighting = directLighting + ambient;
 
 	// Final fragment color.
 	color = vec4(Uncharted2Tonemap(total_lighting), 1.0);

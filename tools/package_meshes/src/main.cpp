@@ -303,7 +303,7 @@ int main([[maybe_unused]] int argc, [[maybe_unused]] char* argv[])
 
         std::cout << "Adding mesh: " << dir_entry.path().filename() << "\n";
         gcpak_creator.addAsset(
-            gcpak::GcpakCreator::Asset{dir_entry.path().filename().string(), data, gcpak::GcpakAssetType::MESH_POS12_NORM12_TANG16_UV8_INDEXED16});
+            gcpak::GcpakCreator::Asset{dir_entry.path().filename().string(), 0, data, gcpak::GcpakAssetType::MESH_POS12_NORM12_TANG16_UV8_INDEXED16});
     }
 
     if (!gcpak_creator.saveFile(gcpak_path)) {
