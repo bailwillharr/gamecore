@@ -48,7 +48,28 @@ GcpakCreator::GcpakCreator(const std::filesystem::path& existing_file)
     }
 
     file.seekg(0, std::ios::end);
-    const std::streampos file_size = file.tellg();
+    if (!file) {
+        m_existing_file_load_error = "seek failed";
+        return;
+    }
+    const std::streampos file_size_streampos = file.tellg();
+    if (file_size_streampos == std::streampos(-1) || !file) {
+        m_existing_file_load_error = "failed to get file size";
+        return;
+    }
+    file.clear(); // clear EOF
+    const auto file_size_signed = std::streamoff(file_size_streampos);
+    if (file_size_signed < 0) {
+        m_existing_file_load_error = "invalid file size";
+        return;
+    }
+    const auto file_size = size_t(file_size_signed);
+
+    file.seekg(0, std::ios::beg);
+    if (!file) {
+        m_existing_file_load_error = "seek failed";
+        return;
+    }
 
     const auto header = GcpakHeader::deserialize(file);
     if (!file) {
@@ -65,12 +86,36 @@ GcpakCreator::GcpakCreator(const std::filesystem::path& existing_file)
         return;
     }
 
-    for (int i = 0; i < header.num_entries; ++i) {
-        const size_t asset_entry_offset = size_t(file_size) - (GcpakAssetEntry::getSerializedSize() * (size_t(i) + 1));
+    size_t asset_entry_table_size = header.num_entries * GcpakAssetEntry::getSerializedSize();
+
+    if (asset_entry_table_size + GcpakHeader::getSerializedSize() > file_size) {
+        // doesn't take into account the actual asset data in the middle, because we can't know that yet
+        m_existing_file_load_error = "file entry count corrupt or asset entry table corrupt or doesn't exist";
+        return;
+    }
+
+    const size_t asset_entry_table_offset = file_size - asset_entry_table_size;
+
+    for (uint32_t i = 0; i < header.num_entries; ++i) {
+
+        const size_t asset_entry_offset = asset_entry_table_offset + GcpakAssetEntry::getSerializedSize() * i;
+
+        file.seekg(asset_entry_offset, std::ios::beg);
+        if (!file) {
+            m_existing_file_load_error = "seek failed";
+            return;
+        }
 
         const auto asset_entry = GcpakAssetEntry::deserialize(file);
         if (!file) {
             m_existing_file_load_error = "failed to read asset entry";
+            return;
+        }
+
+        if (asset_entry.offset < GcpakHeader::getSerializedSize() || asset_entry.offset > asset_entry_table_offset ||
+            asset_entry.size > asset_entry_table_offset - asset_entry.offset) {
+            // asset data is bleeding into the header or the asset entry table at the end of the file.
+            m_existing_file_load_error = "corrupt asset entry offset/size";
             return;
         }
 
@@ -79,6 +124,12 @@ GcpakCreator::GcpakCreator(const std::filesystem::path& existing_file)
         asset.hash = asset_entry.crc32_id;
         asset.data.resize(asset_entry.size);
         asset.type = asset_entry.asset_type;
+
+        file.seekg(asset_entry.offset, std::ios::beg);
+        if (!file) {
+            m_existing_file_load_error = "seek to asset data failed";
+            return;
+        }
 
         file.read(reinterpret_cast<char*>(asset.data.data()), asset.data.size());
         if (!file) {
@@ -91,6 +142,11 @@ GcpakCreator::GcpakCreator(const std::filesystem::path& existing_file)
 }
 
 std::optional<std::string> GcpakCreator::getError() const { return m_existing_file_load_error; }
+
+std::span<const GcpakCreator::Asset> GcpakCreator::getAssets() const
+{
+    return m_assets;
+}
 
 void GcpakCreator::addAsset(const Asset& asset) { m_assets.push_back(asset); }
 

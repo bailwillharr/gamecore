@@ -1,8 +1,12 @@
-Add FrameStates to the ecs to make systems self-contained
-	FrameStates would be immutable things like KeyboardInput, MouseInput, DeltaTime
-	and also mutable things like DrawData
-	(Should a mutable FrameState be allowed to be modified by multiple systems?
-	This would introduce dependencies between systems in addition to the component dependencies)
+Replace mutable FrameState with immutable FrameInput, Mutable FrameOutput. Split systems between 'simulation' and 'presentation'.
+Simulation systems cannot modify FrameOutput, they only receive FrameInput as const ref parameter.
+Presentation systems receive FrameInput const ref, but also receive FrameOutput as a mutable ref parameter.
+
+Potentially create a built-in imgui system that calls callbacks on ImGuiComponents.
+However since components are supposed to be serialisable and rely on resources for complex data,
+this approach may require ImGuiUIResources, which contain the custom behaviour. This seems needlessly complicated for a debug UI.
+ALTERNATIVE APPROACH: Ensure the relevant ImGui newFrame() functions are called before system updates. Then custom systems can show
+ImGui windows. with immediate mode commands.
 
 Pipeline variants
 	If a given material doesn't use a normal map, for example, it shouldn't sample a normal texture in the fragment shader.

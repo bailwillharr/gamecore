@@ -151,7 +151,7 @@ Window::~Window()
 
 SDL_Window* Window::getHandle() { return m_window_handle; }
 
-const WindowState& Window::processEvents(const std::function<void(SDL_Event&)>& event_interceptor)
+const WindowState& Window::processEvents(void (*event_interceptor)(SDL_Event&))
 {
     ZoneScoped;
 

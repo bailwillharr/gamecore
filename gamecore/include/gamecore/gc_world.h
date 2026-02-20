@@ -147,6 +147,7 @@ public:
     {
         const uint32_t system_index = getSystemIndex<T>();
         GC_ASSERT(system_index < m_systems.size());
+        GC_ASSERT(m_systems[system_index]);
         return static_cast<T&>(*m_systems[system_index]);
     }
 

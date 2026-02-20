@@ -103,13 +103,21 @@ DebugUI::~DebugUI()
     ImGui::DestroyContext(m_imgui_ctx);
 }
 
-void DebugUI::update(FrameState& frame_state, const Content& content)
+void DebugUI::newFrame()
 {
-    ZoneScoped;
-
     ImGui_ImplSDL3_NewFrame();
     ImGui_ImplVulkan_NewFrame();
     ImGui::NewFrame();
+}
+
+void DebugUI::render()
+{
+    ImGui::Render();
+}
+
+void DebugUI::update(const FrameState& frame_state, const Content& content)
+{
+    ZoneScoped;
 
     if (this->active) {
         ImGui::Begin("Debug UI", nullptr);
@@ -124,12 +132,6 @@ void DebugUI::update(FrameState& frame_state, const Content& content)
         }
 
         drawAssetList(content);
-    }
-
-    ImGui::Render();
-
-    if (m_clear_draw_data) {
-        frame_state.draw_data.reset();
     }
 }
 
@@ -146,6 +148,16 @@ void DebugUI::windowEventInterceptor(SDL_Event& ev)
                                 ev.type == SDL_EVENT_MOUSE_WHEEL)) {
         ev.type = 0;
     }
+}
+
+bool DebugUI::postRenderCallback(VkCommandBuffer cmd)
+{
+    ImDrawData* draw_data = ImGui::GetDrawData();
+    if (!draw_data) {
+        return false;
+    }
+    ImGui_ImplVulkan_RenderDrawData(draw_data, cmd);
+    return true;
 }
 
 } // namespace gc

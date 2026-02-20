@@ -8,6 +8,7 @@
 #include <vector>
 #include <optional>
 #include <string>
+#include <span>
 
 /*
  * The gcpak file format contains many game assets
@@ -67,7 +68,7 @@ enum class GcpakAssetType : std::uint32_t {
     SPIRV_SHADER = 1,                           // passed directly into VkShaderModuleCreateInfo
     TEXTURE_R8G8B8A8 = 2,                       // first 4 bytes is width, second 4 bytes is height, remaining data is just R8G8B8A8
     MESH_POS12_NORM12_TANG16_UV8_INDEXED16 = 3, // first 2 bytes is vertex count, followed by vertices, followed by 16 bit indices
-    PREFAB = 4, // See gcpak_prefab.h
+    PREFAB = 4,                                 // See gcpak_prefab.h
 };
 
 struct GcpakAssetEntry {
@@ -116,6 +117,8 @@ public:
     GcpakCreator(const std::filesystem::path& existing_file);
 
     std::optional<std::string> getError() const;
+
+    std::span<const GcpakCreator::Asset> getAssets() const;
 
     void addAsset(const Asset& asset);
 

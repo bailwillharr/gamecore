@@ -213,11 +213,15 @@ void App::run()
             }
         }
 
+        m_debug_ui->newFrame();
+
         m_world->update(frame_state);
 
         m_debug_ui->update(frame_state, content());
 
-        m_render_backend->submitFrame(frame_state.window_state->getResizedFlag(), frame_state.draw_data);
+        m_debug_ui->render();
+
+        m_render_backend->submitFrame(frame_state.window_state->getResizedFlag(), frame_state.draw_data, DebugUI::postRenderCallback);
         frame_state.draw_data.reset();
         m_render_backend->cleanupGPUResources();
 

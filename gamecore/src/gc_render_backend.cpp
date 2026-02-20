@@ -10,8 +10,6 @@
 #include <tracy/Tracy.hpp>
 #include <tracy/TracyVulkan.hpp>
 
-#include <backends/imgui_impl_vulkan.h>
-
 #include "gamecore/gc_app.h"
 #include "gamecore/gc_content.h"
 #include "gamecore/gc_gpu_resources.h"
@@ -629,7 +627,7 @@ void RenderBackend::setSyncMode(RenderSyncMode mode)
     }
 }
 
-void RenderBackend::submitFrame(bool window_resized, const WorldDrawData& world_draw_data)
+void RenderBackend::submitFrame(bool window_resized, const WorldDrawData& world_draw_data, bool (*post_render_callback)(VkCommandBuffer cmd))
 {
     ZoneScoped;
 
@@ -722,10 +720,10 @@ void RenderBackend::submitFrame(bool window_resized, const WorldDrawData& world_
         color_attachment.resolveImageLayout = VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL;
         color_attachment.loadOp = VK_ATTACHMENT_LOAD_OP_CLEAR;
         color_attachment.storeOp = VK_ATTACHMENT_STORE_OP_DONT_CARE;
-        color_attachment.clearValue.color.float32[0] = 0.0f;
-        color_attachment.clearValue.color.float32[1] = 0.0f;
-        color_attachment.clearValue.color.float32[2] = 0.0f;
-        color_attachment.clearValue.color.float32[3] = 0.0f;
+        color_attachment.clearValue.color.float32[0] = 1.0f;
+        color_attachment.clearValue.color.float32[1] = 1.0f;
+        color_attachment.clearValue.color.float32[2] = 1.0f;
+        color_attachment.clearValue.color.float32[3] = 1.0f;
         VkRenderingAttachmentInfo depth_attachment{};
         depth_attachment.sType = VK_STRUCTURE_TYPE_RENDERING_ATTACHMENT_INFO;
         depth_attachment.imageView = m_depth_stencil_attachment_view;
@@ -766,7 +764,12 @@ void RenderBackend::submitFrame(bool window_resized, const WorldDrawData& world_
             recordWorldRenderingCommands(stuff.cmd, m_pipeline_layout, *m_pipeline, m_main_timeline_semaphore, m_main_timeline_value + 1, world_draw_data);
         }
 
-        ImGui_ImplVulkan_RenderDrawData(ImGui::GetDrawData(), stuff.cmd);
+        if (post_render_callback) {
+            bool ret = post_render_callback(stuff.cmd);
+            if (!ret) {
+                GC_ERROR_ONCE("Post render callback returned error");
+            }
+        }
 
         vkCmdEndRendering(stuff.cmd);
     }

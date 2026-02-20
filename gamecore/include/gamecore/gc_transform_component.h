@@ -35,23 +35,32 @@ public:
 
     Entity getParent() const { return m_parent; }
 
-    void setPosition(const glm::vec3& position)
+    TransformComponent& setPosition(const glm::vec3& position)
     {
         m_position = position;
         m_dirty = true;
+        return *this;
     }
 
-    void setRotation(const glm::quat& rotation)
+    TransformComponent& setPosition(float x, float y, float z) { return setPosition(glm::vec3(x, y, z)); }
+
+    TransformComponent& setRotation(const glm::quat& rotation)
     {
         m_rotation = rotation;
         m_dirty = true;
+        return *this;
     }
 
-    void setScale(const glm::vec3& scale)
+    TransformComponent& setRotation(float w, float x, float y, float z) { return setRotation(glm::quat(w, x, y, z)); }
+
+    TransformComponent& setScale(const glm::vec3& scale)
     {
         m_scale = scale;
         m_dirty = true;
+        return *this;
     }
+
+    TransformComponent& setScale(float x, float y, float z) { return setScale(glm::vec3(x, y, z)); }
 };
 
 } // namespace gc

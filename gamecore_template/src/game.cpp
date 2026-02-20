@@ -220,9 +220,11 @@ public:
             }
 
             // add a floor
-            const auto floor = world.createEntity(gc::Name("floor"));
-            world.getComponent<gc::TransformComponent>(floor)->setScale({6.0f, 10.0f, 1.0f});
-            world.addComponent<gc::RenderableComponent>(floor).setMesh(gc::Name("floor")).setMaterial(gc::Name("laminate-flooring-brown"));
+            {
+                const auto floor = world.createEntity(gc::Name("floor"));
+                world.getComponent<gc::TransformComponent>(floor)->setScale({6.0f, 10.0f, 1.0f});
+                world.addComponent<gc::RenderableComponent>(floor).setMesh(gc::Name("floor")).setMaterial(gc::Name("laminate-flooring-brown"));
+            }
 
             // wall1
             {
@@ -260,6 +262,14 @@ public:
                 world.getComponent<gc::TransformComponent>(wall3)->setRotation(
                     glm::quat(0.0f, 0.0f, -glm::one_over_root_two<float>(), -glm::one_over_root_two<float>()));
                 world.addComponent<gc::RenderableComponent>(wall3).setMaterial(gc::Name("bricks-mortar")).setMesh(gc::Name("wall1"));
+            }
+
+            // roof
+            {
+                using namespace gc::literals;
+                const auto roof = world.createEntity("roof"_name);
+                world.getComponent<gc::TransformComponent>(roof)->setPosition(0, 0, 4).setRotation(0, -1, 0, 0).setScale(6, 10, 1);
+                world.addComponent<gc::RenderableComponent>(roof).setMesh("floor"_name);
             }
 
             m_loaded = true;

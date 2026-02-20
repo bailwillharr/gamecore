@@ -6,6 +6,7 @@
 struct ImGuiContext; // forward-dec
 struct SDL_Window;   // forward-dec
 union SDL_Event;     // forward-dec
+typedef struct VkCommandBuffer_T* VkCommandBuffer; // forward-dec
 
 namespace gc {
 
@@ -35,10 +36,16 @@ public:
     DebugUI& operator=(const DebugUI&) = delete;
     DebugUI& operator=(DebugUI&&) = delete;
 
-    // Call every frame after Window::processEvents() and before RenderBackend::submitFrame()
-    void update(FrameState& frame_state, const Content& content);
+    // Call every frame after Window::processEvents()
+    void newFrame();
+
+    // Call every frame before RenderBackend::submitFrame()
+    void render();
+
+    void update(const FrameState& frame_state, const Content& content);
 
     static void windowEventInterceptor(SDL_Event& ev);
+    static bool postRenderCallback(VkCommandBuffer cmd);
 };
 
 } // namespace gc

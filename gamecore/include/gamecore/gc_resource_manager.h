@@ -8,6 +8,7 @@
 #include "gamecore/gc_name.h"
 #include "gamecore/gc_assert.h"
 #include "gamecore/gc_logger.h"
+#include "gamecore/gc_resources.h"
 
 namespace gc {
 
@@ -46,7 +47,7 @@ inline IResourceCache::~IResourceCache() = default;
 
 template <ValidResource T>
 class ResourceCache : public IResourceCache {
-    std::unordered_map<Name, std::unique_ptr<T>> m_resources{};
+    std::unordered_map<Name, T> m_resources{};
 
 public:
     const T* get(const Content& content_manager, Name name)
@@ -55,17 +56,17 @@ public:
         if (it == m_resources.end()) {
             auto resource_opt = T::create(content_manager, name);
             if (resource_opt.has_value()) {
-                it = m_resources.emplace(name, std::make_unique<T>(std::move(resource_opt.value()))).first;
+                it = m_resources.emplace(name, std::move(resource_opt.value())).first;
             }
             else {
                 return nullptr;
             }
         }
-        return it->second.get();
+        return &it->second;
     }
 
     // returns false if already exists
-    bool add(T&& resource, Name name) { return m_resources.try_emplace(name, std::make_unique<T>(std::move(resource))).second; }
+    bool add(T&& resource, Name name) { return m_resources.try_emplace(name, std::move(resource)).second; }
 
     void deleteResource(Name name) { m_resources.erase(name); }
 };
@@ -98,7 +99,7 @@ public:
     // Generates random name if none given
     // Returns the name if successful otherwise empty on error (resource already exists)
     template <ValidResource T>
-    Name add(T&& resource, Name name = {})
+    Name add(T resource, Name name = {})
     {
         const uint32_t index = getResourceIndex<T>();
         if (index >= m_caches.size()) {

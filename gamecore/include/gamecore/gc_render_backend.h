@@ -82,7 +82,7 @@ class RenderBackend {
     uint64_t m_frame_count{};
 
     // Skybox stuff
-    //VkPipeline m_skybox_pipeline{};
+    // VkPipeline m_skybox_pipeline{};
 
     // Images:
 
@@ -137,13 +137,13 @@ public:
     void setSyncMode(RenderSyncMode mode);
 
     /* Renders to framebuffer and presents framebuffer to the screen */
-    void submitFrame(bool window_resized, const WorldDrawData& world_draw_data);
+    void submitFrame(bool window_resized, const WorldDrawData& world_draw_data, bool (*postRenderCallback)(VkCommandBuffer cmd) = nullptr);
 
     /* Destroys any GPU resources that have been added to the delete queue and are not in use */
     void cleanupGPUResources();
 
     void createPipeline(std::span<const uint8_t> vertex_spv, std::span<const uint8_t> fragment_spv);
-    //GPUPipeline createSkyboxPipeline();
+    // GPUPipeline createSkyboxPipeline();
 
     RenderTexture createTexture(std::span<const uint8_t> r8g8b8a8_pak, bool srgb);
     RenderTexture createCubeTexture(std::array<std::span<const uint8_t>, 6> r8g8b8a8_paks, bool srgb);

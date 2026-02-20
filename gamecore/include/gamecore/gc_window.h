@@ -106,7 +106,7 @@ public:
 
     SDL_Window* getHandle();
 
-    const WindowState& processEvents(const std::function<void(SDL_Event&)>& event_interceptor = {});
+    const WindowState& processEvents(void (*event_interceptor)(SDL_Event&) = nullptr);
 
     // can be internally set by Alt+F4, X button, etc
     void pushQuitEvent();
