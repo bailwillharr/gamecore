@@ -9,6 +9,7 @@
 #include <optional>
 #include <string>
 #include <span>
+#include <system_error>
 
 /*
  * The gcpak file format contains many game assets
@@ -109,12 +110,9 @@ public:
 
 private:
     std::vector<Asset> m_assets{};
-    std::optional<std::string> m_existing_file_load_error{};
 
 public:
     GcpakCreator() = default;
-
-    GcpakCreator(const std::filesystem::path& existing_file);
 
     std::optional<std::string> getError() const;
 
@@ -124,6 +122,12 @@ public:
 
     /* Also saves a .txt file containing hashes, returns false if there was an IO error. */
     bool saveFile(const std::filesystem::path& path);
+
+    // returns true on success
+    // returns false and set ec on failure
+    bool loadFile(const std::filesystem::path& existing_file, std::error_code& ec);
+
+    void clear();
 };
 
 } // namespace gcpak

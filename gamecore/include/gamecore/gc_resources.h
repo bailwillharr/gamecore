@@ -19,19 +19,21 @@
 
 namespace gc {
 
+// TODO, add non owning version like with ResourceMesh
 struct ResourceTexture {
-    std::span<const uint8_t> data;
+    std::vector<uint8_t> data;
     bool srgb;
 
     static std::optional<ResourceTexture> create(const Content& content_manager, Name name)
     {
-        ResourceTexture tex{};
-        tex.data = content_manager.findAsset(name, gcpak::GcpakAssetType::TEXTURE_R8G8B8A8);
-        tex.srgb = false; // TODO read from asset
-
-        if (tex.data.empty()) {
+        const auto asset_data = content_manager.findAsset(name, gcpak::GcpakAssetType::TEXTURE_R8G8B8A8);
+        if (asset_data.empty()) {
             return {};
         }
+
+        ResourceTexture tex{};
+        tex.srgb = false; // TODO read from asset
+        tex.data = std::vector<uint8_t>(asset_data.begin(), asset_data.end());
 
         return tex;
     }

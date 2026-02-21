@@ -112,6 +112,10 @@ public:
         GC_ASSERT(last_used_frame >= m_last_used_frame);
         m_last_used_frame = last_used_frame;
     }
+
+    const auto& getBaseColorTexture() const { return m_base_color_texture; }
+    const auto& getORMTexture() const { return m_occlusion_roughness_metallic_texture; }
+    const auto& getNormalTexture() const { return m_normal_texture; }
 };
 
 } // namespace gc

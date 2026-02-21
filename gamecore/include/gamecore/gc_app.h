@@ -78,6 +78,8 @@ public:
     static App& instance();
 
     void run();
+
+    const auto& getSaveDirectory() const { return m_save_directory; }
 };
 
 // helper function to avoid having to write App::instance().whatever

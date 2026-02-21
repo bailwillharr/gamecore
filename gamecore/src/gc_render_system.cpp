@@ -21,7 +21,7 @@ void RenderSystem::onUpdate(FrameState& frame_state)
     ZoneScoped;
 
     m_world.forEach<TransformComponent, RenderableComponent>([&]([[maybe_unused]] Entity entity, const TransformComponent& t, const RenderableComponent& c) {
-        if (c.m_visible) {
+        if (c.m_visible && !c.m_mesh.empty()) {
             // resolve resources
             RenderMesh* const mesh = m_render_object_manager.getRenderMesh(c.m_mesh);
             RenderMaterial* const material = m_render_object_manager.getRenderMaterial(c.m_material);

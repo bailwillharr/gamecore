@@ -20,7 +20,14 @@ class RenderObjectManager {
     RenderBackend& m_render_backend;
 
     RenderTextureManager m_texture_manager;
-    std::unordered_map<Name, std::unique_ptr<RenderMaterial>> m_materials{};
+
+    struct MaterialEntry {
+        std::unique_ptr<RenderMaterial> render_material{};
+        gc::Name base_color_texture;
+        gc::Name orm_texture;
+        gc::Name normal_texture;
+    };
+    std::unordered_map<Name, MaterialEntry> m_materials{};
     std::unordered_map<Name, std::unique_ptr<RenderMesh>> m_meshes{};
 
     std::array<std::unique_ptr<RenderTexture>, 3> m_fallback_textures{};
@@ -85,14 +92,19 @@ public:
                     normal = m_fallback_textures[2].get();
                 }
 
-                it = m_materials.emplace(name, std::make_unique<RenderMaterial>(m_render_backend.createMaterial(*base_color, *orm, *normal))).first;
+                MaterialEntry entry{};
+                entry.render_material = std::make_unique<RenderMaterial>(m_render_backend.createMaterial(*base_color, *orm, *normal));
+                entry.base_color_texture = material_resource->base_color_texture;
+                entry.orm_texture = material_resource->orm_texture;
+                entry.normal_texture = material_resource->normal_texture;
+                it = m_materials.emplace(name, std::move(entry)).first;
             }
             else {
                 GC_ERROR("Could not find material resource: {}", name);
                 return m_fallback_material.get();
             }
         }
-        return it->second.get();
+        return it->second.render_material.get();
     }
 
     RenderMesh* getRenderMesh(Name name)
@@ -119,12 +131,30 @@ public:
     void deleteUnusedObjects(uint64_t threshold_frame_index)
     {
         // you can safely erase elements from an unordered_map while iterating through it.
-        // textures are ref-counted separately so they're not deleted here.
-        auto count =
-            std::erase_if(m_materials, [threshold_frame_index](const auto& material) { return material.second->getLastUsedFrame() < threshold_frame_index; });
+
+        size_t count = 0;
+        for (auto it = m_materials.begin(); it != m_materials.end();) {
+            const auto& entry = it->second;
+            if (entry.render_material->getLastUsedFrame() < threshold_frame_index) {
+                if (!entry.base_color_texture.empty()) {
+                    m_texture_manager.release(entry.base_color_texture);
+                }
+                if (!entry.orm_texture.empty()) {
+                    m_texture_manager.release(entry.orm_texture);
+                }
+                if (!entry.normal_texture.empty()) {
+                    m_texture_manager.release(entry.normal_texture);
+                }
+                it = m_materials.erase(it);
+            }
+            else {
+                ++it;
+            }
+        }
         if (count > 0) {
             GC_TRACE("Deleted {} unused RenderMaterials", count);
         }
+
         count = std::erase_if(m_meshes, [threshold_frame_index](const auto& mesh) { return mesh.second->getLastUsedFrame() < threshold_frame_index; });
         if (count > 0) {
             GC_TRACE("Deleted {} unused RenderMeshes", count);

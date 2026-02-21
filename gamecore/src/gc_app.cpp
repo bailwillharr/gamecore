@@ -50,7 +50,16 @@ App::App(const AppInitOptions& options)
     if (user_dir) {
         m_save_directory = std::filesystem::path(user_dir);
         SDL_free(const_cast<char*>(user_dir));
-        GC_INFO("Save directory: {}", m_save_directory.string());
+
+        if (std::error_code ec; std::filesystem::create_directories(m_save_directory, ec)) {
+            GC_INFO("Created save directory: {}", m_save_directory.string());
+        }
+        else if (ec) {
+            GC_INFO("Error creating save directory: {}, error: {}", m_save_directory.string(), ec.message());
+        }
+        else {
+            GC_INFO("Found save directory: {}", m_save_directory.string());
+        }
     }
     else {
         GC_ERROR("SDL_GetPrefPath() error: {}", SDL_GetError());
@@ -217,7 +226,7 @@ void App::run()
 
         m_world->update(frame_state);
 
-        m_debug_ui->update(frame_state, content());
+        m_debug_ui->update(frame_state);
 
         m_debug_ui->render();
 

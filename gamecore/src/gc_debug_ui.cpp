@@ -101,7 +101,7 @@ void DebugUI::newFrame()
 
 void DebugUI::render() { ImGui::Render(); }
 
-void DebugUI::update(const FrameState& frame_state, const Content& content)
+void DebugUI::update(FrameState& frame_state)
 {
     ZoneScoped;
 
@@ -116,6 +116,10 @@ void DebugUI::update(const FrameState& frame_state, const Content& content)
         if (m_show_demo) {
             ImGui::ShowDemoWindow(&m_show_demo);
         }
+    }
+
+    if (m_clear_draw_data) {
+        frame_state.draw_data.reset();
     }
 }
 

@@ -11,7 +11,7 @@ set(SRC_FILES
 if(WIN32)
     add_executable(${PROJECT_NAME} WIN32
         ${SRC_FILES}
-#        "resource/gcpak_editor.rc"
+        "resource/gcpak_editor.rc"
     )
 else()
     add_executable(${PROJECT_NAME} ${SRC_FILES})

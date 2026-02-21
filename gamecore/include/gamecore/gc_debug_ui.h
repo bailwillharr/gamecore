@@ -42,7 +42,7 @@ public:
     // Call every frame before RenderBackend::submitFrame()
     void render();
 
-    void update(const FrameState& frame_state, const Content& content);
+    void update(FrameState& frame_state);
 
     static void windowEventInterceptor(SDL_Event& ev);
     static bool postRenderCallback(VkCommandBuffer cmd);

@@ -31,42 +31,7 @@
 
 #include "editor_system.h"
 
-template <typename Enum>
-static constexpr std::underlying_type_t<Enum> to_underlying(Enum e) noexcept
-{
-    return static_cast<std::underlying_type_t<Enum>>(e);
-}
-
-static bool printcontent()
-{
-    std::error_code ec;
-    const auto content_dir = std::filesystem::path(GCPAK_EDITOR_SOURCE_DIRECTORY).parent_path().parent_path() / "content";
-    if (!std::filesystem::exists(content_dir, ec) || !std::filesystem::is_directory(content_dir, ec)) {
-        std::cerr << "Failed to find content directory! error: " << ec.message() << "\n";
-        return false;
-    }
-
-    const auto gcpak_path = content_dir / "meshes.gcpak";
-
-    gcpak::GcpakCreator creator(gcpak_path);
-
-    if (auto error = creator.getError(); error.has_value()) {
-        GC_ERROR("FILE ERROR: {}", error.value());
-        return false;
-    }
-
-    for (const auto& asset : creator.getAssets()) {
-        GC_INFO("ASSET");
-        GC_INFO("    name: {}", asset.name);
-        GC_INFO("    hash: {}", asset.hash);
-        GC_INFO("    type: {}", to_underlying(asset.type));
-        GC_INFO("    data size: {}", asset.data.size());
-    }
-
-    return true;
-}
-
-static void initEditorWorld(gc::App& app)
+static void initEditorWorld(gc::App& app, const std::filesystem::path& open_file)
 {
     using namespace gc;
     using namespace gc::literals;
@@ -75,11 +40,12 @@ static void initEditorWorld(gc::App& app)
     auto& resource_manager = app.resourceManager();
     auto& render_backend = app.renderBackend();
     auto& content_manager = app.content();
+    auto& window = app.window();
 
     {
         // set up pipeline
-        auto vertex_spv = content_manager.findAsset("fancy.vert"_name, gcpak::GcpakAssetType::SPIRV_SHADER);
-        auto fragment_spv = content_manager.findAsset("fancy.frag"_name, gcpak::GcpakAssetType::SPIRV_SHADER);
+        auto vertex_spv = content_manager.findAsset("editor.vert"_name, gcpak::GcpakAssetType::SPIRV_SHADER);
+        auto fragment_spv = content_manager.findAsset("editor.frag"_name, gcpak::GcpakAssetType::SPIRV_SHADER);
         if (vertex_spv.empty() || fragment_spv.empty()) {
             abortGame("Failed to load vertex or fragment shader");
         }
@@ -94,25 +60,17 @@ static void initEditorWorld(gc::App& app)
     world.registerSystem<gc::CameraSystem>();
     world.registerSystem<gc::LightSystem>();
 
-    world.registerSystem<EditorSystem>();
-
-    {
-        resource_manager.add(genCubeMesh(), "cube"_name);
-    }
+    world.registerSystem<EditorSystem>(window, resource_manager, open_file);
 
     {
         auto camera = world.createEntity("camera"_name);
-        world.getComponent<TransformComponent>(camera)->setPosition(0, 0, 10);
+        world.getComponent<TransformComponent>(camera)->setRotation(glm::angleAxis(glm::radians(90.0f), glm::vec3{1.0f, 0.0f, 0.0f}));
         world.addComponent<CameraComponent>(camera);
-    }
-
-    {
-        auto cube = world.createEntity("cube"_name);
-        world.addComponent<RenderableComponent>(cube).setMesh("cube"_name);
+        world.addComponent<LightComponent>(camera);
     }
 }
 
-int main(int, char*[])
+int main(int argc, char* argv[])
 {
     gc::AppInitOptions options{};
     options.name = "gcpak_editor";
@@ -126,7 +84,11 @@ int main(int, char*[])
 
     auto& app = gc::App::instance();
 
-    initEditorWorld(app);
+    std::filesystem::path open_file{};
+    if (argc >= 2) {
+        open_file = argv[1];
+    }
+    initEditorWorld(app, open_file);
 
     auto& render_backend = app.renderBackend();
     render_backend.setSyncMode(gc::RenderSyncMode::VSYNC_ON_DOUBLE_BUFFERED);

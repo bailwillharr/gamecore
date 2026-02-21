@@ -1,6 +1,15 @@
 #ifndef GCPAK_EDITOR_H
 #define GCPAK_EDITOR_H
 
-#define GCPAK_EDITOR_SOURCE_DIRECTORY "@PROJECT_SOURCE_DIR@"
+/* Application name, version, description, etc. for use in C++ code and Windows .rc file */
+
+#define GCPAK_EDITOR_APPLICATION_NAME "@PROJECT_NAME@"
+#define GCPAK_EDITOR_VERSION "@PROJECT_VERSION@"
+#define GCPAK_EDITOR_VERSION_MAJOR @PROJECT_VERSION_MAJOR@
+#define GCPAK_EDITOR_VERSION_MINOR @PROJECT_VERSION_MINOR@
+#define GCPAK_EDITOR_VERSION_PATCH @PROJECT_VERSION_PATCH@
+#define GCPAK_EDITOR_AUTHOR "Bailwillharr"
+#define GCPAK_EDITOR_COPYRIGHT "Copyright (C) 2026"
+#define GCPAK_EDITOR_DESCRIPTION "Gamecore Package File Editor"
 
 #endif
