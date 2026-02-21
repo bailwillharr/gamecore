@@ -35,7 +35,9 @@ set(SRC_FILES
   "src/gc_vulkan_utils.cpp"
   "src/gc_gen_tangents.cpp"
   "src/gc_resource_manager.cpp"
- "src/gc_light_system.cpp")
+  "src/gc_light_system.cpp"
+  "src/gc_gen_mesh.cpp"
+)
 
 # Public API includes
 # Care must be taken to ensure these headers do not reference private headers
@@ -87,6 +89,7 @@ set(INCLUDE_FILES
   "include/gamecore/gc_resources.h"
   "include/gamecore/gc_light_component.h"
   "include/gamecore/gc_light_system.h"
+  "include/gamecore/gc_gen_mesh.h"
 )
 
 # gamecore is a static library

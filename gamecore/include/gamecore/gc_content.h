@@ -4,7 +4,6 @@
 
 #include <span>
 #include <unordered_map>
-#include <optional>
 #include <filesystem>
 
 #include <gctemplates/gct_static_vector.h>
@@ -22,12 +21,12 @@
 
 namespace gc {
 
-struct PackageAssetInfo {
-    unsigned int file_index;
-    gcpak::GcpakAssetEntry entry;
-};
-
 class Content {
+
+    struct PackageAssetInfo {
+        unsigned int file_index;
+        gcpak::GcpakAssetEntry entry;
+    };
 
     static constexpr uint32_t MAX_PAK_FILES = 8;
     gct::static_vector<mio::ummap_source, MAX_PAK_FILES> m_package_file_maps;
@@ -35,7 +34,9 @@ class Content {
     std::unordered_map<Name, PackageAssetInfo> m_asset_infos;
 
 public:
-    Content(const std::filesystem::path& content_dir);
+    // asset_files: array of filenames to open as asset files (with .gcpak extension).
+    //  If empty, open all .gcpak files in the directory.
+    Content(const std::filesystem::path& content_dir, std::span<const std::string> asset_files = {});
     Content(const Content&) = delete;
     Content(Content&&) = delete;
 
@@ -43,9 +44,6 @@ public:
 
     Content& operator=(const Content&) = delete;
     Content& operator=(Content&&) = delete;
-
-    decltype(Content::m_asset_infos)::const_iterator begin() const;
-    decltype(Content::m_asset_infos)::const_iterator end() const;
 
     /* This function is thread-safe */
     /* Returns a non-owning view of the asset */

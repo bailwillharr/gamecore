@@ -1,6 +1,6 @@
 #define _CRT_SECURE_NO_WARNINGS
 
-#include "gen_mesh.h"
+#include "gamecore/gc_gen_mesh.h"
 
 #include <string_view>
 
@@ -13,6 +13,8 @@
 #include <gamecore/gc_gen_tangents.h>
 #include <gamecore/gc_mesh_vertex.h>
 #include <gamecore/gc_resources.h>
+
+namespace gc {
 
 static void parseV(const std::string& line, std::vector<glm::vec3>& positions)
 {
@@ -131,7 +133,7 @@ gc::ResourceMesh genOBJMesh(std::span<const uint8_t> file_data)
     return gc::ResourceMesh(std::move(vertices), std::move(indices));
 }
 
-gc::ResourceMesh genCuboidMesh(float t, bool wind_inside)
+gc::ResourceMesh genCubeMesh(float t, bool wind_inside)
 {
     const float x = 1.0f, y = 1.0f, z = 1.0f;
 
@@ -288,3 +290,5 @@ gc::ResourceMesh genSphereMesh(int detail, bool flip_normals)
 
     return gc::ResourceMesh(std::move(vertices), std::move(indices));
 }
+
+} // namespace gc

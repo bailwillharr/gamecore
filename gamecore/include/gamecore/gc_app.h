@@ -3,6 +3,7 @@
 #include <memory>
 #include <filesystem>
 #include <string>
+#include <vector>
 
 /*
 This is the root of the entire game.
@@ -27,6 +28,7 @@ struct AppInitOptions {
     std::string name;
     std::string author;
     std::string version;
+    std::vector<std::string> pak_files_override;
 };
 
 class App {

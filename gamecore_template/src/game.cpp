@@ -23,8 +23,8 @@
 #include <gamecore/gc_transform_component.h>
 #include <gamecore/gc_window.h>
 #include <gamecore/gc_world.h>
+#include <gamecore/gc_gen_mesh.h>
 
-#include "gen_mesh.h"
 #include "mouse_move.h"
 #include "spin.h"
 
@@ -214,9 +214,9 @@ public:
                 resource_manager.add<gc::ResourceMaterial>(std::move(material), gc::Name("laminate-flooring-brown"));
             }
             {
-                resource_manager.add<gc::ResourceMesh>(genPlaneMesh(6.0f, 10.0f), gc::Name("floor"));
-                resource_manager.add<gc::ResourceMesh>(genPlaneMesh(10.0f, 4.0f), gc::Name("wall1"));
-                resource_manager.add<gc::ResourceMesh>(genPlaneMesh(6.0f, 4.0f), gc::Name("wall3"));
+                resource_manager.add<gc::ResourceMesh>(gc::genPlaneMesh(6.0f, 10.0f), gc::Name("floor"));
+                resource_manager.add<gc::ResourceMesh>(gc::genPlaneMesh(10.0f, 4.0f), gc::Name("wall1"));
+                resource_manager.add<gc::ResourceMesh>(gc::genPlaneMesh(6.0f, 4.0f), gc::Name("wall3"));
             }
 
             // add a floor

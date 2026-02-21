@@ -4,6 +4,8 @@ project(gcpak_editor LANGUAGES CXX VERSION 0.1.0)
 
 set(SRC_FILES
   "src/main.cpp"
+  "src/editor_system.h"
+  "src/editor_system.cpp"
 )
 
 if(WIN32)

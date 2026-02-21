@@ -85,7 +85,7 @@ App::App(const AppInitOptions& options)
     /* SUBSYSTEM INITIALISATION */
 
     m_jobs = std::make_unique<Jobs>(std::thread::hardware_concurrency());
-    m_content = std::make_unique<Content>(m_application_directory / "content");
+    m_content = std::make_unique<Content>(m_application_directory / "content", options.pak_files_override);
     WindowInitInfo window_init_info{};
     window_init_info.vulkan_support = true;
     window_init_info.resizable = false;

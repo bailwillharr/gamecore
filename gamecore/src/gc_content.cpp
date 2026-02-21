@@ -66,53 +66,66 @@ static gcpak::GcpakAssetEntry getAssetEntry(const mio::ummap_source& map, const 
     return gcpak::GcpakAssetEntry::deserialize(ss);
 }
 
-Content::Content(const std::filesystem::path& content_dir)
+Content::Content(const std::filesystem::path& content_dir, std::span<const std::string> asset_files)
 {
-    if (!content_dir.empty()) { // if findContentDir() hasn't failed
-        // Iterate through the .gcpak files found in content/
-        for (const auto& dir_entry : std::filesystem::directory_iterator(content_dir)) {
-            if (dir_entry.is_regular_file() && dir_entry.path().extension() == std::string{".gcpak"}) {
+    std::error_code ec;
 
-                GC_ASSERT(!m_package_file_maps.full());
-                if (m_package_file_maps.full()) {
-                    GC_ERROR("Cannot open any more gcpak files (current limit: {})", m_package_file_maps.capacity());
-                    break;
-                }
+    if (content_dir.empty()) {
+        GC_ERROR("Content manager was not given a valid content directory. No assets will be loadable");
+        return;
+    }
 
-                GC_DEBUG("Loading .gcpak file: {}:", dir_entry.path().filename().string());
-
-                auto opt = openAndValidateGcpak(dir_entry.path()); // cannot be const as opt.get() has a unique_ptr which is moved from
-                if (opt) {
-
-                    // first attempt to load hash LUT file (loadAssetIDTable() does nothing in release builds)
-                    std::filesystem::path hash_file_path = dir_entry.path();
-                    hash_file_path.replace_extension("txt");
-                    loadNameLookupTable(hash_file_path);
-
-                    // pair in optional might be OTT?
-                    auto& [file, num_entries] = opt.value();
-                    const unsigned int file_index = static_cast<unsigned int>(m_package_file_maps.size());
-                    for (uint32_t i = 0; i < num_entries; ++i) {
-                        const auto asset_entry = getAssetEntry(file, i);
-                        PackageAssetInfo info{};
-                        info.entry = asset_entry;
-                        info.file_index = file_index;
-                        m_asset_infos.emplace(info.entry.crc32_id, info);
-                        GC_DEBUG("    {} ({})", Name(info.entry.crc32_id).getString(), bytesToHumanReadable(info.entry.size));
-                    }
-                    m_package_file_maps.emplace_back(std::move(file)); // keep file handle
-                }
+    std::vector<std::filesystem::path> file_paths_to_open{};
+    if (!asset_files.empty()) {
+        for (const auto& file_name : asset_files) {
+            file_paths_to_open.push_back(content_dir / file_name);
+        }
+    }
+    else {
+        for (const auto& dir_entry : std::filesystem::directory_iterator(content_dir, ec)) {
+            const auto& file_path = dir_entry.path();
+            if (dir_entry.is_regular_file() && file_path.extension() == std::string(".gcpak")) {
+                file_paths_to_open.push_back(file_path);
             }
+        }
+    }
+
+    // Iterate through the .gcpak files found in content/
+    for (const auto& file_path : file_paths_to_open) {
+        GC_ASSERT(!m_package_file_maps.full());
+        if (m_package_file_maps.full()) {
+            GC_ERROR("Cannot open any more gcpak files (current limit: {})", m_package_file_maps.capacity());
+            break;
+        }
+
+        GC_DEBUG("Loading .gcpak file: {}:", file_path.string());
+
+        auto opt = openAndValidateGcpak(file_path); // cannot be const as opt.get() has a unique_ptr which is moved from
+        if (opt) {
+
+            // first attempt to load hash LUT file (loadAssetIDTable() does nothing in release builds)
+            std::filesystem::path hash_file_path = file_path;
+            hash_file_path.replace_extension("txt");
+            loadNameLookupTable(hash_file_path);
+
+            // pair in optional might be OTT?
+            auto& [file, num_entries] = opt.value();
+            const unsigned int file_index = static_cast<unsigned int>(m_package_file_maps.size());
+            for (uint32_t i = 0; i < num_entries; ++i) {
+                const auto asset_entry = getAssetEntry(file, i);
+                PackageAssetInfo info{};
+                info.entry = asset_entry;
+                info.file_index = file_index;
+                m_asset_infos.emplace(info.entry.crc32_id, info);
+                GC_DEBUG("    {} ({})", Name(info.entry.crc32_id).getString(), bytesToHumanReadable(info.entry.size));
+            }
+            m_package_file_maps.emplace_back(std::move(file)); // keep file handle
         }
     }
     GC_TRACE("Initialised content manager");
 }
 
 Content::~Content() { GC_TRACE("Destroying content manager..."); }
-
-decltype(Content::m_asset_infos)::const_iterator Content::begin() const { return m_asset_infos.begin(); }
-
-decltype(Content::m_asset_infos)::const_iterator Content::end() const { return m_asset_infos.end(); }
 
 std::span<const uint8_t> Content::findAsset(Name name, [[maybe_unused]] gcpak::GcpakAssetType type) const
 {

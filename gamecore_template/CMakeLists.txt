@@ -10,8 +10,6 @@ set(SRC_FILES
   "src/spin.cpp"
   "src/mouse_move.h"
   "src/mouse_move.cpp"
-  "src/gen_mesh.h"
-  "src/gen_mesh.cpp"
 )
 
 if(WIN32)

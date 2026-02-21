@@ -763,6 +763,9 @@ void RenderBackend::submitFrame(bool window_resized, const WorldDrawData& world_
         if (m_pipeline) {
             recordWorldRenderingCommands(stuff.cmd, m_pipeline_layout, *m_pipeline, m_main_timeline_semaphore, m_main_timeline_value + 1, world_draw_data);
         }
+        else {
+            GC_ERROR("No pipeline set. Cannot render!");
+        }
 
         if (post_render_callback) {
             bool ret = post_render_callback(stuff.cmd);

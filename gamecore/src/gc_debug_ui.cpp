@@ -24,17 +24,6 @@
 
 namespace gc {
 
-static void drawAssetList(const Content& content)
-{
-    ImGui::Begin("Asset List", nullptr, 0);
-
-    for (const auto& [name, info] : content) {
-        ImGui::Text("[%d] %s %s", info.file_index, bytesToHumanReadable(info.entry.size).c_str(), name.getString().c_str());
-    }
-
-    ImGui::End();
-}
-
 DebugUI::DebugUI(SDL_Window* window, const RenderBackendInfo& render_backend_info, const std::filesystem::path& config_file)
 {
     m_imgui_ctx = ImGui::CreateContext();
@@ -110,10 +99,7 @@ void DebugUI::newFrame()
     ImGui::NewFrame();
 }
 
-void DebugUI::render()
-{
-    ImGui::Render();
-}
+void DebugUI::render() { ImGui::Render(); }
 
 void DebugUI::update(const FrameState& frame_state, const Content& content)
 {
@@ -130,8 +116,6 @@ void DebugUI::update(const FrameState& frame_state, const Content& content)
         if (m_show_demo) {
             ImGui::ShowDemoWindow(&m_show_demo);
         }
-
-        drawAssetList(content);
     }
 }
 

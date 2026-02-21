@@ -11,7 +11,7 @@ class CameraComponent {
 
     float m_fov_radians{glm::radians(45.0f)};
     float m_near = 0.1f;
-    bool m_active = false;
+    bool m_active = true;
 
 public:
     CameraComponent& setFOV(float fov_radians)
