@@ -1,7 +1,7 @@
 #pragma once
 
-#include <vec3.hpp>
-#include <geometric.hpp>
+#include <glm/vec3.hpp>
+#include <glm/geometric.hpp>
 
 #include <gamecore/gc_ecs.h>
 

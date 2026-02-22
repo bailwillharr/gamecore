@@ -4,7 +4,7 @@
 #include <string>
 #include <functional>
 
-#include <vec2.hpp>
+#include <glm/vec2.hpp>
 
 #include <SDL3/SDL_video.h>
 #include <SDL3/SDL_scancode.h>

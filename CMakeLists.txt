@@ -152,12 +152,9 @@ cpmaddpackage(
   NAME glm
   VERSION 1.0.3
   URL https://github.com/g-truc/glm/releases/download/1.0.3/glm-1.0.3.zip
-  DOWNLOAD_ONLY YES # built-in CMakeLists.txt doesn't work
+  OPTIONS
+    "GLM_ENABLE_CXX_20 ON"
 )
-add_library(glm INTERFACE)
-add_library(glm::glm ALIAS glm)
-target_include_directories(glm SYSTEM INTERFACE ${glm_SOURCE_DIR})
-target_compile_definitions(glm INTERFACE GLM_ENABLE_EXPERIMENTAL)
 
 # ImGui
 cpmaddpackage(

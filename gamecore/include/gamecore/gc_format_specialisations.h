@@ -3,9 +3,9 @@
 #include <chrono>
 #include <format>
 
-#include <vec2.hpp>
-#include <vec3.hpp>
-#include <ext/quaternion_float.hpp>
+#include <glm/vec2.hpp>
+#include <glm/vec3.hpp>
+#include <glm/gtc/quaternion.hpp>
 
 template <>
 struct std::formatter<glm::vec2> {

@@ -10,8 +10,8 @@
 #include <memory>
 #include <stack>
 
-#include <vec3.hpp>
-#include <ext/quaternion_float.hpp>
+#include <glm/vec3.hpp>
+#include <glm/gtc/quaternion.hpp>
 
 /* The World contains all loaded entities in the game. */
 

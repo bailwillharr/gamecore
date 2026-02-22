@@ -1,6 +1,6 @@
 #pragma once
 
-#include <trigonometric.hpp>
+#include <glm/trigonometric.hpp>
 
 namespace gc {
 

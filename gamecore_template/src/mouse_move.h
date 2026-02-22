@@ -1,7 +1,7 @@
 #pragma once
 
-#include <vec3.hpp>
-#include <gtc/constants.hpp>
+#include <glm/vec3.hpp>
+#include <glm/gtc/constants.hpp>
 
 #include <gamecore/gc_ecs.h>
 

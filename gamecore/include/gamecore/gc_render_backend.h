@@ -23,9 +23,9 @@
 #include <array>
 #include <span>
 
-#include <vec2.hpp>
-#include <vec3.hpp>
-#include <vec4.hpp>
+#include <glm/vec2.hpp>
+#include <glm/vec3.hpp>
+#include <glm/vec4.hpp>
 
 #include <gctemplates/gct_static_vector.h>
 

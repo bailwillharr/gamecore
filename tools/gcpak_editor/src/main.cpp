@@ -5,10 +5,11 @@
 
 #include <filesystem>
 #include <iostream>
-#include <trigonometric.hpp>
 #include <vector>
 #include <format>
 #include <system_error>
+
+#include <glm/trigonometric.hpp>
 
 #include <stb_image.h>
 

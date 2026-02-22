@@ -4,8 +4,8 @@
 
 #include <string_view>
 
-#include <geometric.hpp>
-#include <gtc/constants.hpp>
+#include <glm/geometric.hpp>
+#include <glm/gtc/constants.hpp>
 
 #include <gctemplates/gct_sv_stream.h>
 

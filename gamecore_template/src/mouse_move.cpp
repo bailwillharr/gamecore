@@ -2,7 +2,7 @@
 
 #include <tracy/Tracy.hpp>
 
-#include <glm.hpp>
+#include <glm/glm.hpp>
 
 #include <gamecore/gc_world.h>
 #include <gamecore/gc_transform_component.h>

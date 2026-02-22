@@ -1,8 +1,8 @@
 #pragma once
 
-#include <vec2.hpp>
-#include <vec3.hpp>
-#include <vec4.hpp>
+#include <glm/vec2.hpp>
+#include <glm/vec3.hpp>
+#include <glm/vec4.hpp>
 
 #include "gamecore/gc_gpu_resources.h"
 #include "gamecore/gc_assert.h"

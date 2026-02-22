@@ -64,16 +64,18 @@ DebugUI::DebugUI(SDL_Window* window, const RenderBackendInfo& render_backend_inf
         info.QueueFamily = render_backend_info.main_queue_family_index;
         info.Queue = render_backend_info.main_queue;
         info.DescriptorPool = render_backend_info.main_descriptor_pool;
-        info.RenderPass = VK_NULL_HANDLE;
 
         // There is no reason why the ImGui Vulkan backend should need to know about the swapchain image count.
         // Using 2 works fine here.
         info.MinImageCount = 2;
         info.ImageCount = info.MinImageCount;
-
-        info.MSAASamples = render_backend_info.msaa_samples;
+        
         info.UseDynamicRendering = true;
-        info.PipelineRenderingCreateInfo = rendering_info;
+        info.PipelineInfoMain.MSAASamples = render_backend_info.msaa_samples;
+        info.PipelineInfoMain.PipelineRenderingCreateInfo = rendering_info;
+
+        //info.MinAllocationSize = 1024 * 1024; // stop 'best practices' complaining
+
         if (!ImGui_ImplVulkan_Init(&info)) {
             gc::abortGame("ImGui_ImplVulkan_Init() error");
         }

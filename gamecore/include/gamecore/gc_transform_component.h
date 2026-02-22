@@ -3,9 +3,9 @@
 #include "gamecore/gc_ecs.h"
 #include "gamecore/gc_name.h"
 
-#include <vec3.hpp>
-#include <gtc/quaternion.hpp>
-#include <mat4x4.hpp>
+#include <glm/vec3.hpp>
+#include <glm/gtc/quaternion.hpp>
+#include <glm/mat4x4.hpp>
 
 namespace gc {
 

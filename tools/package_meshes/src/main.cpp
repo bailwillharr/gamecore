@@ -16,7 +16,7 @@
 #include <string_view>
 #include <span>
 
-#include <glm.hpp>
+#include <glm/glm.hpp>
 
 #include <mikktspace.h>
 #include <weldmesh.h>

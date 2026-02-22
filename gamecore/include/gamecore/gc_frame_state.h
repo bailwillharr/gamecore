@@ -2,7 +2,7 @@
 
 #include <vector>
 
-#include <vec3.hpp>
+#include <glm/vec3.hpp>
 
 #include "gamecore/gc_world_draw_data.h"
 
