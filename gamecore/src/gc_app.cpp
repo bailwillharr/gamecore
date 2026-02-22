@@ -207,7 +207,6 @@ void App::run()
         frame_state.window_state = &m_window->processEvents(DebugUI::windowEventInterceptor);
 
         {
-            ZoneScopedN("UI Logic");
             if (frame_state.window_state->getKeyDown(SDL_SCANCODE_ESCAPE)) {
                 m_window->pushQuitEvent();
             }

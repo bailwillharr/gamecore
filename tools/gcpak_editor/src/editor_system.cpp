@@ -5,6 +5,8 @@
 #include <SDL3/SDL_dialog.h>
 #include <SDL3/SDL_messagebox.h>
 
+#include <tracy/Tracy.hpp>
+
 #include <gamecore/gc_app.h>
 #include <gamecore/gc_frame_state.h>
 #include <gamecore/gc_window.h>
@@ -117,12 +119,14 @@ EditorSystem::EditorSystem(World& world, Window& window, gc::ResourceManager& re
 
 void EditorSystem::onUpdate(FrameState& frame_state)
 {
+    ZoneScoped;
+
     if (frame_state.window_state->getIsMouseCaptured()) {
         // when engine closes debug UI, it tries to recapture the mouse
         m_window.setMouseCaptured(false);
     }
 
-    if (ImGui::Begin("Package Files")) {
+    if (ImGui::Begin("Files")) {
         if (ImGui::Button("Rescan Files")) {
             m_rescan.store(true, std::memory_order_relaxed);
         }
@@ -130,7 +134,14 @@ void EditorSystem::onUpdate(FrameState& frame_state)
             SDL_ShowOpenFileDialog(openFileDialogCallback, this, m_window.getHandle(), &m_dialog_filter, 1, NULL, true);
         }
         if (ImGui::Button("Save As")) {
-            SDL_ShowSaveFileDialog(saveFileDialogCallback, this, m_window.getHandle(), &m_dialog_filter, 1, App::instance().getSaveDirectory().string().c_str());
+            SDL_ShowSaveFileDialog(saveFileDialogCallback, this, m_window.getHandle(), &m_dialog_filter, 1,
+                                   App::instance().getSaveDirectory().string().c_str());
+        }
+        {
+            std::array<char, 64> name_buf{};
+            ImGui::Text("Add Asset:");
+            ImGui::InputText("NAME", name_buf.data(), name_buf.size(), ImGuiInputTextFlags_CharsNoBlank);
+            ImGui::Text("Hash: %#x", crc32(name_buf.data()));
         }
     }
     ImGui::End();
@@ -154,6 +165,10 @@ void EditorSystem::onUpdate(FrameState& frame_state)
                         GC_ERROR("error loading gcpak file or hash file: {}, error: {}", file.path.string(), ec.message());
                     }
                     for (const auto& asset : creator.getAssets()) {
+                        if (asset.hash != crc32(asset.name)) {
+                            gc::abortGame("Invalid hash for asset: {} Actual: {:#08x}, Saved: {:#08x}", asset.name, crc32(asset.name), asset.hash);
+                        }
+
                         EditorAsset editor_asset{};
                         editor_asset.name = asset.name;
                         editor_asset.hash = asset.hash;

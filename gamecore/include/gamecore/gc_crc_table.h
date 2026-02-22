@@ -15,6 +15,7 @@
 
 #ifdef GC_CHECK_COLLISIONS
 #include "gamecore/gc_abort.h"
+#include "gamecore/gc_assert.h"
 #include "gamecore/gc_logger.h"
 #endif
 
@@ -44,10 +45,12 @@ inline constexpr std::array<uint32_t, 256> crc_table = {
     0xbdbdf21cL, 0xcabac28aL, 0x53b39330L, 0x24b4a3a6L, 0xbad03605L, 0xcdd70693L, 0x54de5729L, 0x23d967bfL, 0xb3667a2eL, 0xc4614ab8L, 0x5d681b02L, 0x2a6f2b94L,
     0xb40bbe37L, 0xc30c8ea1L, 0x5a05df1bL, 0x2d02ef8dL};
 
-inline constexpr uint32_t crc32_impl(std::string_view id)
+inline constexpr uint32_t crc32_impl(const char* const str)
 {
     uint32_t crc = 0xffffffffu;
-    for (char c : id) crc = (crc >> 8) ^ crc_table[(crc ^ c) & 0xff];
+    for (const char* p = str; *p != '\0'; ++p) {
+        crc = (crc >> 8) ^ crc_table[(crc ^ *p) & 0xff];
+    }
     return crc ^ 0xffffffff;
 }
 
@@ -77,14 +80,15 @@ struct Crc32ThreadLocalMap {
     ~Crc32ThreadLocalMap() { crc32FlushMapAndCheckCollisions(local_map); }
 };
 
-inline uint32_t crc32(std::string_view id)
+inline uint32_t crc32(const char* const id)
 {
     constexpr size_t THREAD_LOCAL_MAP_FLUSH_SIZE = 1024; // flushes to global map once it reaches this size
 
     thread_local Crc32ThreadLocalMap t_local_map{};
 
     const uint32_t hash = crc32_impl(id);
-    auto [it, success] = t_local_map.local_map.try_emplace(hash, id);
+    const std::string id_str(id);
+    auto [it, success] = t_local_map.local_map.try_emplace(hash, id_str);
     if (success) {
         const int64_t frame_count = Logger::instance().getFrameNumber();
         if (t_local_map.local_map.size() >= THREAD_LOCAL_MAP_FLUSH_SIZE || frame_count != t_local_map.last_flushed_frame_count) {
@@ -95,16 +99,19 @@ inline uint32_t crc32(std::string_view id)
     }
     else {
         // check there isn't a collision
-        if (it->second != id) {
-            abortGame("HASH COLLISION: '{}' and '{}' both hash to {}", it->second, id, hash);
+        if (it->second != id_str) {
+            abortGame("HASH COLLISION: '{}' and '{}' both hash to {}", it->second, id_str, hash);
         }
     }
     return hash;
 }
 
+inline uint32_t crc32(const std::string& id) { return crc32(id.c_str()); }
+
 #else
 
-inline constexpr uint32_t crc32(std::string_view id) { return crc32_impl(id); }
+inline constexpr uint32_t crc32(const char* const id) { return crc32_impl(id); }
+inline constexpr uint32_t crc32(const std::string& id) { return crc32(id.c_str()); }
 
 #endif
 

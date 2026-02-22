@@ -11,7 +11,6 @@
 
 #include <cstdint>
 
-#include <string_view>
 #include <string>
 #include <filesystem>
 #include <fstream>
@@ -33,9 +32,9 @@ public:
     constexpr Name() : m_hash(0) {}
     explicit constexpr Name(uint32_t hash) : m_hash(hash) {}
 #ifdef GC_LOOKUP_ASSET_IDS
-    explicit Name(std::string_view str) : m_hash(crc32(str)) { s_lut.emplace(m_hash, str); }
+    explicit Name(const char* str) : m_hash(crc32(str)) { s_lut.emplace(m_hash, str); }
 #else
-    explicit constexpr Name(std::string_view str) : m_hash(crc32(str)) {}
+    explicit constexpr Name(const char* str) : m_hash(crc32(str)) {}
 #endif
 
     constexpr bool operator==(const Name& other) const noexcept { return m_hash == other.m_hash; }
@@ -75,7 +74,7 @@ inline void loadNameLookupTable(const std::filesystem::path& file_path)
             GC_ERROR("Error parsing hash file: {}", file_path.filename().string());
             return;
         }
-        std::string_view str(line.begin() + 9, line.end()); // skip over hash and space character
+        const char* const str = line.c_str() + 9; // skip over hash and space character
         // just create a Name object, if GC_LOOKUP_ASSET_IDS is defined, this will add to the LUT
         (void)Name(str);
     }
@@ -86,9 +85,9 @@ inline void loadNameLookupTable(const std::filesystem::path& file_path)
 namespace gc::literals {
 
 #ifdef GC_LOOKUP_ASSET_IDS
-inline ::gc::Name operator""_name(const char* name, std::size_t size) { return ::gc::Name(std::string_view(name, size)); }
+inline ::gc::Name operator""_name(const char* name, std::size_t) { return ::gc::Name(name); }
 #else
-inline constexpr ::gc::Name operator""_name(const char* name, std::size_t size) { return ::gc::Name(std::string_view(name, size)); }
+inline constexpr ::gc::Name operator""_name(const char* name, std::size_t) { return ::gc::Name(name); }
 #endif
 
 } // namespace gc::literals

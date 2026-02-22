@@ -94,12 +94,17 @@ DebugUI::~DebugUI()
 
 void DebugUI::newFrame()
 {
+    ZoneScoped;
     ImGui_ImplSDL3_NewFrame();
     ImGui_ImplVulkan_NewFrame();
     ImGui::NewFrame();
 }
 
-void DebugUI::render() { ImGui::Render(); }
+void DebugUI::render()
+{
+    ZoneScoped;
+    ImGui::Render();
+}
 
 void DebugUI::update(FrameState& frame_state)
 {
