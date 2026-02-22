@@ -46,20 +46,12 @@ App::App(const AppInitOptions& options)
 {
 
     /* Get save directory(In $XDG_DATA_HOME on Linux and in % appdata % on Windows) */
+    /* SDL_GetPrefPath() creates the directory if it doesn't already exist. */
     const char* user_dir = SDL_GetPrefPath(options.author.c_str(), options.name.c_str());
     if (user_dir) {
         m_save_directory = std::filesystem::path(user_dir);
         SDL_free(const_cast<char*>(user_dir));
-
-        if (std::error_code ec; std::filesystem::create_directories(m_save_directory, ec)) {
-            GC_INFO("Created save directory: {}", m_save_directory.string());
-        }
-        else if (ec) {
-            GC_INFO("Error creating save directory: {}, error: {}", m_save_directory.string(), ec.message());
-        }
-        else {
-            GC_INFO("Found save directory: {}", m_save_directory.string());
-        }
+        GC_INFO("Using save directory: {}", m_save_directory.string());
     }
     else {
         GC_ERROR("SDL_GetPrefPath() error: {}", SDL_GetError());

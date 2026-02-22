@@ -114,7 +114,9 @@ static ResourceMesh createMeshFromData(const std::span<const uint8_t> data)
 EditorSystem::EditorSystem(World& world, Window& window, gc::ResourceManager& resource_manager, const std::filesystem::path& open_file)
     : System(world), m_window(window), m_resource_manager(resource_manager)
 {
-    m_open_files.emplace_back(open_file);
+    if (!open_file.empty()) {
+        m_open_files.emplace_back(open_file);
+    }
 }
 
 void EditorSystem::onUpdate(FrameState& frame_state)
@@ -296,6 +298,7 @@ void SDLCALL EditorSystem::openFileDialogCallback(void* userdata, const char* co
     {
         std::unique_lock lock(self->m_open_files_mutex);
         for (const char* const* file_path_ptr = filelist; *file_path_ptr; ++file_path_ptr) {
+            GC_ASSERT(*file_path_ptr);
             PakFileInfo file_info{};
             file_info.path = *file_path_ptr;
             bool already_exists = false;

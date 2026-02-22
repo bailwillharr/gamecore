@@ -1,6 +1,7 @@
 #include "gcpak/gcpak.h"
 
 #include <array>
+#include <charconv>
 #include <vector>
 #include <filesystem>
 #include <fstream>
