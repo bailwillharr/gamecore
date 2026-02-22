@@ -38,8 +38,8 @@ include(${CMAKE_CURRENT_BINARY_DIR}/cmake/CPM.cmake)
 # spdlog
 cpmaddpackage(
   NAME spdlog
-  VERSION 1.15.3
-  URL https://github.com/gabime/spdlog/archive/refs/tags/v1.15.3.zip
+  VERSION 1.17.0
+  URL https://github.com/gabime/spdlog/archive/refs/tags/v1.17.0.zip
   OPTIONS
     "SPDLOG_BUILD_SHARED OFF"
     "SPDLOG_SYSTEM_INCLUDES ON"
@@ -52,8 +52,8 @@ cpmaddpackage(
 # SDL3
 cpmaddpackage(
   NAME SDL3
-  VERSION 3.2.24
-  URL https://github.com/libsdl-org/SDL/archive/refs/tags/release-3.2.24.zip
+  VERSION 3.4.2
+  URL https://github.com/libsdl-org/SDL/archive/refs/tags/release-3.4.2.zip
   EXCLUDE_FROM_ALL YES
   SYSTEM YES
 )
@@ -139,8 +139,8 @@ endif()
 # json
 cpmaddpackage(
   NAME json
-  VERSION 3.11.3
-  URL https://github.com/nlohmann/json/archive/refs/tags/v3.11.3.zip
+  VERSION 3.12.0
+  URL https://github.com/nlohmann/json/archive/refs/tags/v3.12.0.zip
   OPTIONS
     "JSON_SystemInclude ON"
   EXCLUDE_FROM_ALL YES
@@ -150,8 +150,8 @@ cpmaddpackage(
 # glm
 cpmaddpackage(
   NAME glm
-  VERSION 1.0.1
-  URL https://github.com/g-truc/glm/releases/download/1.0.1/glm-1.0.1-light.zip
+  VERSION 1.0.3
+  URL https://github.com/g-truc/glm/releases/download/1.0.3/glm-1.0.3.zip
   DOWNLOAD_ONLY YES # built-in CMakeLists.txt doesn't work
 )
 add_library(glm INTERFACE)
@@ -162,7 +162,7 @@ target_compile_definitions(glm INTERFACE GLM_ENABLE_EXPERIMENTAL)
 # ImGui
 cpmaddpackage(
   NAME imgui
-  VERSION 1.91.9
+  VERSION 1.92.6
   GITHUB_REPOSITORY ocornut/imgui
   DOWNLOAD_ONLY YES
 )
@@ -193,8 +193,8 @@ target_link_libraries(imgui PRIVATE SDL3::SDL3)
 # tinygltf
 cpmaddpackage(
   NAME tinygltf
-  VERSION 2.9.6
-  URL https://github.com/syoyo/tinygltf/archive/refs/tags/v2.9.6.zip
+  VERSION 2.9.7
+  URL https://github.com/syoyo/tinygltf/archive/refs/tags/v2.9.7.zip
   OPTIONS
     "TINYGLTF_BUILD_LOADER_EXAMPLE OFF"
     "TINYGLTF_HEADER_ONLY OFF"
