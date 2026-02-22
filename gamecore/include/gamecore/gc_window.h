@@ -54,6 +54,8 @@ class WindowState {
     bool m_is_fullscreen = false;
     bool m_resized_flag = false;
 
+    std::string m_drag_drop_path{};
+
 public:
     WindowState() = default;
     WindowState(const WindowState&) = delete;
@@ -81,6 +83,9 @@ public:
 
     bool getIsFullscreen() const;
     bool getResizedFlag() const;
+
+    // returns a non-empty string if a file was dropped this frame
+    const std::string& getDragDropPath() const;
 };
 
 class Window {

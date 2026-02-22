@@ -28,7 +28,10 @@ class EditorSystem : public gc::System {
         std::filesystem::path path;
     };
 
-    using EditorAsset = gcpak::GcpakCreator::Asset;
+    struct EditorAsset {
+        gcpak::GcpakCreator::Asset asset;
+        PakFileInfo* from_file;
+    };
 
     struct AssetCategoryList {
         std::vector<EditorAsset> assets;
@@ -41,7 +44,11 @@ class EditorSystem : public gc::System {
     std::vector<PakFileInfo> m_open_files{};
     std::atomic<bool> m_rescan = true;
 
-    const SDL_DialogFileFilter m_dialog_filter{.name = "Gamecore Package File (*.gcpak)", .pattern = "gcpak"};
+    const SDL_DialogFileFilter m_gcpak_filter{.name = "Gamecore Package File (*.gcpak)", .pattern = "gcpak"};
+
+    const std::array<SDL_DialogFileFilter, 3> m_asset_filters{SDL_DialogFileFilter{.name = "Mesh File (*.obj)", .pattern = "obj"},
+                                                             SDL_DialogFileFilter{.name = "Texture File (*.png)", .pattern = "png"},
+                                                             SDL_DialogFileFilter{.name = "Shader File (*.vert;*.frag)", .pattern = "vert;frag"}};
 
     std::mutex m_assets_mutex{};
     std::unordered_map<gcpak::GcpakAssetType, AssetCategoryList> m_assets{};
@@ -60,11 +67,11 @@ public:
     void onUpdate(gc::FrameState& frame_state) override;
 
 private:
-    static void SDLCALL openFileDialogCallback(void* userdata, const char* const* filelist, int filter);
-
-    static void SDLCALL saveFileDialogCallback(void* userdata, const char* const* filelist, int filter);
+    static void SDLCALL openGcpakFileDialogCallback(void* userdata, const char* const* filelist, int filter);
+    static void SDLCALL openAssetFileDialogCallback(void* userdata, const char* const* filelist, int filter);
+    static void SDLCALL saveGcpakFileDialogCallback(void* userdata, const char* const* filelist, int filter);
 
     void showSelectedAssetInfoUI();
 
-    void resetPreviewRenderable();
+    void resetPreviewEntity();
 };

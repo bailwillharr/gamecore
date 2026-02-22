@@ -61,6 +61,8 @@ public:
     }
 
     TransformComponent& setScale(float x, float y, float z) { return setScale(glm::vec3(x, y, z)); }
+
+    TransformComponent& setScale(float scale) { return setScale(glm::vec3(scale, scale, scale)); }
 };
 
 } // namespace gc

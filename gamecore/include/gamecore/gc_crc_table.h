@@ -16,7 +16,6 @@
 #ifdef GC_CHECK_COLLISIONS
 #include "gamecore/gc_abort.h"
 #include "gamecore/gc_assert.h"
-#include "gamecore/gc_logger.h"
 #endif
 
 namespace gc {
@@ -64,7 +63,6 @@ inline auto g_crc32_global_map = new Crc32GlobalMap; // LEAKED ON PURPOSE
 
 inline void crc32FlushMapAndCheckCollisions(const std::unordered_map<uint32_t, std::string>& local_map)
 {
-    GC_INFO("FLUSHING MAP");
     std::lock_guard lock(g_crc32_global_map->mut);
     for (const auto& [hash, id] : local_map) {
         auto [it, success] = g_crc32_global_map->main_map.try_emplace(hash, id);

@@ -105,6 +105,8 @@ bool WindowState::getIsFullscreen() const { return m_is_fullscreen; }
 
 bool WindowState::getResizedFlag() const { return m_resized_flag; }
 
+const std::string& WindowState::getDragDropPath() const { return m_drag_drop_path; }
+
 Window::Window(const WindowInitInfo& info)
 {
     if (!SDL_InitSubSystem(SDL_INIT_VIDEO)) {
@@ -159,6 +161,7 @@ const WindowState& Window::processEvents(void (*event_interceptor)(SDL_Event&))
     resetMouseButtonState(m_state.m_mouse_button_state);
     m_state.m_mouse_motion = {};
     m_state.m_resized_flag = false;
+    m_state.m_drag_drop_path.clear();
 
     SDL_Event ev{};
     while (SDL_PollEvent(&ev)) {
@@ -224,7 +227,9 @@ const WindowState& Window::processEvents(void (*event_interceptor)(SDL_Event&))
                 // handle mouse wheel here
                 // handle gamepad / joystick here
                 // handle clipboard here
-                // handle drag and drop here
+            case SDL_EVENT_DROP_FILE: {
+                m_state.m_drag_drop_path = ev.drop.data;
+            } break;
                 // handle audio device here
             default: {
                 if (ev.type == m_mouse_capture_event_index) {
