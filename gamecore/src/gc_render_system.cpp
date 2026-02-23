@@ -20,6 +20,10 @@ void RenderSystem::onUpdate(FrameState& frame_state)
 {
     ZoneScoped;
 
+    if (!frame_state.draw_data.getFallbackMaterial()) {
+        frame_state.draw_data.setFallbackMaterial(m_render_object_manager.getFallbackMaterial());
+    }
+
     m_world.forEach<TransformComponent, RenderableComponent>([&]([[maybe_unused]] Entity entity, const TransformComponent& t, const RenderableComponent& c) {
         if (c.m_visible && !c.m_mesh.empty()) {
             // resolve resources

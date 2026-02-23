@@ -65,6 +65,8 @@ public:
     RenderObjectManager& operator=(const RenderObjectManager&) = delete;
     RenderObjectManager& operator=(RenderObjectManager&&) = delete;
 
+    RenderMaterial* getFallbackMaterial() const { return m_fallback_material.get(); }
+
     RenderMaterial* getRenderMaterial(Name name)
     {
         if (name.empty()) {

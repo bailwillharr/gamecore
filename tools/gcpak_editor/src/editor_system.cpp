@@ -177,6 +177,57 @@ static void SetNextWindowPosAnchor(ImGuiCond cond, ImGuiAnchorCorner anchor, ImV
     ImGui::SetNextWindowPos(pos, cond, pivot);
 }
 
+struct AABB {
+    glm::vec3 min;
+    glm::vec3 max;
+};
+
+static AABB getAABBFromMesh(const ResourceMesh& mesh)
+{
+    AABB aabb{};
+    aabb.min.x = std::numeric_limits<float>::max();
+    aabb.min.y = aabb.min.x;
+    aabb.min.z = aabb.min.x;
+    aabb.max.x = std::numeric_limits<float>::min();
+    aabb.max.y = aabb.max.x;
+    aabb.max.z = aabb.max.x;
+    for (const auto& vertex : mesh.getVertices()) {
+        aabb.min.x = glm::min(aabb.min.x, vertex.position.x);
+        aabb.min.y = glm::min(aabb.min.y, vertex.position.y);
+        aabb.min.z = glm::min(aabb.min.z, vertex.position.z);
+        aabb.max.x = glm::max(aabb.max.x, vertex.position.x);
+        aabb.max.y = glm::max(aabb.max.y, vertex.position.y);
+        aabb.max.z = glm::max(aabb.max.z, vertex.position.z);
+    }
+    return aabb;
+}
+
+static void FitAABBToUnitCube(const AABB& box, glm::vec3& out_position, float& out_scale)
+{
+    // Compute size
+    glm::vec3 size;
+    size.x = box.max.x - box.min.x;
+    size.y = box.max.y - box.min.y;
+    size.z = box.max.z - box.min.z;
+
+    // Compute center
+    glm::vec3 center;
+    center.x = (box.min.x + box.max.x) * 0.5f;
+    center.y = (box.min.y + box.max.y) * 0.5f;
+    center.z = (box.min.z + box.max.z) * 0.5f;
+
+    // Find largest dimension
+    float maxDim = size.x;
+    if (size.y > maxDim) maxDim = size.y;
+    if (size.z > maxDim) maxDim = size.z;
+
+    // Uniform scale so largest dimension becomes 2
+    out_scale = 2.0f / maxDim;
+
+    // Position to move center to origin AFTER scaling
+    out_position = glm::vec3{-center.x, -center.y, -center.z} * out_scale;
+}
+
 EditorSystem::EditorSystem(World& world, Window& window, gc::ResourceManager& resource_manager, const std::filesystem::path& open_file)
     : System(world), m_window(window), m_resource_manager(resource_manager)
 {
@@ -232,24 +283,44 @@ void EditorSystem::onUpdate(FrameState& frame_state)
 
             {
                 std::unique_lock open_files_lock(m_open_files_mutex);
-                m_assets.clear();
-                for (auto& file : m_open_files) {
+
+                // only erase assets that are associated with an open gcpak file.
+                // My guess is this will be slow the first time reloading after an asset is manually added.
+                // But for times after that, assets from .gcpak files will be at the end of the list (so no reallocations).
+                for (auto& [type, category_list] : m_assets) {
+                    auto& list = category_list.assets;
+                    for (auto it = list.begin(); it != list.end();) {
+                        if (!it->from_file->path.empty()) {
+                            it = list.erase(it);
+                        }
+                        else {
+                            ++it;
+                        }
+                    }
+                }
+
+                for (auto it = m_open_files.begin(); it != m_open_files.end();) {
                     creator.clear();
+                    auto& file = *it;
                     if (std::error_code ec; !creator.loadFile(file.path, ec)) {
                         GC_ERROR("error loading gcpak file or hash file: {}, error: {}", file.path.string(), ec.message());
+                        it = m_open_files.erase(it);
                     }
-                    for (const auto& asset : creator.getAssets()) {
-                        if (asset.hash != crc32(asset.name)) {
-                            gc::abortGame("Invalid hash for asset: {} Actual: {:#08x}, Saved: {:#08x}", asset.name, crc32(asset.name), asset.hash);
-                        }
+                    else {
+                        for (const auto& asset : creator.getAssets()) {
+                            if (asset.hash != crc32(asset.name)) {
+                                gc::abortGame("Invalid hash for asset: {} Actual: {:#08x}, Saved: {:#08x}", asset.name, crc32(asset.name), asset.hash);
+                            }
 
-                        EditorAsset editor_asset{};
-                        editor_asset.asset.name = asset.name;
-                        editor_asset.asset.hash = asset.hash;
-                        editor_asset.asset.type = asset.type;
-                        editor_asset.asset.data = asset.data;
-                        editor_asset.from_file = &file;
-                        m_assets[asset.type].assets.push_back(std::move(editor_asset));
+                            EditorAsset editor_asset{};
+                            editor_asset.asset.name = asset.name;
+                            editor_asset.asset.hash = asset.hash;
+                            editor_asset.asset.type = asset.type;
+                            editor_asset.asset.data = asset.data;
+                            editor_asset.from_file = &file;
+                            m_assets[asset.type].assets.push_back(std::move(editor_asset));
+                        }
+                        ++it;
                     }
                 }
             }
@@ -284,7 +355,7 @@ void EditorSystem::onUpdate(FrameState& frame_state)
                                 }
                                 else {
                                     m_selected_asset_it = it;
-                                } // 1 2 3 4 5 6 7 8 LEVELS OF INDENTATION!
+                                }
                             }
                         }
                     }
@@ -308,15 +379,13 @@ void EditorSystem::onUpdate(FrameState& frame_state)
         showSelectedAssetInfoUI();
 
         if (m_preview_entity == gc::ENTITY_NONE) {
-            m_preview_entity = m_world.createEntity("preview_entity"_name, gc::ENTITY_NONE, {0.0f, 5.0f, 0.0f});
+            m_preview_entity = m_world.createEntity("preview_entity"_name);
             m_world.addComponent<RenderableComponent>(m_preview_entity);
-        }
-        if (!m_preview_transform) {
             m_preview_transform = m_world.getComponent<TransformComponent>(m_preview_entity);
-        }
-        if (!m_preview_renderable) {
             m_preview_renderable = m_world.getComponent<RenderableComponent>(m_preview_entity);
+            resetPreviewEntity();
         }
+
         if (m_preview_mesh.empty()) {
             m_preview_mesh = m_resource_manager.add<ResourceMesh>(genCubeMesh());
         }
@@ -344,15 +413,26 @@ void EditorSystem::onUpdate(FrameState& frame_state)
                         m_preview_renderable->setVisible(true);
 
                         const auto texture_info = getAssetTextureInfo(asset.asset.data);
-                        m_preview_transform->setScale(static_cast<float>(texture_info.width) / static_cast<float>(texture_info.height), 1.0f, 1.0f);
+
+                        const float scale_xy = static_cast<float>(texture_info.width) / static_cast<float>(texture_info.height);
+                        m_preview_transform->setScale(scale_xy, scale_xy, 1.0f);
                     } break;
                     case gcpak::GcpakAssetType::MESH_POS12_NORM12_TANG16_UV8_INDEXED16: {
                         ResourceMesh new_mesh = createMeshFromData(asset.asset.data);
+                        const AABB aabb = getAABBFromMesh(new_mesh);
                         const gc::Name new_mesh_name = m_resource_manager.add<ResourceMesh>(std::move(new_mesh));
 
                         m_preview_renderable->setMesh(new_mesh_name);
                         m_preview_renderable->setMaterial({});
                         m_preview_renderable->setVisible(true);
+
+                        glm::vec3 position{};
+                        float scale{};
+                        FitAABBToUnitCube(aabb, position, scale);
+                        position += glm::vec3{0.0f, 5.0f, 0.0f};
+
+                        m_preview_transform->setPosition(position);
+                        m_preview_transform->setScale(scale);
                     } break;
                     default:
                         break;
@@ -521,5 +601,6 @@ void EditorSystem::resetPreviewEntity()
     m_preview_renderable->setMaterial({});
     m_preview_renderable->setMesh({});
 
+    m_preview_transform->setPosition(0.0f, 5.0f, 0.0f);
     m_preview_transform->setScale(1.0f);
 }
