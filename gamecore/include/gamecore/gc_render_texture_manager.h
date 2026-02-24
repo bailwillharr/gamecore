@@ -37,7 +37,6 @@ public:
         // Not found, create new texture
         const ResourceTexture* texture_resource = resource_manager.get<ResourceTexture>(name);
         if (!texture_resource) {
-            GC_ERROR("Could not find texture resource: {}", name);
             return nullptr;
         }
         auto inserted = m_textures.emplace(name, TextureEntry{createRenderTexture(render_backend, *texture_resource), 1});
