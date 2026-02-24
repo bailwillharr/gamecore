@@ -24,18 +24,18 @@ static std::string getAssetTypeString(gcpak::GcpakAssetType type)
 {
     using gcpak::GcpakAssetType;
     switch (type) {
-        case GcpakAssetType::INVALID:
-            return "INVALID";
-        case GcpakAssetType::SPIRV_SHADER:
-            return "Shader";
-        case GcpakAssetType::TEXTURE_R8G8B8A8:
-            return "Texture";
-        case GcpakAssetType::MESH_POS12_NORM12_TANG16_UV8_INDEXED16:
-            return "Mesh";
-        case GcpakAssetType::PREFAB:
-            return "Prefab";
-        default:
-            return "(unknown)";
+    case GcpakAssetType::INVALID:
+        return "INVALID";
+    case GcpakAssetType::SPIRV_SHADER:
+        return "Shader";
+    case GcpakAssetType::TEXTURE_R8G8B8A8:
+        return "Texture";
+    case GcpakAssetType::MESH_POS12_NORM12_TANG16_UV8_INDEXED16:
+        return "Mesh";
+    case GcpakAssetType::PREFAB:
+        return "Prefab";
+    default:
+        return "(unknown)";
     }
 }
 
@@ -124,51 +124,51 @@ static void SetNextWindowPosAnchor(ImGuiCond cond, ImGuiAnchorCorner anchor, ImV
     ImVec2 pivot;
 
     switch (anchor) {
-        case ImGuiAnchorCorner::TopLeft:
-            pos = ImVec2(work_pos.x, work_pos.y);
-            pivot = ImVec2(0, 0);
-            break;
+    case ImGuiAnchorCorner::TopLeft:
+        pos = ImVec2(work_pos.x, work_pos.y);
+        pivot = ImVec2(0, 0);
+        break;
 
-        case ImGuiAnchorCorner::TopCenter:
-            pos = ImVec2(work_pos.x + work_size.x * 0.5f, work_pos.y);
-            pivot = ImVec2(0.5f, 0);
-            break;
+    case ImGuiAnchorCorner::TopCenter:
+        pos = ImVec2(work_pos.x + work_size.x * 0.5f, work_pos.y);
+        pivot = ImVec2(0.5f, 0);
+        break;
 
-        case ImGuiAnchorCorner::TopRight:
-            pos = ImVec2(work_pos.x + work_size.x, work_pos.y);
-            pivot = ImVec2(1, 0);
-            break;
+    case ImGuiAnchorCorner::TopRight:
+        pos = ImVec2(work_pos.x + work_size.x, work_pos.y);
+        pivot = ImVec2(1, 0);
+        break;
 
-        case ImGuiAnchorCorner::CenterLeft:
-            pos = ImVec2(work_pos.x, work_pos.y + work_size.y * 0.5f);
-            pivot = ImVec2(0, 0.5f);
-            break;
+    case ImGuiAnchorCorner::CenterLeft:
+        pos = ImVec2(work_pos.x, work_pos.y + work_size.y * 0.5f);
+        pivot = ImVec2(0, 0.5f);
+        break;
 
-        case ImGuiAnchorCorner::Center:
-            pos = ImVec2(work_pos.x + work_size.x * 0.5f, work_pos.y + work_size.y * 0.5f);
-            pivot = ImVec2(0.5f, 0.5f);
-            break;
+    case ImGuiAnchorCorner::Center:
+        pos = ImVec2(work_pos.x + work_size.x * 0.5f, work_pos.y + work_size.y * 0.5f);
+        pivot = ImVec2(0.5f, 0.5f);
+        break;
 
-        case ImGuiAnchorCorner::CenterRight:
-            pos = ImVec2(work_pos.x + work_size.x, work_pos.y + work_size.y * 0.5f);
-            pivot = ImVec2(1, 0.5f);
-            break;
+    case ImGuiAnchorCorner::CenterRight:
+        pos = ImVec2(work_pos.x + work_size.x, work_pos.y + work_size.y * 0.5f);
+        pivot = ImVec2(1, 0.5f);
+        break;
 
-        case ImGuiAnchorCorner::BottomLeft:
-            pos = ImVec2(work_pos.x, work_pos.y + work_size.y);
-            pivot = ImVec2(0, 1);
-            break;
+    case ImGuiAnchorCorner::BottomLeft:
+        pos = ImVec2(work_pos.x, work_pos.y + work_size.y);
+        pivot = ImVec2(0, 1);
+        break;
 
-        case ImGuiAnchorCorner::BottomCenter:
-            pos = ImVec2(work_pos.x + work_size.x, work_pos.y + work_size.y);
-            pivot = ImVec2(0.5f, 1);
-            pos.x = work_pos.x + work_size.x * 0.5f;
-            break;
+    case ImGuiAnchorCorner::BottomCenter:
+        pos = ImVec2(work_pos.x + work_size.x, work_pos.y + work_size.y);
+        pivot = ImVec2(0.5f, 1);
+        pos.x = work_pos.x + work_size.x * 0.5f;
+        break;
 
-        case ImGuiAnchorCorner::BottomRight:
-            pos = ImVec2(work_pos.x + work_size.x, work_pos.y + work_size.y);
-            pivot = ImVec2(1, 1);
-            break;
+    case ImGuiAnchorCorner::BottomRight:
+        pos = ImVec2(work_pos.x + work_size.x, work_pos.y + work_size.y);
+        pivot = ImVec2(1, 1);
+        break;
     }
 
     pos.x += offset.x;
@@ -205,13 +205,13 @@ static AABB getAABBFromMesh(const ResourceMesh& mesh)
 static void FitAABBToUnitCube(const AABB& box, glm::vec3& out_position, float& out_scale)
 {
     // Compute size
-    glm::vec3 size;
+    glm::vec3 size{};
     size.x = box.max.x - box.min.x;
     size.y = box.max.y - box.min.y;
     size.z = box.max.z - box.min.z;
 
     // Compute center
-    glm::vec3 center;
+    glm::vec3 center{};
     center.x = (box.min.x + box.max.x) * 0.5f;
     center.y = (box.min.y + box.max.y) * 0.5f;
     center.z = (box.min.z + box.max.z) * 0.5f;
@@ -397,45 +397,45 @@ void EditorSystem::onUpdate(FrameState& frame_state)
                 resetPreviewEntity();
 
                 switch (asset.asset.type) {
-                    case gcpak::GcpakAssetType::TEXTURE_R8G8B8A8: {
+                case gcpak::GcpakAssetType::TEXTURE_R8G8B8A8: {
 
-                        ResourceTexture new_texture{};
-                        new_texture.data = asset.asset.data;
-                        new_texture.srgb = true;
-                        const gc::Name new_texture_name = m_resource_manager.add<ResourceTexture>(std::move(new_texture));
+                    ResourceTexture new_texture{};
+                    new_texture.data = asset.asset.data;
+                    new_texture.srgb = true;
+                    const gc::Name new_texture_name = m_resource_manager.add<ResourceTexture>(std::move(new_texture));
 
-                        ResourceMaterial new_material{};
-                        new_material.base_color_texture = new_texture_name;
-                        const gc::Name new_material_name = m_resource_manager.add<ResourceMaterial>(std::move(new_material));
+                    ResourceMaterial new_material{};
+                    new_material.base_color_texture = new_texture_name;
+                    const gc::Name new_material_name = m_resource_manager.add<ResourceMaterial>(std::move(new_material));
 
-                        m_preview_renderable->setMesh(m_preview_mesh);
-                        m_preview_renderable->setMaterial(new_material_name);
-                        m_preview_renderable->setVisible(true);
+                    m_preview_renderable->setMesh(m_preview_mesh);
+                    m_preview_renderable->setMaterial(new_material_name);
+                    m_preview_renderable->setVisible(true);
 
-                        const auto texture_info = getAssetTextureInfo(asset.asset.data);
+                    const auto texture_info = getAssetTextureInfo(asset.asset.data);
 
-                        const float scale_xy = static_cast<float>(texture_info.width) / static_cast<float>(texture_info.height);
-                        m_preview_transform->setScale(scale_xy, scale_xy, 1.0f);
-                    } break;
-                    case gcpak::GcpakAssetType::MESH_POS12_NORM12_TANG16_UV8_INDEXED16: {
-                        ResourceMesh new_mesh = createMeshFromData(asset.asset.data);
-                        const AABB aabb = getAABBFromMesh(new_mesh);
-                        const gc::Name new_mesh_name = m_resource_manager.add<ResourceMesh>(std::move(new_mesh));
+                    const float scale_xy = static_cast<float>(texture_info.width) / static_cast<float>(texture_info.height);
+                    m_preview_transform->setScale(scale_xy, scale_xy, 1.0f);
+                } break;
+                case gcpak::GcpakAssetType::MESH_POS12_NORM12_TANG16_UV8_INDEXED16: {
+                    ResourceMesh new_mesh = createMeshFromData(asset.asset.data);
+                    const AABB aabb = getAABBFromMesh(new_mesh);
+                    const gc::Name new_mesh_name = m_resource_manager.add<ResourceMesh>(std::move(new_mesh));
 
-                        m_preview_renderable->setMesh(new_mesh_name);
-                        m_preview_renderable->setMaterial({});
-                        m_preview_renderable->setVisible(true);
+                    m_preview_renderable->setMesh(new_mesh_name);
+                    m_preview_renderable->setMaterial({});
+                    m_preview_renderable->setVisible(true);
 
-                        glm::vec3 position{};
-                        float scale{};
-                        FitAABBToUnitCube(aabb, position, scale);
-                        position += glm::vec3{0.0f, 5.0f, 0.0f};
+                    glm::vec3 position{};
+                    float scale{};
+                    FitAABBToUnitCube(aabb, position, scale);
+                    position += glm::vec3{0.0f, 5.0f, 0.0f};
 
-                        m_preview_transform->setPosition(position);
-                        m_preview_transform->setScale(scale);
-                    } break;
-                    default:
-                        break;
+                    m_preview_transform->setPosition(position);
+                    m_preview_transform->setScale(scale);
+                } break;
+                default:
+                    break;
                 }
                 m_asset_being_previewed = &asset;
             }
@@ -560,14 +560,14 @@ void EditorSystem::showSelectedAssetInfoUI()
         ImGui::Text("From file: %s", asset.from_file->path.filename().string().c_str()); // FML
 
         switch (asset.asset.type) {
-            case gcpak::GcpakAssetType::TEXTURE_R8G8B8A8: {
-                auto info = getAssetTextureInfo(asset.asset.data);
-                ImGui::Text("Width: %u, Height: %u", info.width, info.height);
-            } break;
-            case gcpak::GcpakAssetType::MESH_POS12_NORM12_TANG16_UV8_INDEXED16: {
-                auto info = getAssetMeshInfo(asset.asset.data);
-                ImGui::Text("Vertices: %d, Triangles: %d", info.vertex_count, info.index_count / 3);
-            } break;
+        case gcpak::GcpakAssetType::TEXTURE_R8G8B8A8: {
+            auto info = getAssetTextureInfo(asset.asset.data);
+            ImGui::Text("Width: %u, Height: %u", info.width, info.height);
+        } break;
+        case gcpak::GcpakAssetType::MESH_POS12_NORM12_TANG16_UV8_INDEXED16: {
+            auto info = getAssetMeshInfo(asset.asset.data);
+            ImGui::Text("Vertices: %d, Triangles: %d", info.vertex_count, info.index_count / 3);
+        } break;
         }
 
         if (ImGui::Button("Remove")) {
