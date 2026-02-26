@@ -86,8 +86,8 @@ else()
 endif()
 cpmaddpackage(
   NAME tracy
-  VERSION 0.12.2
-  URL https://github.com/wolfpld/tracy/archive/refs/tags/v0.12.2.zip
+  VERSION 0.13.1
+  URL https://github.com/wolfpld/tracy/archive/refs/tags/v0.13.1.zip
   OPTIONS
     "${GC_TRACY_ENABLE}"
     "TRACY_ON_DEMAND OFF"
