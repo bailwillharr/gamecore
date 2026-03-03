@@ -47,6 +47,7 @@ set(INCLUDE_FILES
   "include/gamecore/gc_logger.h"
   "include/gamecore/gc_logger_spdlog.h"
   "include/gamecore/gc_jobs.h"
+  "include/gamecore/gc_net.h"
   "include/gamecore/gc_ring_buffer.h"
   "include/gamecore/gc_defines.h"
   "include/gamecore/gc_content.h"
