@@ -16,6 +16,7 @@
 #include <fstream>
 #include <unordered_map>
 #include <format>
+#include <thread>
 
 #include "gamecore/gc_crc_table.h"
 #include "gamecore/gc_logger.h"
@@ -24,6 +25,8 @@ namespace gc {
 
 class Name {
 #ifdef GC_LOOKUP_ASSET_IDS
+    // might replace with a less synchronisation-heavy method if needed
+    inline static std::mutex s_lut_mutex{};
     inline static std::unordered_map<uint32_t, std::string> s_lut{};
 #endif
     uint32_t m_hash;
@@ -32,7 +35,11 @@ public:
     constexpr Name() : m_hash(0) {}
     explicit constexpr Name(uint32_t hash) : m_hash(hash) {}
 #ifdef GC_LOOKUP_ASSET_IDS
-    explicit Name(const char* str) : m_hash(crc32(str)) { s_lut.emplace(m_hash, str); }
+    explicit Name(const char* str) : m_hash(crc32(str))
+    {
+        std::unique_lock lock(s_lut_mutex);
+        s_lut.emplace(m_hash, str);
+    }
 #else
     explicit constexpr Name(const char* str) : m_hash(crc32(str)) {}
 #endif
@@ -46,11 +53,14 @@ public:
     std::string getString() const
     {
 #ifdef GC_LOOKUP_ASSET_IDS
-        if (s_lut.contains(m_hash)) {
-            return s_lut.at(m_hash);
-        }
-        else {
-            return std::format("{:#08x}", m_hash);
+        {
+            std::unique_lock lock(s_lut_mutex);
+            if (s_lut.contains(m_hash)) {
+                return s_lut.at(m_hash);
+            }
+            else {
+                return std::format("{:#08x}", m_hash);
+            }
         }
 #else
         return std::format("{:#08x}", m_hash);
