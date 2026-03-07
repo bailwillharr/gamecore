@@ -4,7 +4,7 @@
  *
  * If the object is in non-owning mode, then you cannot modify the data at all.
  * To do that, make a copy.
- * 
+ *
  * MaybeOwning is Owning by default
  */
 
@@ -13,7 +13,6 @@
 #include <vector>
 #include <variant>
 #include <span>
-#include <optional>
 
 namespace gct {
 
@@ -33,7 +32,7 @@ public:
     {
         if (std::holds_alternative<NonOwningContainer>(other.m_container)) {
             const auto& other_container = std::get<NonOwningContainer>(other.m_container);
-            m_container.emplace<OwningContainer>(other_container.begin(), other_container.end());
+            m_container.template emplace<OwningContainer>(other_container.begin(), other_container.end());
         }
         else {
             m_container = other.m_container;
@@ -48,7 +47,7 @@ public:
         if (this != &other) {
             if (std::holds_alternative<NonOwningContainer>(other.m_container)) {
                 const auto& other_container = std::get<NonOwningContainer>(other.m_container);
-                m_container.emplace<OwningContainer>(other_container.begin(), other_container.end());
+                m_container.template emplace<OwningContainer>(other_container.begin(), other_container.end());
             }
             else {
                 m_container = other.m_container;

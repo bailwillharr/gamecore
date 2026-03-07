@@ -286,7 +286,7 @@ public:
             // tons of meshes for performance testing
             {
                 using namespace gc::literals;
-                constexpr int LENGTH = 40;
+                constexpr int LENGTH = 30;
                 constexpr glm::vec3 POS_OFFSET{0.0f, 10.0f, 0.0f};
                 auto parent = world.createEntity("parent"_name, gc::ENTITY_NONE, POS_OFFSET, {1, 0, 0, 0}, glm::vec3{2.0f});
                 std::array<gc::Entity, LENGTH * LENGTH * LENGTH> entities{};
@@ -294,9 +294,9 @@ public:
                 for (int x = 0; x < LENGTH; ++x) {
                     for (int y = 0; y < LENGTH; ++y) {
                         for (int z = 0; z < LENGTH; ++z) {
-                            entities[index] = world.createEntity(gc::Name(std::format("entity{}.{}.{}", x, y, z)), parent, glm::vec3{x, y, z}, {1, 0, 0, 0},
-                                                                 glm::vec3{0.5f});
-                            world.addComponent<gc::RenderableComponent>(entities[index]).setMaterial("laminate-flooring-brown"_name).setMesh("error.obj"_name);
+                            entities[index] =
+                                world.createEntity(gc::Name(std::format("entity{}.{}.{}", x, y, z)), parent, glm::vec3{x, y, z}, {1, 0, 0, 0}, glm::vec3{0.5f});
+                            world.addComponent<gc::RenderableComponent>(entities[index]).setMaterial("laminate-flooring-brown"_name).setMesh("floor"_name);
                             ++index;
                         }
                     }

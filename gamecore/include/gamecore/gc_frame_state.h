@@ -1,7 +1,5 @@
 #pragma once
 
-#include <vector>
-
 #include <glm/vec3.hpp>
 
 #include "gamecore/gc_world_draw_data.h"
@@ -17,6 +15,7 @@ struct FrameState {
     double delta_time{};
     double average_frame_time{};
     WorldDrawData draw_data{};
+    bool do_instancing{};
 };
 
 } // namespace gc
