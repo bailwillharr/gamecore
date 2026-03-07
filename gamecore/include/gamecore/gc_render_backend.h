@@ -38,6 +38,7 @@
 #include "gamecore/gc_render_mesh.h"
 #include "gamecore/gc_mesh_vertex.h"
 #include "gamecore/gc_render_material.h"
+#include "gamecore/gc_render_buffer.h"
 
 struct SDL_Window; // forward-dec
 
@@ -76,6 +77,7 @@ class RenderBackend {
     VkPipelineLayout m_pipeline_layout{};
 
     std::unique_ptr<GPUPipeline> m_pipeline;
+    std::unique_ptr<GPUPipeline> m_instancing_pipeline;
 
     VkSampleCountFlagBits m_msaa_samples{};
 
@@ -116,6 +118,8 @@ class RenderBackend {
     VkSemaphore m_transfer_timeline_semaphore{};
     uint64_t m_transfer_timeline_value{};
 
+    std::unique_ptr<RenderBuffer> m_instancing_transforms_buffer{};
+
 #ifdef TRACY_ENABLE
     struct TracyVulkanContext {
         VkCommandPool pool;
@@ -142,8 +146,13 @@ public:
     /* Destroys any GPU resources that have been added to the delete queue and are not in use */
     void cleanupGPUResources();
 
-    void createPipeline(std::span<const uint8_t> vertex_spv, std::span<const uint8_t> fragment_spv);
-    // GPUPipeline createSkyboxPipeline();
+private:
+    GPUPipeline createPipeline(std::span<const uint8_t> vertex_spv, std::span<const uint8_t> fragment_spv,
+                               const VkPipelineVertexInputStateCreateInfo& vertex_input_state);
+
+public:
+    void createMainPipeline(std::span<const uint8_t> vertex_spv, std::span<const uint8_t> fragment_spv);
+    void createInstancingPipeline(std::span<const uint8_t> vertex_spv, std::span<const uint8_t> fragment_spv);
 
     RenderTexture createTexture(std::span<const uint8_t> r8g8b8a8_pak, bool srgb);
     RenderTexture createCubeTexture(std::array<std::span<const uint8_t>, 6> r8g8b8a8_paks, bool srgb);

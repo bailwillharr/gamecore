@@ -191,7 +191,7 @@ static AABB getAABBFromMesh(const ResourceMesh& mesh)
     aabb.max.x = std::numeric_limits<float>::min();
     aabb.max.y = aabb.max.x;
     aabb.max.z = aabb.max.x;
-    for (const auto& vertex : mesh.getVertices()) {
+    for (const auto& vertex : mesh.vertices.get()) {
         aabb.min.x = glm::min(aabb.min.x, vertex.position.x);
         aabb.min.y = glm::min(aabb.min.y, vertex.position.y);
         aabb.min.z = glm::min(aabb.min.z, vertex.position.z);

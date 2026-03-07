@@ -36,6 +36,4 @@ target_link_libraries(${PROJECT_NAME} PRIVATE weldmesh)
 target_link_libraries(${PROJECT_NAME} PRIVATE mio)
 
 # This project uses C++20
-set_property(TARGET ${PROJECT_NAME} PROPERTY CXX_STANDARD 20)
-set_property(TARGET ${PROJECT_NAME} PROPERTY CXX_STANDARD_REQUIRED ON)
-set_property(TARGET ${PROJECT_NAME} PROPERTY CXX_EXTENSIONS OFF)
+target_compile_features(${PROJECT_NAME} PRIVATE cxx_std_20)

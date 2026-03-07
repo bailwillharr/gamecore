@@ -21,6 +21,11 @@
 
 namespace gc {
 
+struct AssetView {
+    std::span<const uint8_t> data;
+    gcpak::GcpakAssetType type;
+};
+
 class Content {
 
     struct PackageAssetInfo {
@@ -47,9 +52,8 @@ public:
 
     /* This function is thread-safe */
     /* Returns a non-owning view of the asset */
-    /* Returns empty span on failure */
-    /* The asset type is only checked in debug builds */
-    std::span<const uint8_t> findAsset(Name name, gcpak::GcpakAssetType type) const;
+    /* On failure, AssetView::data is empty */
+    AssetView findAsset(Name name) const;
 };
 
 } // namespace gc

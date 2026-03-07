@@ -32,16 +32,18 @@ class Name {
     uint32_t m_hash;
 
 public:
-    constexpr Name() : m_hash(0) {}
     explicit constexpr Name(uint32_t hash) : m_hash(hash) {}
+    constexpr Name() : Name(0u) {}
 #ifdef GC_LOOKUP_ASSET_IDS
-    explicit Name(const char* str) : m_hash(crc32(str))
+    explicit Name(const char* str) : Name(crc32(str))
     {
         std::unique_lock lock(s_lut_mutex);
         s_lut.emplace(m_hash, str);
     }
+    explicit Name(const std::string& str) : Name(str.c_str()) {}
 #else
-    explicit constexpr Name(const char* str) : m_hash(crc32(str)) {}
+    explicit constexpr Name(const char* str) : Name(crc32(str)) {}
+    explicit constexpr Name(const std::string& str) : Name(str.c_str()) {}
 #endif
 
     constexpr bool operator==(const Name& other) const noexcept { return m_hash == other.m_hash; }

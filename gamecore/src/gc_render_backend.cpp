@@ -154,247 +154,6 @@ static uint32_t getAppropriateFramesInFlight(uint32_t swapchain_image_count) { r
     }
 }
 
-[[maybe_unused]] static void wasteGPUCycles(VkImage image, VkDevice device, VkCommandBuffer cmd, size_t iters)
-{
-    (void)image;
-    static VkPipeline pipeline{};
-    static VkPipelineLayout layout{};
-    if (!pipeline) {
-        VkShaderModule shader_module{};
-        VkShaderModuleCreateInfo module_info{};
-        module_info.sType = VK_STRUCTURE_TYPE_SHADER_MODULE_CREATE_INFO;
-        auto code = App::instance().content().findAsset(Name("busy.comp"), gcpak::GcpakAssetType::SPIRV_SHADER);
-        if (code.size() == 0) {
-            abortGame("Couldn't find compute shader binary");
-        }
-        module_info.codeSize = code.size();
-        module_info.pCode = reinterpret_cast<const uint32_t*>(code.data());
-        GC_CHECKVK(vkCreateShaderModule(device, &module_info, nullptr, &shader_module));
-        VkPipelineLayoutCreateInfo layout_info{};
-        layout_info.sType = VK_STRUCTURE_TYPE_PIPELINE_LAYOUT_CREATE_INFO;
-        layout_info.setLayoutCount = 0;
-        layout_info.pSetLayouts = nullptr;
-        layout_info.pushConstantRangeCount = 0;
-        layout_info.pPushConstantRanges = nullptr;
-        GC_CHECKVK(vkCreatePipelineLayout(device, &layout_info, nullptr, &layout));
-        VkComputePipelineCreateInfo info{};
-        info.sType = VK_STRUCTURE_TYPE_COMPUTE_PIPELINE_CREATE_INFO;
-        info.flags = VK_PIPELINE_CREATE_DISABLE_OPTIMIZATION_BIT;
-        info.stage.sType = VK_STRUCTURE_TYPE_PIPELINE_SHADER_STAGE_CREATE_INFO;
-        info.stage.flags = 0;
-        info.stage.stage = VK_SHADER_STAGE_COMPUTE_BIT;
-        info.stage.module = shader_module;
-        info.stage.pName = "main";
-        info.stage.pSpecializationInfo = nullptr;
-        info.layout = layout;
-        GC_CHECKVK(vkCreateComputePipelines(device, VK_NULL_HANDLE, 1, &info, nullptr, &pipeline));
-        vkDestroyShaderModule(device, shader_module, nullptr);
-    }
-
-    VkMemoryBarrier2 barrier{};
-    barrier.sType = VK_STRUCTURE_TYPE_MEMORY_BARRIER_2;
-    barrier.srcStageMask = VK_PIPELINE_STAGE_2_ALL_COMMANDS_BIT;
-    barrier.srcAccessMask = VK_ACCESS_2_MEMORY_READ_BIT | VK_ACCESS_2_MEMORY_WRITE_BIT;
-    barrier.dstStageMask = VK_PIPELINE_STAGE_2_ALL_COMMANDS_BIT;
-    barrier.dstAccessMask = VK_ACCESS_2_MEMORY_READ_BIT | VK_ACCESS_2_MEMORY_WRITE_BIT;
-    VkDependencyInfo dep{};
-    dep.sType = VK_STRUCTURE_TYPE_DEPENDENCY_INFO;
-    dep.memoryBarrierCount = 1;
-    dep.pMemoryBarriers = &barrier;
-
-    vkCmdPipelineBarrier2(cmd, &dep);
-
-    vkCmdBindPipeline(cmd, VK_PIPELINE_BIND_POINT_COMPUTE, pipeline);
-    vkCmdDispatch(cmd, (static_cast<uint32_t>(iters) + 64 - 1) / 64, 16, 1024);
-
-    vkCmdPipelineBarrier2(cmd, &dep);
-#if 0
-    (void)device;
-
-    VkImageMemoryBarrier2 barrier{};
-    barrier.sType = VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER_2;
-    barrier.srcStageMask = VK_PIPELINE_STAGE_2_ALL_COMMANDS_BIT;
-    barrier.srcAccessMask = VK_ACCESS_2_MEMORY_READ_BIT | VK_ACCESS_2_MEMORY_WRITE_BIT;
-    barrier.dstStageMask = VK_PIPELINE_STAGE_2_ALL_COMMANDS_BIT;
-    barrier.dstAccessMask = VK_ACCESS_2_MEMORY_READ_BIT | VK_ACCESS_2_MEMORY_WRITE_BIT;
-    barrier.oldLayout = VK_IMAGE_LAYOUT_UNDEFINED;
-    barrier.newLayout = VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL;
-    barrier.srcQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
-    barrier.dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
-    barrier.image = image;
-    barrier.subresourceRange.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT;
-    barrier.subresourceRange.baseMipLevel = 0;
-    barrier.subresourceRange.levelCount = 1;
-    barrier.subresourceRange.baseArrayLayer = 0;
-    barrier.subresourceRange.layerCount = 1;
-    VkDependencyInfo dep{};
-    dep.sType = VK_STRUCTURE_TYPE_DEPENDENCY_INFO;
-    dep.imageMemoryBarrierCount = 1;
-    dep.pImageMemoryBarriers = &barrier;
-    vkCmdPipelineBarrier2(cmd, &dep);
-    barrier.oldLayout = VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL;
-    barrier.newLayout = VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL;
-    for (size_t i = 0; i < iters; ++i) {
-        vkCmdPipelineBarrier2(cmd, &dep);
-        VkClearColorValue color{};
-        color.float32[0] = 1.0f;
-        color.float32[1] = 1.0f;
-        color.float32[2] = 1.0f;
-        color.float32[3] = 1.0f;
-        vkCmdClearColorImage(cmd, image, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, &color, 1, &barrier.subresourceRange);
-        vkCmdPipelineBarrier2(cmd, &dep);
-    }
-#endif
-}
-
-[[maybe_unused]] static GPUPipeline createSkyboxPipeline(VkDevice device, GPUResourceDeleteQueue& delete_queue, VkPipelineLayout pipeline_layout,
-                                                         VkFormat color_attachment_format, VkFormat depth_stencil_attachment_format,
-                                                         VkSampleCountFlagBits color_attachment_sample_count)
-{
-    VkShaderModuleCreateInfo module_info{};
-    module_info.sType = VK_STRUCTURE_TYPE_SHADER_MODULE_CREATE_INFO;
-    module_info.pNext = nullptr;
-    module_info.flags = 0;
-
-    auto vertex_spv = App::instance().content().findAsset(Name("skybox.vert"), gcpak::GcpakAssetType::SPIRV_SHADER);
-    auto fragment_spv = App::instance().content().findAsset(Name("skybox.frag"), gcpak::GcpakAssetType::SPIRV_SHADER);
-
-    module_info.codeSize = vertex_spv.size();
-    module_info.pCode = reinterpret_cast<const uint32_t*>(vertex_spv.data());
-    VkShaderModule vertex_module = VK_NULL_HANDLE;
-    GC_CHECKVK(vkCreateShaderModule(device, &module_info, nullptr, &vertex_module));
-
-    module_info.codeSize = fragment_spv.size();
-    module_info.pCode = reinterpret_cast<const uint32_t*>(fragment_spv.data());
-    VkShaderModule fragment_module = VK_NULL_HANDLE;
-    GC_CHECKVK(vkCreateShaderModule(device, &module_info, nullptr, &fragment_module));
-
-    std::array<VkPipelineShaderStageCreateInfo, 2> stage_infos{};
-    stage_infos[0].sType = VK_STRUCTURE_TYPE_PIPELINE_SHADER_STAGE_CREATE_INFO;
-    stage_infos[0].pNext = nullptr;
-    stage_infos[0].flags = 0;
-    stage_infos[0].pName = "main";
-    stage_infos[0].pSpecializationInfo = nullptr;
-    stage_infos[1] = stage_infos[0];
-    stage_infos[0].stage = VK_SHADER_STAGE_VERTEX_BIT;
-    stage_infos[0].module = vertex_module;
-    stage_infos[1].stage = VK_SHADER_STAGE_FRAGMENT_BIT;
-    stage_infos[1].module = fragment_module;
-
-    VkPipelineVertexInputStateCreateInfo vertex_input_state{};
-    vertex_input_state.sType = VK_STRUCTURE_TYPE_PIPELINE_VERTEX_INPUT_STATE_CREATE_INFO;
-    vertex_input_state.pNext = nullptr;
-    vertex_input_state.flags = 0;
-    vertex_input_state.vertexBindingDescriptionCount = 0;
-    vertex_input_state.pVertexBindingDescriptions = nullptr;
-    vertex_input_state.vertexAttributeDescriptionCount = 0;
-    vertex_input_state.pVertexAttributeDescriptions = nullptr;
-
-    VkPipelineInputAssemblyStateCreateInfo input_assembly_state{};
-    input_assembly_state.sType = VK_STRUCTURE_TYPE_PIPELINE_INPUT_ASSEMBLY_STATE_CREATE_INFO;
-    input_assembly_state.pNext = nullptr;
-    input_assembly_state.flags = 0;
-    input_assembly_state.topology = VK_PRIMITIVE_TOPOLOGY_TRIANGLE_LIST;
-    input_assembly_state.primitiveRestartEnable = VK_FALSE;
-
-    VkPipelineViewportStateCreateInfo viewport_state{};
-    viewport_state.sType = VK_STRUCTURE_TYPE_PIPELINE_VIEWPORT_STATE_CREATE_INFO;
-    viewport_state.viewportCount = 1;
-    viewport_state.pViewports = nullptr;
-    viewport_state.scissorCount = 1;
-    viewport_state.pScissors = nullptr;
-
-    VkPipelineRasterizationStateCreateInfo rasterization_state{};
-    rasterization_state.sType = VK_STRUCTURE_TYPE_PIPELINE_RASTERIZATION_STATE_CREATE_INFO;
-    rasterization_state.depthClampEnable = VK_FALSE;
-    rasterization_state.rasterizerDiscardEnable = VK_FALSE; // enabling this will not run the fragment shaders at all
-    rasterization_state.polygonMode = VK_POLYGON_MODE_FILL;
-    rasterization_state.lineWidth = 1.0f;
-    rasterization_state.cullMode = VK_CULL_MODE_BACK_BIT;
-    rasterization_state.frontFace = VK_FRONT_FACE_CLOCKWISE;
-    rasterization_state.depthBiasEnable = VK_FALSE;
-    rasterization_state.depthBiasConstantFactor = 0.0f; // ignored
-    rasterization_state.depthBiasClamp = 0.0f;          // ignored
-    rasterization_state.depthBiasSlopeFactor = 0.0f;    // ignored
-
-    VkPipelineRenderingCreateInfo rendering_info{};
-    rendering_info.sType = VK_STRUCTURE_TYPE_PIPELINE_RENDERING_CREATE_INFO;
-    rendering_info.pNext = nullptr;
-    rendering_info.viewMask = 0;
-    rendering_info.colorAttachmentCount = 1;
-    rendering_info.pColorAttachmentFormats = &color_attachment_format;
-    rendering_info.depthAttachmentFormat = depth_stencil_attachment_format;
-    rendering_info.stencilAttachmentFormat = depth_stencil_attachment_format;
-
-    VkPipelineMultisampleStateCreateInfo multisample_state{};
-    multisample_state.sType = VK_STRUCTURE_TYPE_PIPELINE_MULTISAMPLE_STATE_CREATE_INFO;
-    multisample_state.rasterizationSamples = color_attachment_sample_count;
-    multisample_state.sampleShadingEnable = VK_FALSE;
-    multisample_state.minSampleShading = 1.0f;          // ignored
-    multisample_state.pSampleMask = nullptr;            // ignored
-    multisample_state.alphaToCoverageEnable = VK_FALSE; // ignored
-    multisample_state.alphaToOneEnable = VK_FALSE;      // ignored
-
-    VkPipelineDepthStencilStateCreateInfo depth_stencil_state{};
-    depth_stencil_state.sType = VK_STRUCTURE_TYPE_PIPELINE_DEPTH_STENCIL_STATE_CREATE_INFO;
-    depth_stencil_state.depthTestEnable = VK_TRUE;
-    depth_stencil_state.depthWriteEnable = VK_FALSE; // it will always be at 1.0 (max depth) so no point writing to the depth buffer
-    depth_stencil_state.depthCompareOp = VK_COMPARE_OP_GREATER_OR_EQUAL;
-    depth_stencil_state.depthBoundsTestEnable = VK_FALSE;
-    depth_stencil_state.minDepthBounds = 0.0f;
-    depth_stencil_state.maxDepthBounds = 1.0f;
-    depth_stencil_state.stencilTestEnable = VK_FALSE;
-    depth_stencil_state.front = {};
-    depth_stencil_state.back = {};
-
-    VkPipelineColorBlendAttachmentState color_blend_attachment{};
-    color_blend_attachment.colorWriteMask = VK_COLOR_COMPONENT_R_BIT | VK_COLOR_COMPONENT_G_BIT | VK_COLOR_COMPONENT_B_BIT | VK_COLOR_COMPONENT_A_BIT;
-    color_blend_attachment.blendEnable = VK_FALSE;
-
-    VkPipelineColorBlendStateCreateInfo color_blend_state{};
-    color_blend_state.sType = VK_STRUCTURE_TYPE_PIPELINE_COLOR_BLEND_STATE_CREATE_INFO;
-    color_blend_state.logicOpEnable = VK_FALSE;
-    color_blend_state.attachmentCount = 1;
-    color_blend_state.pAttachments = &color_blend_attachment;
-
-    const std::array dynamic_states{VK_DYNAMIC_STATE_VIEWPORT, VK_DYNAMIC_STATE_SCISSOR};
-
-    VkPipelineDynamicStateCreateInfo dynamic_state{};
-    dynamic_state.sType = VK_STRUCTURE_TYPE_PIPELINE_DYNAMIC_STATE_CREATE_INFO;
-    dynamic_state.pNext = nullptr;
-    dynamic_state.dynamicStateCount = static_cast<uint32_t>(dynamic_states.size());
-    dynamic_state.pDynamicStates = dynamic_states.data();
-
-    VkGraphicsPipelineCreateInfo info{};
-    info.sType = VK_STRUCTURE_TYPE_GRAPHICS_PIPELINE_CREATE_INFO;
-    info.pNext = &rendering_info;
-    info.flags = 0;
-    info.stageCount = static_cast<uint32_t>(stage_infos.size());
-    info.pStages = stage_infos.data();
-    info.pVertexInputState = &vertex_input_state;
-    info.pInputAssemblyState = &input_assembly_state;
-    info.pTessellationState = nullptr;
-    info.pViewportState = &viewport_state;
-    info.pRasterizationState = &rasterization_state;
-    info.pMultisampleState = &multisample_state;
-    info.pDepthStencilState = &depth_stencil_state;
-    info.pColorBlendState = &color_blend_state;
-    info.pDynamicState = &dynamic_state;
-    info.layout = pipeline_layout;
-    info.renderPass = VK_NULL_HANDLE;
-    info.subpass = 0;
-    info.basePipelineHandle = VK_NULL_HANDLE;
-    info.basePipelineIndex = -1;
-
-    VkPipeline pipeline{};
-    GC_CHECKVK(vkCreateGraphicsPipelines(device, VK_NULL_HANDLE, 1, &info, nullptr, &pipeline));
-
-    vkDestroyShaderModule(device, fragment_module, nullptr);
-    vkDestroyShaderModule(device, vertex_module, nullptr);
-
-    return GPUPipeline(delete_queue, pipeline);
-}
-
 RenderBackend::RenderBackend(SDL_Window* window_handle)
     : m_device(), m_allocator(m_device), m_swapchain(m_device, window_handle), m_delete_queue(m_device.getHandle(), m_allocator.getHandle())
 {
@@ -612,18 +371,18 @@ RenderBackend::~RenderBackend()
 void RenderBackend::setSyncMode(RenderSyncMode mode)
 {
     switch (mode) {
-        case RenderSyncMode::VSYNC_ON_DOUBLE_BUFFERED:
-            m_swapchain.setRequestedPresentMode(VK_PRESENT_MODE_FIFO_RELAXED_KHR);
-            break;
-        case RenderSyncMode::VSYNC_ON_TRIPLE_BUFFERED:
-            m_swapchain.setRequestedPresentMode(VK_PRESENT_MODE_FIFO_KHR);
-            break;
-        case RenderSyncMode::VSYNC_ON_TRIPLE_BUFFERED_UNTHROTTLED:
-            m_swapchain.setRequestedPresentMode(VK_PRESENT_MODE_MAILBOX_KHR);
-            break;
-        case RenderSyncMode::VSYNC_OFF:
-            m_swapchain.setRequestedPresentMode(VK_PRESENT_MODE_IMMEDIATE_KHR);
-            break;
+    case RenderSyncMode::VSYNC_ON_DOUBLE_BUFFERED:
+        m_swapchain.setRequestedPresentMode(VK_PRESENT_MODE_FIFO_RELAXED_KHR);
+        break;
+    case RenderSyncMode::VSYNC_ON_TRIPLE_BUFFERED:
+        m_swapchain.setRequestedPresentMode(VK_PRESENT_MODE_FIFO_KHR);
+        break;
+    case RenderSyncMode::VSYNC_ON_TRIPLE_BUFFERED_UNTHROTTLED:
+        m_swapchain.setRequestedPresentMode(VK_PRESENT_MODE_MAILBOX_KHR);
+        break;
+    case RenderSyncMode::VSYNC_OFF:
+        m_swapchain.setRequestedPresentMode(VK_PRESENT_MODE_IMMEDIATE_KHR);
+        break;
     }
 }
 
@@ -706,6 +465,32 @@ void RenderBackend::submitFrame(bool window_resized, const WorldDrawData& world_
         vkCmdPipelineBarrier2(stuff.cmd, &dep);
     }
 
+    if (!world_draw_data.getInstancedDrawTransforms().empty()){
+        TracyVkZone(m_tracy_vulkan_context.ctx, stuff.cmd, "Copy instance transforms");
+
+        const auto& transforms = world_draw_data.getInstancedDrawTransforms();
+        const size_t buffer_data_size = transforms.size() * sizeof(transforms[0]);
+        const std::span<const uint8_t> transform_data(reinterpret_cast<const uint8_t*>(transforms.data()), buffer_data_size);
+        m_instancing_transforms_buffer->writeData(stuff.cmd, m_frame_count, m_main_timeline_semaphore, m_main_timeline_value + 1, transform_data);
+
+        VkBufferMemoryBarrier2 b{};
+        b.sType = VK_STRUCTURE_TYPE_BUFFER_MEMORY_BARRIER_2;
+        b.srcStageMask = VK_PIPELINE_STAGE_2_COPY_BIT;
+        b.srcAccessMask = VK_ACCESS_2_TRANSFER_WRITE_BIT;
+        b.dstStageMask = VK_PIPELINE_STAGE_2_VERTEX_INPUT_BIT;
+        b.dstAccessMask = VK_ACCESS_2_VERTEX_ATTRIBUTE_READ_BIT;
+        b.srcQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
+        b.dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
+        b.buffer = m_instancing_transforms_buffer->getBuffer();
+        b.size = VkDeviceSize(buffer_data_size);
+        b.offset = 0;
+        VkDependencyInfo dep{};
+        dep.sType = VK_STRUCTURE_TYPE_DEPENDENCY_INFO;
+        dep.bufferMemoryBarrierCount = 1;
+        dep.pBufferMemoryBarriers = &b;
+        vkCmdPipelineBarrier2(stuff.cmd, &dep);
+    }
+
     {
         ZoneScopedN("Record render commands");
         ZoneValue(m_frame_count);
@@ -761,7 +546,8 @@ void RenderBackend::submitFrame(bool window_resized, const WorldDrawData& world_
         vkCmdSetScissor(stuff.cmd, 0, 1, &scissor);
 
         if (m_pipeline) {
-            recordWorldRenderingCommands(stuff.cmd, m_pipeline_layout, *m_pipeline, m_main_timeline_semaphore, m_main_timeline_value + 1, world_draw_data);
+            recordWorldRenderingCommands(stuff.cmd, m_pipeline_layout, *m_pipeline, *m_instancing_pipeline, m_main_timeline_semaphore,
+                                         m_main_timeline_value + 1, world_draw_data, m_instancing_transforms_buffer->getBuffer());
         }
         else {
             GC_ERROR("No pipeline set. Cannot render!");
@@ -873,13 +659,10 @@ void RenderBackend::cleanupGPUResources()
     }
 }
 
-void RenderBackend::createPipeline(std::span<const uint8_t> vertex_spv, std::span<const uint8_t> fragment_spv)
+GPUPipeline RenderBackend::createPipeline(std::span<const uint8_t> vertex_spv, std::span<const uint8_t> fragment_spv,
+                                          const VkPipelineVertexInputStateCreateInfo& vertex_input_state)
 {
     ZoneScoped;
-
-    if (m_pipeline) {
-        abortGame("Pipeline already created!");
-    }
 
     if (vertex_spv.empty() || fragment_spv.empty()) {
         gc::abortGame("createPipeline() called with empty SPIRV code");
@@ -911,41 +694,6 @@ void RenderBackend::createPipeline(std::span<const uint8_t> vertex_spv, std::spa
     stage_infos[0].module = vertex_module;
     stage_infos[1].stage = VK_SHADER_STAGE_FRAGMENT_BIT;
     stage_infos[1].module = fragment_module;
-
-    VkVertexInputBindingDescription vertex_input_binding{};
-    vertex_input_binding.binding = 0;
-    vertex_input_binding.stride = static_cast<uint32_t>(sizeof(MeshVertex));
-    vertex_input_binding.inputRate = VK_VERTEX_INPUT_RATE_VERTEX;
-
-    std::array<VkVertexInputAttributeDescription, 4> vertex_input_attributes{};
-    vertex_input_attributes[0].binding = 0;
-    vertex_input_attributes[0].location = 0;
-    vertex_input_attributes[0].format = VK_FORMAT_R32G32B32_SFLOAT;
-    vertex_input_attributes[0].offset = static_cast<uint32_t>(offsetof(MeshVertex, position));
-
-    vertex_input_attributes[1].binding = 0;
-    vertex_input_attributes[1].location = 1;
-    vertex_input_attributes[1].format = VK_FORMAT_R32G32B32_SFLOAT;
-    vertex_input_attributes[1].offset = static_cast<uint32_t>(offsetof(MeshVertex, normal));
-
-    vertex_input_attributes[2].binding = 0;
-    vertex_input_attributes[2].location = 2;
-    vertex_input_attributes[2].format = VK_FORMAT_R32G32B32A32_SFLOAT;
-    vertex_input_attributes[2].offset = static_cast<uint32_t>(offsetof(MeshVertex, tangent));
-
-    vertex_input_attributes[3].binding = 0;
-    vertex_input_attributes[3].location = 3;
-    vertex_input_attributes[3].format = VK_FORMAT_R32G32_SFLOAT;
-    vertex_input_attributes[3].offset = static_cast<uint32_t>(offsetof(MeshVertex, uv));
-
-    VkPipelineVertexInputStateCreateInfo vertex_input_state{};
-    vertex_input_state.sType = VK_STRUCTURE_TYPE_PIPELINE_VERTEX_INPUT_STATE_CREATE_INFO;
-    vertex_input_state.pNext = nullptr;
-    vertex_input_state.flags = 0;
-    vertex_input_state.vertexBindingDescriptionCount = 1;
-    vertex_input_state.pVertexBindingDescriptions = &vertex_input_binding;
-    vertex_input_state.vertexAttributeDescriptionCount = static_cast<uint32_t>(vertex_input_attributes.size());
-    vertex_input_state.pVertexAttributeDescriptions = vertex_input_attributes.data();
 
     VkPipelineInputAssemblyStateCreateInfo input_assembly_state{};
     input_assembly_state.sType = VK_STRUCTURE_TYPE_PIPELINE_INPUT_ASSEMBLY_STATE_CREATE_INFO;
@@ -1056,16 +804,122 @@ void RenderBackend::createPipeline(std::span<const uint8_t> vertex_spv, std::spa
     vkDestroyShaderModule(m_device.getHandle(), fragment_module, nullptr);
     vkDestroyShaderModule(m_device.getHandle(), vertex_module, nullptr);
 
-    m_pipeline = std::make_unique<GPUPipeline>(m_delete_queue, handle);
+    return GPUPipeline(m_delete_queue, handle);
 }
 
-/*
-GPUPipeline RenderBackend::createSkyboxPipeline()
+void RenderBackend::createMainPipeline(std::span<const uint8_t> vertex_spv, std::span<const uint8_t> fragment_spv)
 {
-    return gc::createSkyboxPipeline(m_device.getHandle(), m_delete_queue, m_pipeline_layout, m_swapchain.getSurfaceFormat().format,
-                                    m_depth_stencil_attachment_format, m_msaa_samples);
+    if (m_pipeline) {
+        abortGame("Main pipeline already created!");
+    }
+
+    VkVertexInputBindingDescription vertex_input_binding{};
+    vertex_input_binding.binding = 0;
+    vertex_input_binding.stride = static_cast<uint32_t>(sizeof(MeshVertex));
+    vertex_input_binding.inputRate = VK_VERTEX_INPUT_RATE_VERTEX;
+
+    std::array<VkVertexInputAttributeDescription, 4> vertex_input_attributes{};
+    vertex_input_attributes[0].binding = 0;
+    vertex_input_attributes[0].location = 0;
+    vertex_input_attributes[0].format = VK_FORMAT_R32G32B32_SFLOAT;
+    vertex_input_attributes[0].offset = static_cast<uint32_t>(offsetof(MeshVertex, position));
+
+    vertex_input_attributes[1].binding = 0;
+    vertex_input_attributes[1].location = 1;
+    vertex_input_attributes[1].format = VK_FORMAT_R32G32B32_SFLOAT;
+    vertex_input_attributes[1].offset = static_cast<uint32_t>(offsetof(MeshVertex, normal));
+
+    vertex_input_attributes[2].binding = 0;
+    vertex_input_attributes[2].location = 2;
+    vertex_input_attributes[2].format = VK_FORMAT_R32G32B32A32_SFLOAT;
+    vertex_input_attributes[2].offset = static_cast<uint32_t>(offsetof(MeshVertex, tangent));
+
+    vertex_input_attributes[3].binding = 0;
+    vertex_input_attributes[3].location = 3;
+    vertex_input_attributes[3].format = VK_FORMAT_R32G32_SFLOAT;
+    vertex_input_attributes[3].offset = static_cast<uint32_t>(offsetof(MeshVertex, uv));
+
+    VkPipelineVertexInputStateCreateInfo vertex_input_state{};
+    vertex_input_state.sType = VK_STRUCTURE_TYPE_PIPELINE_VERTEX_INPUT_STATE_CREATE_INFO;
+    vertex_input_state.pNext = nullptr;
+    vertex_input_state.flags = 0;
+    vertex_input_state.vertexBindingDescriptionCount = 1;
+    vertex_input_state.pVertexBindingDescriptions = &vertex_input_binding;
+    vertex_input_state.vertexAttributeDescriptionCount = static_cast<uint32_t>(vertex_input_attributes.size());
+    vertex_input_state.pVertexAttributeDescriptions = vertex_input_attributes.data();
+
+    m_pipeline = std::make_unique<GPUPipeline>(createPipeline(vertex_spv, fragment_spv, vertex_input_state));
 }
-*/
+
+void RenderBackend::createInstancingPipeline(std::span<const uint8_t> vertex_spv, std::span<const uint8_t> fragment_spv)
+{
+    if (m_instancing_pipeline) {
+        abortGame("Instancing pipeline already created!");
+    }
+
+    std::array<VkVertexInputBindingDescription, 2> vertex_input_bindings{};
+
+    vertex_input_bindings[0].binding = 0;
+    vertex_input_bindings[0].stride = static_cast<uint32_t>(sizeof(MeshVertex));
+    vertex_input_bindings[0].inputRate = VK_VERTEX_INPUT_RATE_VERTEX;
+
+    vertex_input_bindings[1].binding = 1;
+    vertex_input_bindings[1].stride = static_cast<uint32_t>(sizeof(glm::mat4));
+    vertex_input_bindings[1].inputRate = VK_VERTEX_INPUT_RATE_INSTANCE;
+
+    std::array<VkVertexInputAttributeDescription, 8> vertex_input_attributes{};
+
+    vertex_input_attributes[0].binding = 0;
+    vertex_input_attributes[0].location = 0;
+    vertex_input_attributes[0].format = VK_FORMAT_R32G32B32_SFLOAT;
+    vertex_input_attributes[0].offset = static_cast<uint32_t>(offsetof(MeshVertex, position));
+
+    vertex_input_attributes[1].binding = 0;
+    vertex_input_attributes[1].location = 1;
+    vertex_input_attributes[1].format = VK_FORMAT_R32G32B32_SFLOAT;
+    vertex_input_attributes[1].offset = static_cast<uint32_t>(offsetof(MeshVertex, normal));
+
+    vertex_input_attributes[2].binding = 0;
+    vertex_input_attributes[2].location = 2;
+    vertex_input_attributes[2].format = VK_FORMAT_R32G32B32A32_SFLOAT;
+    vertex_input_attributes[2].offset = static_cast<uint32_t>(offsetof(MeshVertex, tangent));
+
+    vertex_input_attributes[3].binding = 0;
+    vertex_input_attributes[3].location = 3;
+    vertex_input_attributes[3].format = VK_FORMAT_R32G32_SFLOAT;
+    vertex_input_attributes[3].offset = static_cast<uint32_t>(offsetof(MeshVertex, uv));
+
+    vertex_input_attributes[4].binding = 1;
+    vertex_input_attributes[4].location = 4;
+    vertex_input_attributes[4].format = VK_FORMAT_R32G32B32A32_SFLOAT;
+    vertex_input_attributes[4].offset = static_cast<uint32_t>(sizeof(glm::vec4) * 0);
+
+    vertex_input_attributes[5].binding = 1;
+    vertex_input_attributes[5].location = 5;
+    vertex_input_attributes[5].format = VK_FORMAT_R32G32B32A32_SFLOAT;
+    vertex_input_attributes[5].offset = static_cast<uint32_t>(sizeof(glm::vec4) * 1);
+
+    vertex_input_attributes[6].binding = 1;
+    vertex_input_attributes[6].location = 6;
+    vertex_input_attributes[6].format = VK_FORMAT_R32G32B32A32_SFLOAT;
+    vertex_input_attributes[6].offset = static_cast<uint32_t>(sizeof(glm::vec4) * 2);
+
+    vertex_input_attributes[7].binding = 1;
+    vertex_input_attributes[7].location = 7;
+    vertex_input_attributes[7].format = VK_FORMAT_R32G32B32A32_SFLOAT;
+    vertex_input_attributes[7].offset = static_cast<uint32_t>(sizeof(glm::vec4) * 3);
+
+    VkPipelineVertexInputStateCreateInfo vertex_input_state{};
+    vertex_input_state.sType = VK_STRUCTURE_TYPE_PIPELINE_VERTEX_INPUT_STATE_CREATE_INFO;
+    vertex_input_state.pNext = nullptr;
+    vertex_input_state.flags = 0;
+    vertex_input_state.vertexBindingDescriptionCount = static_cast<uint32_t>(vertex_input_bindings.size());
+    vertex_input_state.pVertexBindingDescriptions = vertex_input_bindings.data();
+    vertex_input_state.vertexAttributeDescriptionCount = static_cast<uint32_t>(vertex_input_attributes.size());
+    vertex_input_state.pVertexAttributeDescriptions = vertex_input_attributes.data();
+
+    m_instancing_pipeline = std::make_unique<GPUPipeline>(createPipeline(vertex_spv, fragment_spv, vertex_input_state));
+}
 
 RenderTexture RenderBackend::createTexture(std::span<const uint8_t> r8g8b8a8_pak, bool srgb)
 {
@@ -1624,6 +1478,11 @@ void RenderBackend::recreateFramesInFlightResources()
         }
         stuff.command_buffer_available_value = 0;
     }
+
+    // RenderBuffers rely on the number of frames in flight
+    constexpr VkDeviceSize INSTANCING_BUFFER_INITIAL_SIZE = sizeof(glm::mat4) * 100; // 100 instances
+    m_instancing_transforms_buffer = std::make_unique<RenderBuffer>(m_delete_queue, m_allocator.getHandle(), static_cast<uint32_t>(m_fif.size()),
+                                                                    INSTANCING_BUFFER_INITIAL_SIZE, VK_BUFFER_USAGE_VERTEX_BUFFER_BIT);
 }
 
 void RenderBackend::waitForFrameReady()

@@ -37,7 +37,7 @@ set(SRC_FILES
   "src/gc_resource_manager.cpp"
   "src/gc_light_system.cpp"
   "src/gc_gen_mesh.cpp"
-)
+ "src/gc_render_buffer.cpp")
 
 # Public API includes
 # Care must be taken to ensure these headers do not reference private headers
@@ -90,7 +90,7 @@ set(INCLUDE_FILES
   "include/gamecore/gc_light_component.h"
   "include/gamecore/gc_light_system.h"
   "include/gamecore/gc_gen_mesh.h"
-)
+ "include/gamecore/gc_render_buffer.h")
 
 # gamecore is a static library
 add_library(${PROJECT_NAME} STATIC
@@ -99,9 +99,7 @@ add_library(${PROJECT_NAME} STATIC
 )
 
 # This project uses C++20
-set_property(TARGET ${PROJECT_NAME} PROPERTY CXX_STANDARD 20)
-set_property(TARGET ${PROJECT_NAME} PROPERTY CXX_STANDARD_REQUIRED ON)
-set_property(TARGET ${PROJECT_NAME} PROPERTY CXX_EXTENSIONS ON)
+target_compile_features(${PROJECT_NAME} PUBLIC cxx_std_20)
 
 if(MSVC)
     # Lots of warnings, treat warnings as errors

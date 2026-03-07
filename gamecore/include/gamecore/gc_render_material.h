@@ -71,17 +71,19 @@ public:
     ~RenderMaterial() { GC_TRACE("Destroying RenderMaterial..."); }
 
     // Binds descriptor sets. Check isUploaded() first
-    void bind(VkCommandBuffer cmd, VkPipelineLayout pipeline_layout, VkSemaphore timeline_semaphore, uint64_t signal_value) const
+    void bind(VkCommandBuffer cmd, VkPipelineLayout pipeline_layout, VkSemaphore timeline_semaphore, uint64_t signal_value)
     {
         GC_ASSERT(cmd);
         GC_ASSERT(pipeline_layout);
         GC_ASSERT(timeline_semaphore);
 
-        const VkDescriptorSet handle = m_descriptor_set.getHandle();
-        vkCmdBindDescriptorSets(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, pipeline_layout, 0, 1, &handle, 0, nullptr);
+        m_descriptor_set.useResource(timeline_semaphore, signal_value);
         m_base_color_texture.useResource(timeline_semaphore, signal_value);
         m_occlusion_roughness_metallic_texture.useResource(timeline_semaphore, signal_value);
         m_normal_texture.useResource(timeline_semaphore, signal_value);
+
+        const VkDescriptorSet handle = m_descriptor_set.getHandle();
+        vkCmdBindDescriptorSets(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, pipeline_layout, 0, 1, &handle, 0, nullptr);
     }
 
     // Checks that all textures for this material are uploaded

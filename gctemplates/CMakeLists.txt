@@ -5,6 +5,7 @@ project(gctemplates LANGUAGES CXX)
 set(INCLUDE_FILES
   "include/gctemplates/gct_sv_stream.h"
   "include/gctemplates/gct_static_vector.h"
+  "include/gctemplates/gct_maybe_owning.h"
 )
 
 add_library(${PROJECT_NAME} INTERFACE
@@ -14,6 +15,7 @@ add_library(${PROJECT_NAME} INTERFACE
 target_include_directories(${PROJECT_NAME} INTERFACE include)
 
 # This project uses C++20
-set_property(TARGET ${PROJECT_NAME} PROPERTY CXX_STANDARD 20)
-set_property(TARGET ${PROJECT_NAME} PROPERTY CXX_STANDARD_REQUIRED ON)
-set_property(TARGET ${PROJECT_NAME} PROPERTY CXX_EXTENSIONS OFF)
+target_compile_features(${PROJECT_NAME} INTERFACE cxx_std_20)
+
+add_library(${PROJECT_NAME}_test STATIC "src/test.cpp")
+target_link_libraries(${PROJECT_NAME}_test PRIVATE ${PROJECT_NAME})

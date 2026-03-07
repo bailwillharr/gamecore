@@ -127,7 +127,7 @@ Content::Content(const std::filesystem::path& content_dir, std::span<const std::
 
 Content::~Content() { GC_TRACE("Destroying content manager..."); }
 
-std::span<const uint8_t> Content::findAsset(Name name, [[maybe_unused]] gcpak::GcpakAssetType type) const
+AssetView Content::findAsset(Name name) const
 {
     const auto it = m_asset_infos.find(name);
     if (it == m_asset_infos.cend()) [[unlikely]] {
@@ -136,10 +136,8 @@ std::span<const uint8_t> Content::findAsset(Name name, [[maybe_unused]] gcpak::G
     }
     const PackageAssetInfo& asset_info = it->second;
 
-    GC_ASSERT(asset_info.entry.asset_type == type);
-
     const uint8_t* const asset_data = m_package_file_maps[asset_info.file_index].data() + asset_info.entry.offset;
-    return std::span<const uint8_t>(asset_data, asset_info.entry.size);
+    return AssetView{std::span<const uint8_t>(asset_data, asset_info.entry.size), asset_info.entry.asset_type};
 }
 
 } // namespace gc

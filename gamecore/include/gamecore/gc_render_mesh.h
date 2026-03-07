@@ -51,7 +51,9 @@ public:
     }
 
     // Ensure isUploaded() returned true before calling this
-    void draw(VkCommandBuffer cmd, VkSemaphore timeline_semaphore, uint64_t signal_value);
+    void bind(VkCommandBuffer cmd, VkSemaphore timeline_semaphore, uint64_t signal_value);
+
+    auto getNumIndices() const { return m_num_indices; }
 
     uint64_t getLastUsedFrame() const { return m_last_used_frame; }
     void setLastUsedFrame(uint64_t last_used_frame)

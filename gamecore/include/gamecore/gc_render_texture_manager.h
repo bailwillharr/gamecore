@@ -57,7 +57,7 @@ public:
 private:
     RenderTexture createRenderTexture(RenderBackend& render_backend, const ResourceTexture& texture)
     {
-        return render_backend.createTexture(texture.data, texture.srgb);
+        return render_backend.createTexture(texture.data.get(), texture.srgb);
     }
 };
 

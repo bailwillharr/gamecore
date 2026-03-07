@@ -161,13 +161,24 @@ public:
             gc::Content& content = app.content();
             gc::World& world = app.world();
             {
-                auto vert = content.findAsset(gc::Name("fancy.vert"), gcpak::GcpakAssetType::SPIRV_SHADER);
-                auto frag = content.findAsset(gc::Name("fancy.frag"), gcpak::GcpakAssetType::SPIRV_SHADER);
-                if (vert.empty() || frag.empty()) {
-                    GC_ERROR_ONCE("Could not find fancy.vert or fancy.frag. Cannot load game.");
+                auto vert = content.findAsset(gc::Name("pbr_single_draw.vert"));
+                auto frag = content.findAsset(gc::Name("pbr.frag"));
+                if (vert.data.empty() || vert.type != gcpak::GcpakAssetType::SPIRV_SHADER || frag.data.empty() ||
+                    frag.type != gcpak::GcpakAssetType::SPIRV_SHADER) {
+                    gc::abortGame("Failed to find shaders");
                     return;
                 }
-                render_backend.createPipeline(vert, frag);
+                render_backend.createMainPipeline(vert.data, frag.data);
+            }
+            {
+                auto vert = content.findAsset(gc::Name("pbr_instanced.vert"));
+                auto frag = content.findAsset(gc::Name("pbr.frag"));
+                if (vert.data.empty() || vert.type != gcpak::GcpakAssetType::SPIRV_SHADER || frag.data.empty() ||
+                    frag.type != gcpak::GcpakAssetType::SPIRV_SHADER) {
+                    gc::abortGame("Failed to find shaders");
+                    return;
+                }
+                render_backend.createInstancingPipeline(vert.data, frag.data);
             }
 
             world.registerComponent<gc::RenderableComponent, gc::ComponentArrayType::DENSE>();
@@ -189,11 +200,11 @@ public:
             // camera
             auto camera = world.createEntity(gc::Name("light"), gc::ENTITY_NONE, {0.0f, 0.0f, 67.5f * 25.4e-3f});
             world.addComponent<gc::CameraComponent>(camera).setFOV(glm::radians(45.0f)).setNearPlane(0.1f).setActive(true);
-            world.addComponent<MouseMoveComponent>(camera).setMoveSpeed(3.0f).setAcceleration(40.0f).setDeceleration(100.0f).setSensitivity(1e-3f);
+            world.addComponent<MouseMoveComponent>(camera).setMoveSpeed(10.0f).setAcceleration(40.0f).setDeceleration(100.0f).setSensitivity(1e-3f);
 
             // shrek
             const auto shrek = world.createEntity(gc::Name("shrek"), gc::ENTITY_NONE, glm::vec3{0.0f, +10.0f, 0.0f}, {}, {0.5f, 0.5f, 0.5f});
-            world.addComponent<gc::RenderableComponent>(shrek).setMaterial(gc::Name("default_material")).setMesh(gc::Name("error.obj"));
+            world.addComponent<gc::RenderableComponent>(shrek).setMaterial(gc::Name("default_material")).setMesh(gc::Name("shrek.obj"));
             world.addComponent<FollowComponent>(shrek).setTarget(camera).setMinDistance(2.0f).setSpeed(1.0f);
             world.getComponent<FollowComponent>(shrek)->setTextureTarget(shrek);
             const auto shrek_light = world.createEntity(gc::Name("shrek_light"), shrek, {0.0f, -1.26688, 4.61091});
@@ -270,6 +281,26 @@ public:
                 const auto roof = world.createEntity("roof"_name);
                 world.getComponent<gc::TransformComponent>(roof)->setPosition(0, 0, 4).setRotation(0, -1, 0, 0).setScale(6, 10, 1);
                 world.addComponent<gc::RenderableComponent>(roof).setMesh("floor"_name);
+            }
+
+            // tons of meshes for performance testing
+            {
+                using namespace gc::literals;
+                constexpr int LENGTH = 40;
+                constexpr glm::vec3 POS_OFFSET{0.0f, 10.0f, 0.0f};
+                auto parent = world.createEntity("parent"_name, gc::ENTITY_NONE, POS_OFFSET, {1, 0, 0, 0}, glm::vec3{2.0f});
+                std::array<gc::Entity, LENGTH * LENGTH * LENGTH> entities{};
+                int index = 0;
+                for (int x = 0; x < LENGTH; ++x) {
+                    for (int y = 0; y < LENGTH; ++y) {
+                        for (int z = 0; z < LENGTH; ++z) {
+                            entities[index] = world.createEntity(gc::Name(std::format("entity{}.{}.{}", x, y, z)), parent, glm::vec3{x, y, z}, {1, 0, 0, 0},
+                                                                 glm::vec3{0.5f});
+                            world.addComponent<gc::RenderableComponent>(entities[index]).setMaterial("laminate-flooring-brown"_name).setMesh("error.obj"_name);
+                            ++index;
+                        }
+                    }
+                }
             }
 
             m_loaded = true;

@@ -44,13 +44,12 @@ static void initEditorWorld(gc::App& app, const std::filesystem::path& open_file
     auto& window = app.window();
 
     {
-        // set up pipeline
-        auto vertex_spv = content_manager.findAsset("editor.vert"_name, gcpak::GcpakAssetType::SPIRV_SHADER);
-        auto fragment_spv = content_manager.findAsset("editor.frag"_name, gcpak::GcpakAssetType::SPIRV_SHADER);
-        if (vertex_spv.empty() || fragment_spv.empty()) {
-            abortGame("Failed to load vertex or fragment shader");
+        auto vert = content_manager.findAsset(gc::Name("editor.vert"));
+        auto frag = content_manager.findAsset(gc::Name("editor.frag"));
+        if (vert.data.empty() || vert.type != gcpak::GcpakAssetType::SPIRV_SHADER || frag.data.empty() || frag.type != gcpak::GcpakAssetType::SPIRV_SHADER) {
+            abortGame("Could not find editor.vert or editor.frag. Cannot load editor.");
         }
-        render_backend.createPipeline(vertex_spv, fragment_spv);
+        render_backend.createMainPipeline(vert.data, frag.data);
     }
 
     world.registerComponent<gc::RenderableComponent, gc::ComponentArrayType::DENSE>();

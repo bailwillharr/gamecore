@@ -31,3 +31,20 @@ a high CPU or GPU workload, in which case it may be beneficial to wait for the c
 When using IMMEDIATE mode, the only clear benefit of using 2 frames-in-flight, as opposed to 1, is when the application is heavily CPU-bound during command buffer recording.
 In that case the CPU must wait for the previous frame to finish rendering before command buffer recording can begin.
 Even with only 1 frame-in-flight, the application's game logic (before command buffer recording) can safely take up as much time as the GPU takes to render a frame.
+
+
+
+
+
+
+
+
+
+
+
+
+
+TODO!!!!!!!!!!!!
+
+Make a generalised GPU Buffer container that also holds staging buffers (per frame in flight), and has dynamic capacity (doubling like std::vector).
+Will be needed for instanced rendering, and will make future use of uniform buffers trivial.
