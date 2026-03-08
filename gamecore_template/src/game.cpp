@@ -6,6 +6,8 @@
 
 #include <tracy/Tracy.hpp>
 
+#include <imgui.h>
+
 #include <gamecore/gc_app.h>
 #include <gamecore/gc_camera_component.h>
 #include <gamecore/gc_camera_system.h>
@@ -139,6 +141,41 @@ public:
     }
 };
 
+class RenderTestSystem : public gc::System {
+    int m_num_objects{0};
+    std::vector<gc::Entity> m_objects{};
+
+public:
+    RenderTestSystem(gc::World& world) : gc::System(world) {}
+
+    void onUpdate(gc::FrameState&) override
+    {
+        using namespace gc::literals;
+
+        if (ImGui::Begin("Render Test Options")) {
+            ImGui::SliderInt("Number of test objects", &m_num_objects, 0, 1'000'000);
+        }
+        ImGui::End();
+
+        while (m_num_objects < static_cast<int>(m_objects.size())) {
+            m_world.deleteEntity(m_objects.back());
+            m_objects.pop_back();
+        }
+
+        constexpr int CUBE_SIDE_LENGTH = 100;
+
+        while (m_num_objects > static_cast<int>(m_objects.size())) {
+            const int i = static_cast<int>(m_objects.size());
+            glm::vec3 position{};
+            position.x = static_cast<float>(i % CUBE_SIDE_LENGTH);
+            position.y = static_cast<float>((i / CUBE_SIDE_LENGTH) % CUBE_SIDE_LENGTH);
+            position.z = static_cast<float>(i / (CUBE_SIDE_LENGTH * CUBE_SIDE_LENGTH));
+            m_objects.push_back(m_world.createEntity(gc::Name(std::format("debugobject{}", i)), gc::ENTITY_NONE, position));
+            m_world.addComponent<gc::RenderableComponent>(m_objects.back()).setMaterial("laminate-flooring-brown"_name).setMesh("floor"_name);
+        }
+    }
+};
+
 class WorldLoadSystem : public gc::System {
     bool m_loaded = false;
     std::unique_ptr<gc::RenderMaterial> m_fallback_material{};
@@ -196,6 +233,7 @@ public:
             world.registerSystem<SpinSystem>();
             world.registerSystem<MouseMoveSystem>();
             world.registerSystem<FollowSystem>(resource_manager);
+            world.registerSystem<RenderTestSystem>();
 
             // camera
             auto camera = world.createEntity(gc::Name("light"), gc::ENTITY_NONE, {0.0f, 0.0f, 67.5f * 25.4e-3f});
@@ -204,7 +242,7 @@ public:
 
             // shrek
             const auto shrek = world.createEntity(gc::Name("shrek"), gc::ENTITY_NONE, glm::vec3{0.0f, +10.0f, 0.0f}, {}, {0.5f, 0.5f, 0.5f});
-            world.addComponent<gc::RenderableComponent>(shrek).setMaterial(gc::Name("default_material")).setMesh(gc::Name("shrek.obj"));
+            world.addComponent<gc::RenderableComponent>(shrek).setMaterial(gc::Name()).setMesh(gc::Name("shrek.obj"));
             world.addComponent<FollowComponent>(shrek).setTarget(camera).setMinDistance(2.0f).setSpeed(1.0f);
             world.getComponent<FollowComponent>(shrek)->setTextureTarget(shrek);
             const auto shrek_light = world.createEntity(gc::Name("shrek_light"), shrek, {0.0f, -1.26688, 4.61091});
@@ -281,26 +319,6 @@ public:
                 const auto roof = world.createEntity("roof"_name);
                 world.getComponent<gc::TransformComponent>(roof)->setPosition(0, 0, 4).setRotation(0, -1, 0, 0).setScale(6, 10, 1);
                 world.addComponent<gc::RenderableComponent>(roof).setMesh("floor"_name);
-            }
-
-            // tons of meshes for performance testing
-            {
-                using namespace gc::literals;
-                constexpr int LENGTH = 30;
-                constexpr glm::vec3 POS_OFFSET{0.0f, 10.0f, 0.0f};
-                auto parent = world.createEntity("parent"_name, gc::ENTITY_NONE, POS_OFFSET, {1, 0, 0, 0}, glm::vec3{2.0f});
-                std::array<gc::Entity, LENGTH * LENGTH * LENGTH> entities{};
-                int index = 0;
-                for (int x = 0; x < LENGTH; ++x) {
-                    for (int y = 0; y < LENGTH; ++y) {
-                        for (int z = 0; z < LENGTH; ++z) {
-                            entities[index] =
-                                world.createEntity(gc::Name(std::format("entity{}.{}.{}", x, y, z)), parent, glm::vec3{x, y, z}, {1, 0, 0, 0}, glm::vec3{0.5f});
-                            world.addComponent<gc::RenderableComponent>(entities[index]).setMaterial("laminate-flooring-brown"_name).setMesh("floor"_name);
-                            ++index;
-                        }
-                    }
-                }
             }
 
             m_loaded = true;

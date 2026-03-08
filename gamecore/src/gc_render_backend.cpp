@@ -328,6 +328,11 @@ RenderBackend::~RenderBackend()
 {
     GC_TRACE("Destroying RenderBackend...");
 
+    // The destructors for these objects defer destruction until the resource is no longer in use by a GPU queue.
+    m_instancing_transforms_buffer.reset();
+    m_pipeline.reset();
+    m_instancing_pipeline.reset();
+
     waitIdle();
 
     cleanupGPUResources();

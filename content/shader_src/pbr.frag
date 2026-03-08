@@ -181,7 +181,7 @@ void main()
 	// directional light
 	{
 		vec3 Li = normalize(-vec3(-0.4, -0.3, -0.85));
-		float LIGHT_BRIGHTNESS = 0.0;
+		float LIGHT_BRIGHTNESS = 1.0;
         vec3 Lirradiance = XYY_TO_XYZ(vec3(PLANCKIAN_LOCUS_CUBIC_XY(5800.0), LIGHT_BRIGHTNESS)); // W/m^2
 
 		// Half-vector between Li and Lo.

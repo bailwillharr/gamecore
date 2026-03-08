@@ -46,6 +46,8 @@ RenderBuffer::RenderBuffer(GPUResourceDeleteQueue& delete_queue, VmaAllocator al
     reallocate(size);
 }
 
+RenderBuffer::~RenderBuffer() { freeBuffers(); }
+
 void RenderBuffer::writeData(VkCommandBuffer cmd, uint64_t current_frame_index, VkSemaphore timeline_semaphore, uint64_t signal_value,
                              std::span<const uint8_t> data)
 {
@@ -72,10 +74,8 @@ void RenderBuffer::writeData(VkCommandBuffer cmd, uint64_t current_frame_index, 
 
 VkBuffer RenderBuffer::getBuffer() const { return m_buffer; }
 
-void RenderBuffer::reallocate(VkDeviceSize new_capacity)
+void RenderBuffer::freeBuffers()
 {
-    m_capacity = new_capacity;
-
     if (m_buffer) {
         GPUResourceDeleteQueue::DeletionEntry entry{};
         entry.timeline_semaphore = m_timeline_semaphore;
@@ -84,10 +84,7 @@ void RenderBuffer::reallocate(VkDeviceSize new_capacity)
         m_delete_queue.markForDeletion(entry);
     }
 
-    std::tie(m_buffer, m_allocation) = createBuffer(m_allocator, m_capacity, VK_BUFFER_USAGE_TRANSFER_DST_BIT | m_usage, false, nullptr);
-
     for (auto& staging_buffer : m_staging_buffers) {
-
         // the wait here is course, one of the staging buffers will almost certainly be free to delete right away.
         if (staging_buffer.buffer) {
             GPUResourceDeleteQueue::DeletionEntry entry{};
@@ -98,7 +95,18 @@ void RenderBuffer::reallocate(VkDeviceSize new_capacity)
             };
             m_delete_queue.markForDeletion(entry);
         }
+    }
+}
 
+void RenderBuffer::reallocate(VkDeviceSize new_capacity)
+{
+    m_capacity = new_capacity;
+
+    freeBuffers();
+
+    std::tie(m_buffer, m_allocation) = createBuffer(m_allocator, m_capacity, VK_BUFFER_USAGE_TRANSFER_DST_BIT | m_usage, false, nullptr);
+
+    for (auto& staging_buffer : m_staging_buffers) {
         void* mapping{};
         std::tie(staging_buffer.buffer, staging_buffer.allocation) = createBuffer(m_allocator, m_capacity, VK_BUFFER_USAGE_TRANSFER_SRC_BIT, true, &mapping);
         staging_buffer.mapping = mapping;

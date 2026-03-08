@@ -39,6 +39,8 @@ Entity World::createEntity(Name name, Entity parent, const glm::vec3& position, 
 
     getSystem<TransformSystem>().setParent(entity, parent);
 
+    m_max_alive_entity_id = std::max(m_max_alive_entity_id, entity);
+
     return entity;
 }
 
@@ -67,6 +69,10 @@ void World::deleteEntity(const Entity entity)
 
     m_entity_signatures[entity] = Signature{}; // an empty signature in m_entity_signatures means no entity
     m_free_entity_ids.push(entity);
+
+    if (m_max_alive_entity_id == entity) {
+        --m_max_alive_entity_id;
+    }
 }
 
 void World::update(FrameState& frame_state)

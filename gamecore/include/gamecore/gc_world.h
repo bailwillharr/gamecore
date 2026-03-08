@@ -28,6 +28,8 @@ class World {
     std::stack<Entity> m_free_entity_ids;
     std::vector<std::unique_ptr<System>> m_systems{};
 
+    Entity m_max_alive_entity_id{};
+
 public:
     World();
     World(const World&) = delete;
@@ -41,7 +43,6 @@ public:
     Entity createEntity(Name name, Entity parent = ENTITY_NONE, const glm::vec3& position = glm::vec3{0.0f, 0.0f, 0.0f},
                         const glm::quat& rotation = glm::quat{1.0f, 0.0f, 0.0f, 0.0f}, const glm::vec3& scale = glm::vec3{1.0f, 1.0f, 1.0f});
 
-    // This function will only succeed when the only remaining component is the TransformComponent
     void deleteEntity(Entity entity);
 
     // Create a ComponentArray for the given component
@@ -154,7 +155,7 @@ public:
     template <ValidComponent... Ts, typename Func>
     void forEach(Func&& func)
     {
-        for (Entity entity = 0; entity < m_entity_signatures.size(); ++entity) {
+        for (Entity entity = 0; entity <= m_max_alive_entity_id && entity < m_entity_signatures.size(); ++entity) {
             // erased entities will have an empty signature so will be skipped over here.
             if (m_entity_signatures[entity].hasTypes<Ts...>()) {
                 auto components = std::make_tuple(getComponent<Ts>(entity)...);

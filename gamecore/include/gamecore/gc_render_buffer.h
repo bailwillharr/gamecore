@@ -40,12 +40,19 @@ class RenderBuffer {
 public:
     RenderBuffer(GPUResourceDeleteQueue& delete_queue, VmaAllocator allocator, uint32_t frames_in_flight, VkDeviceSize size, VkBufferUsageFlags usage);
 
+    RenderBuffer(const RenderBuffer&) = delete;
+
+    ~RenderBuffer();
+
+    RenderBuffer& operator=(const RenderBuffer&) = delete;
+
     // The staging buffer should not be in use on the GPU when this is called
     void writeData(VkCommandBuffer cmd, uint64_t current_frame_index, VkSemaphore timeline_semaphore, uint64_t signal_value, std::span<const uint8_t> data);
 
     VkBuffer getBuffer() const;
 
 private:
+    void freeBuffers();
     void reallocate(VkDeviceSize new_capacity);
 };
 
