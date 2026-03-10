@@ -2,6 +2,7 @@
 
 #include <array>
 #include <unordered_map>
+#include <unordered_set>
 
 #include "gamecore/gc_render_texture_manager.h"
 #include "gamecore/gc_resource_manager.h"
@@ -32,6 +33,8 @@ class RenderObjectManager {
 
     std::array<std::unique_ptr<RenderTexture>, 3> m_fallback_textures{};
     std::unique_ptr<RenderMaterial> m_fallback_material{};
+
+    std::unordered_set<Name> m_resources_not_found{};
 
 public:
     RenderObjectManager(ResourceManager& resource_manager, RenderBackend& render_backend)
@@ -80,17 +83,23 @@ public:
 
                 RenderTexture* base_color = m_texture_manager.acquire(m_resource_manager, m_render_backend, material_resource->base_color_texture);
                 if (!base_color) {
-                    GC_ERROR("Could not find base color texture: {}", material_resource->base_color_texture);
+                    if (!material_resource->base_color_texture.empty() && m_resources_not_found.emplace(material_resource->base_color_texture).second) {
+                        GC_ERROR("Base color texture not found: {}", material_resource->base_color_texture.getString());
+                    }
                     base_color = m_fallback_textures[0].get();
                 }
                 RenderTexture* orm = m_texture_manager.acquire(m_resource_manager, m_render_backend, material_resource->orm_texture);
                 if (!orm) {
-                    GC_ERROR("Could not find ORM texture: {}", material_resource->orm_texture);
+                    if (!material_resource->orm_texture.empty() && m_resources_not_found.emplace(material_resource->orm_texture).second) {
+                        GC_ERROR("ORM texture not found: {}", material_resource->orm_texture.getString());
+                    }
                     orm = m_fallback_textures[1].get();
                 }
                 RenderTexture* normal = m_texture_manager.acquire(m_resource_manager, m_render_backend, material_resource->normal_texture);
                 if (!normal) {
-                    GC_ERROR("Could not find normal texture: {}", material_resource->normal_texture);
+                    if (!material_resource->normal_texture.empty() && m_resources_not_found.emplace(material_resource->normal_texture).second) {
+                        GC_ERROR("Normal not found: {}", material_resource->normal_texture.getString());
+                    }
                     normal = m_fallback_textures[2].get();
                 }
 
@@ -102,7 +111,9 @@ public:
                 it = m_materials.emplace(name, std::move(entry)).first;
             }
             else {
-                GC_ERROR("Could not find material resource: {}", name);
+                if (const auto already_logged = m_resources_not_found.emplace(name).second; !already_logged) {
+                    GC_ERROR("Material not found: {}", name.getString());
+                }
                 return m_fallback_material.get();
             }
         }
