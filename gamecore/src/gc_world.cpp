@@ -26,8 +26,8 @@ Entity World::createEntity(Name name, Entity parent, const glm::vec3& position, 
         m_entity_signatures.resize(m_entity_signatures.size() + 1);
     }
     else {
-        entity = m_free_entity_ids.top();
-        m_free_entity_ids.pop();
+        entity = m_free_entity_ids.back();
+        m_free_entity_ids.pop_back();
         m_entity_signatures[entity] = Signature{};
     }
 
@@ -68,7 +68,7 @@ void World::deleteEntity(const Entity entity)
     }
 
     m_entity_signatures[entity] = Signature{}; // an empty signature in m_entity_signatures means no entity
-    m_free_entity_ids.push(entity);
+    m_free_entity_ids.push_back(entity);
 
     if (m_max_alive_entity_id == entity) {
         --m_max_alive_entity_id;

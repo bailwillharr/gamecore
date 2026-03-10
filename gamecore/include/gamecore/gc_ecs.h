@@ -7,7 +7,6 @@
 #include <limits>
 #include <unordered_map>
 #include <atomic>
-#include <stack>
 
 #include "gamecore/gc_assert.h"
 #include "gamecore/gc_logger.h"
@@ -116,7 +115,7 @@ template <ValidComponent T, ComponentArrayType ArrayType>
 class ComponentArray : public IComponentArray {
     std::vector<T> m_component_array{}; // looked up via entity if dense (since Entity is just an integer), looked up via m_entity_component_indices if sparse
     std::unordered_map<Entity, uint32_t> m_entity_component_indices{}; // only used if sparse
-    std::stack<uint32_t> m_free_indices{};                             // only used if sparse
+    std::vector<uint32_t> m_free_indices{};                             // only used if sparse
 
 public:
     void addComponent(const Entity entity) override
@@ -133,8 +132,8 @@ public:
             }
             else {
                 // can reuse a slot in m_component_array
-                index = m_free_indices.top();
-                m_free_indices.pop();
+                index = m_free_indices.back();
+                m_free_indices.pop_back();
                 GC_ASSERT(index < m_component_array.size());
                 m_entity_component_indices.insert({entity, index});
                 m_component_array[index] = T{};
@@ -157,7 +156,7 @@ public:
 
         if constexpr (ArrayType == ComponentArrayType::SPARSE) {
             if (auto it = m_entity_component_indices.find(entity); it != m_entity_component_indices.end()) {
-                m_free_indices.push(it->second);
+                m_free_indices.push_back(it->second);
                 m_entity_component_indices.erase(it);
             }
             else {

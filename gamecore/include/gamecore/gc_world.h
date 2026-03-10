@@ -8,7 +8,6 @@
 
 #include <vector>
 #include <memory>
-#include <stack>
 
 #include <glm/vec3.hpp>
 #include <glm/gtc/quaternion.hpp>
@@ -25,7 +24,7 @@ class World {
 
     std::vector<ComponentArrayEntry> m_component_arrays{};
     std::vector<Signature> m_entity_signatures{};
-    std::stack<Entity> m_free_entity_ids;
+    std::vector<Entity> m_free_entity_ids;
     std::vector<std::unique_ptr<System>> m_systems{};
 
     Entity m_max_alive_entity_id{};

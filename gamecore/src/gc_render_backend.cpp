@@ -397,6 +397,7 @@ void RenderBackend::submitFrame(bool window_resized, const WorldDrawData& world_
 
     if (m_requested_frames_in_flight != static_cast<int>(m_fif.size())) {
         recreateFramesInFlightResources();
+        GC_DEBUG("Using {} frames in flight", m_fif.size());
     }
 
     auto& stuff = m_fif[m_frame_count % m_fif.size()];
@@ -470,7 +471,7 @@ void RenderBackend::submitFrame(bool window_resized, const WorldDrawData& world_
         vkCmdPipelineBarrier2(stuff.cmd, &dep);
     }
 
-    if (!world_draw_data.getInstancedDrawTransforms().empty()){
+    if (!world_draw_data.getInstancedDrawTransforms().empty()) {
         TracyVkZone(m_tracy_vulkan_context.ctx, stuff.cmd, "Copy instance transforms");
 
         const auto& transforms = world_draw_data.getInstancedDrawTransforms();
@@ -1453,8 +1454,6 @@ void RenderBackend::recreateRenderImages()
 
 void RenderBackend::recreateFramesInFlightResources()
 {
-    GC_TRACE("Recreating frames in flight resources. FIF count {}", m_requested_frames_in_flight);
-
     // wait for any work on the queue used for rendering and presentation to finish.
     GC_CHECKVK(vkQueueWaitIdle(m_device.getMainQueue()));
 

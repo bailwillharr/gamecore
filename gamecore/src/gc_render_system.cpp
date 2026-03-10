@@ -23,7 +23,7 @@ void RenderSystem::onUpdate(FrameState& frame_state)
     ZoneScoped;
 
     constexpr uint64_t INACTIVE_OBJECT_LIFETIME_FRAMES = 10;
-    constexpr int AUTOMATIC_INSTANCING_THRESHOLD = 3;
+    constexpr int AUTOMATIC_INSTANCING_THRESHOLD = 8;
 
     if (ImGui::Begin("Render System Config")) {
         ImGui::Checkbox("Use automatic instancing", &frame_state.do_instancing);
