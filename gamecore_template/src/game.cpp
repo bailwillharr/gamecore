@@ -152,8 +152,8 @@ public:
     {
         using namespace gc::literals;
 
-        if (ImGui::Begin("Render Test Options")) {
-            ImGui::SliderInt("Number of test objects", &m_num_objects, 0, 1'000'000);
+        if (ImGui::Begin("Render Test Config")) {
+            ImGui::SliderInt("# objects", &m_num_objects, 0, 1'000'000);
         }
         ImGui::End();
 
