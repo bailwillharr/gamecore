@@ -71,12 +71,13 @@ class RenderBackend {
     // global descriptor pool
     VkSampler m_sampler{};
     VkDescriptorPool m_main_descriptor_pool{};
-    VkDescriptorSetLayout m_descriptor_set_layout{};
+    VkDescriptorSetLayout m_frame_set_layout{};
+    VkDescriptorSetLayout m_material_set_layout{};
 
     // pipeline layout for most 3D rendering
-    VkPipelineLayout m_pipeline_layout{};
-
-    std::unique_ptr<GPUPipeline> m_pipeline;
+    VkPipelineLayout m_main_pipeline_layout{};
+    VkPipelineLayout m_instancing_pipeline_layout{};
+    std::unique_ptr<GPUPipeline> m_main_pipeline;
     std::unique_ptr<GPUPipeline> m_instancing_pipeline;
 
     VkSampleCountFlagBits m_msaa_samples{};
@@ -117,8 +118,11 @@ class RenderBackend {
     VkCommandPool m_transfer_cmd_pool{};
     VkSemaphore m_transfer_timeline_semaphore{};
     uint64_t m_transfer_timeline_value{};
-
+    
+    std::unique_ptr<RenderBuffer> m_frame_uniform_buffer{};
     std::unique_ptr<RenderBuffer> m_instancing_transforms_buffer{};
+    
+    std::unique_ptr<GPUDescriptorSet> m_frame_uniform_buffer_set{}; // permanently points to m_frame_uniform_buffer
 
 #ifdef TRACY_ENABLE
     struct TracyVulkanContext {
@@ -148,7 +152,7 @@ public:
 
 private:
     GPUPipeline createPipeline(std::span<const uint8_t> vertex_spv, std::span<const uint8_t> fragment_spv,
-                               const VkPipelineVertexInputStateCreateInfo& vertex_input_state);
+                               const VkPipelineVertexInputStateCreateInfo& vertex_input_state, VkPipelineLayout pipeline_layout);
 
 public:
     void createMainPipeline(std::span<const uint8_t> vertex_spv, std::span<const uint8_t> fragment_spv);

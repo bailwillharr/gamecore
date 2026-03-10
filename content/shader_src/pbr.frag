@@ -14,16 +14,15 @@ const float Epsilon = 0.00001;
 // Constant normal incidence Fresnel factor for all dielectrics.
 const vec3 Fdielectric = vec3(0.04);
 
-layout(set = 0, binding = 0) uniform sampler2D materialSetBaseColorSampler;
-layout(set = 0, binding = 1) uniform sampler2D materialSetORMSampler;
-layout(set = 0, binding = 2) uniform sampler2D materialSetNormalSampler;
+layout(set = 1, binding = 0) uniform sampler2D materialSetBaseColorSampler;
+layout(set = 1, binding = 1) uniform sampler2D materialSetORMSampler;
+layout(set = 1, binding = 2) uniform sampler2D materialSetNormalSampler;
 
 layout(location = 0) in Vertex {
     vec3 position;
-    mat3 tangent_basis;
-    vec2 texcoord;
     vec3 eye_position;
-    vec3 light_position;
+    vec3 light_direction;
+    vec2 texcoord;
 } vin;
 
 layout(location = 0) out vec4 color;
@@ -127,7 +126,6 @@ void main()
 
 	// Get current fragment's normal and transform to world space.
 	vec3 N = normalize(2.0 * texture(materialSetNormalSampler, vin.texcoord).rgb - 1.0);
-	N = normalize(vin.tangent_basis * N);
 	
 	// Angle between surface normal and outgoing light direction.
 	float cosLo = max(0.0, dot(N, Lo));
@@ -138,49 +136,11 @@ void main()
 	// Fresnel reflectance at normal incidence (for metals use albedo color).
 	vec3 F0 = mix(Fdielectric, albedo, metalness);
 
-	// point light
-	vec3 directLighting = vec3(0);
-	{
-		vec3 Li = normalize(vin.light_position - vin.position);
-		float LIGHT_BRIGHTNESS = 1.0;
-        vec3 Lradiance = XYY_TO_XYZ(vec3(PLANCKIAN_LOCUS_CUBIC_XY(2000.0), LIGHT_BRIGHTNESS)); // W/m^2/steradian
-        float light_distance = distance(vin.light_position, vin.position);
-		vec3 Lirradiance = Lradiance / (light_distance * light_distance); // W/m^2
-
-		// Half-vector between Li and Lo.
-		vec3 Lh = normalize(Li + Lo);
-
-		// Calculate angles between surface normal and various light vectors.
-		float cosLi = max(0.0, dot(N, Li));
-		float cosLh = max(0.0, dot(N, Lh));
-
-		// Calculate Fresnel term for direct lighting. 
-		vec3 F  = fresnelSchlick(F0, max(0.0, dot(Lh, Lo)));
-		// Calculate normal distribution for specular BRDF.
-		float D = ndfGGX(cosLh, roughness);
-		// Calculate geometric attenuation for specular BRDF.
-		float G = gaSchlickGGX(cosLi, cosLo, roughness);
-
-		// Diffuse scattering happens due to light being refracted multiple times by a dielectric medium.
-		// Metals on the other hand either reflect or absorb energy, so diffuse contribution is always zero.
-		// To be energy conserving we must scale diffuse BRDF contribution based on Fresnel factor & metalness.
-		vec3 kd = mix(vec3(1.0) - F, vec3(0.0), metalness);
-
-		// Lambert diffuse BRDF.
-		// We don't scale by 1/PI for lighting & material units to be more convenient.
-		// See: https://seblagarde.wordpress.com/2012/01/08/pi-or-not-to-pi-in-game-lighting-equation/
-		vec3 diffuseBRDF = kd * albedo;
-
-		// Cook-Torrance specular microfacet BRDF.
-		vec3 specularBRDF = (F * D * G) / max(Epsilon, 4.0 * cosLi * cosLo);
-
-		// Total contribution for this light.
-		directLighting += (diffuseBRDF + specularBRDF) * Lirradiance * cosLi;
-	}
+	vec3 directLighting = vec3(0.0);
 
 	// directional light
 	{
-		vec3 Li = normalize(-vec3(-0.4, -0.3, -0.85));
+		vec3 Li = normalize(vin.light_direction);
 		float LIGHT_BRIGHTNESS = 1.0;
         vec3 Lirradiance = XYY_TO_XYZ(vec3(PLANCKIAN_LOCUS_CUBIC_XY(5800.0), LIGHT_BRIGHTNESS)); // W/m^2
 
@@ -220,7 +180,7 @@ void main()
         vec3 skyColor    = XYY_TO_XYZ(vec3(PLANCKIAN_LOCUS_CUBIC_XY(5800.0), 1.0));  // bluish sky
         vec3 groundColor = XYY_TO_XYZ(vec3(PLANCKIAN_LOCUS_CUBIC_XY(5800.0), 0.5)); // brownish ground
         float NdotY = 0.5 * (N.y + 1.0); // remap [-1,1] → [0,1]
-        float ambient_strength = 0.0;
+        float ambient_strength = 0.1;
         ambient = mix(groundColor, skyColor, NdotY) * ambient_strength * albedo;
     }
 

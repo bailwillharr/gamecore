@@ -55,6 +55,11 @@ int main([[maybe_unused]] int argc, [[maybe_unused]] char* argv[])
 {
     std::error_code ec{};
 
+    // The engine expects data to start at the bottom-left.
+    // This is because Vulkan samplers treat uv=0,0 as the start of the image data,
+    // and all 3D models assume uv 0,0 is at the bottom-left.
+    stbi_set_flip_vertically_on_load(true);
+
     const auto texture_dir = std::filesystem::path(PACKAGE_TEXTURES_SOURCE_DIRECTORY).parent_path().parent_path() / "content" / "textures";
     if (!std::filesystem::exists(texture_dir, ec) || !std::filesystem::is_directory(texture_dir, ec)) {
         std::cerr << "Failed to find textures directory! error: " << ec.message() << "\n";

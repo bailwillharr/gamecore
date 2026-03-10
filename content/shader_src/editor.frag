@@ -1,8 +1,6 @@
 #version 450
 
-layout(set = 0, binding = 0) uniform sampler2D materialSetBaseColorSampler;
-layout(set = 0, binding = 1) uniform sampler2D materialSetORMSampler;
-layout(set = 0, binding = 2) uniform sampler2D materialSetNormalSampler;
+layout(set = 1, binding = 0) uniform sampler2D materialSetBaseColorSampler;
 
 layout(location = 0) in Vertex {
     vec2 texcoord;

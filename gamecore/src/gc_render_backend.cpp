@@ -195,7 +195,19 @@ RenderBackend::RenderBackend(SDL_Window* window_handle)
         GC_CHECKVK(vkCreateDescriptorPool(m_device.getHandle(), &pool_info, nullptr, &m_main_descriptor_pool));
     }
 
-    // create descriptor set layout
+    // create descriptor set layouts
+    {
+        std::array<VkDescriptorSetLayoutBinding, 1> bindings{};
+        bindings[0].binding = 0;
+        bindings[0].descriptorType = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER;
+        bindings[0].descriptorCount = 1;
+        bindings[0].stageFlags = VK_SHADER_STAGE_VERTEX_BIT;
+        VkDescriptorSetLayoutCreateInfo info{};
+        info.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_LAYOUT_CREATE_INFO;
+        info.bindingCount = static_cast<uint32_t>(bindings.size());
+        info.pBindings = bindings.data();
+        GC_CHECKVK(vkCreateDescriptorSetLayout(m_device.getHandle(), &info, nullptr, &m_frame_set_layout));
+    }
     {
         std::array<VkDescriptorSetLayoutBinding, 3> bindings{};
         bindings[0].binding = 0;
@@ -217,23 +229,35 @@ RenderBackend::RenderBackend(SDL_Window* window_handle)
         info.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_LAYOUT_CREATE_INFO;
         info.bindingCount = static_cast<uint32_t>(bindings.size()); // base color texture and occlusion-roughness-metallic texture
         info.pBindings = bindings.data();
-        GC_CHECKVK(vkCreateDescriptorSetLayout(m_device.getHandle(), &info, nullptr, &m_descriptor_set_layout));
+        GC_CHECKVK(vkCreateDescriptorSetLayout(m_device.getHandle(), &info, nullptr, &m_material_set_layout));
     }
 
-    // create a simple pipeline layout for all 3D stuff (for now)
+    // pipeline layouts
     {
+        const std::array set_layouts{m_frame_set_layout, m_material_set_layout};
+
         VkPushConstantRange push_constant_range{};
         push_constant_range.offset = 0;
-        // push_constant_range.size = 128; // Guaranteed minimum size https://registry.khronos.org/vulkan/specs/latest/html/vkspec.html#limits-minmax
-        push_constant_range.size = 64 + 64 + 64 + 16; // mat4, mat4, mat4, vec3
+        push_constant_range.size = 64;
         push_constant_range.stageFlags = VK_SHADER_STAGE_VERTEX_BIT;
+
         VkPipelineLayoutCreateInfo info{};
         info.sType = VK_STRUCTURE_TYPE_PIPELINE_LAYOUT_CREATE_INFO;
-        info.setLayoutCount = 1;
-        info.pSetLayouts = &m_descriptor_set_layout;
+        info.setLayoutCount = static_cast<uint32_t>(set_layouts.size());
+        info.pSetLayouts = set_layouts.data();
         info.pushConstantRangeCount = 1;
         info.pPushConstantRanges = &push_constant_range;
-        GC_CHECKVK(vkCreatePipelineLayout(m_device.getHandle(), &info, nullptr, &m_pipeline_layout));
+        GC_CHECKVK(vkCreatePipelineLayout(m_device.getHandle(), &info, nullptr, &m_main_pipeline_layout));
+    }
+    {
+        const std::array set_layouts{m_frame_set_layout, m_material_set_layout};
+        VkPipelineLayoutCreateInfo info{};
+        info.sType = VK_STRUCTURE_TYPE_PIPELINE_LAYOUT_CREATE_INFO;
+        info.setLayoutCount = static_cast<uint32_t>(set_layouts.size());
+        info.pSetLayouts = set_layouts.data();
+        info.pushConstantRangeCount = 0;
+        info.pPushConstantRanges = nullptr;
+        GC_CHECKVK(vkCreatePipelineLayout(m_device.getHandle(), &info, nullptr, &m_instancing_pipeline_layout));
     }
 
     // find depth stencil format to use
@@ -329,8 +353,10 @@ RenderBackend::~RenderBackend()
     GC_TRACE("Destroying RenderBackend...");
 
     // The destructors for these objects defer destruction until the resource is no longer in use by a GPU queue.
+    m_frame_uniform_buffer_set.reset();
     m_instancing_transforms_buffer.reset();
-    m_pipeline.reset();
+    m_frame_uniform_buffer.reset();
+    m_main_pipeline.reset();
     m_instancing_pipeline.reset();
 
     waitIdle();
@@ -366,9 +392,11 @@ RenderBackend::~RenderBackend()
     vkDestroyImageView(m_device.getHandle(), m_depth_stencil_attachment_view, nullptr);
     vmaDestroyImage(m_allocator.getHandle(), m_depth_stencil_attachment_image, m_depth_stencil_attachment_allocation);
 
-    vkDestroyPipelineLayout(m_device.getHandle(), m_pipeline_layout, nullptr);
+    vkDestroyPipelineLayout(m_device.getHandle(), m_instancing_pipeline_layout, nullptr);
+    vkDestroyPipelineLayout(m_device.getHandle(), m_main_pipeline_layout, nullptr);
 
-    vkDestroyDescriptorSetLayout(m_device.getHandle(), m_descriptor_set_layout, nullptr);
+    vkDestroyDescriptorSetLayout(m_device.getHandle(), m_material_set_layout, nullptr);
+    vkDestroyDescriptorSetLayout(m_device.getHandle(), m_frame_set_layout, nullptr);
     vkDestroyDescriptorPool(m_device.getHandle(), m_main_descriptor_pool, nullptr);
     vkDestroySampler(m_device.getHandle(), m_sampler, nullptr);
 }
@@ -471,6 +499,39 @@ void RenderBackend::submitFrame(bool window_resized, const WorldDrawData& world_
         vkCmdPipelineBarrier2(stuff.cmd, &dep);
     }
 
+    // update frame uniform buffer
+    {
+        // alignment is the same here as in the shader, but rules are different!
+        struct {
+            glm::mat4 projection_matrix;
+            glm::mat4 view_matrix;
+            glm::vec3 camera_position;
+        } data;
+        data.projection_matrix = world_draw_data.getProjectionMatrix();
+        data.view_matrix = world_draw_data.getViewMatrix();
+        data.camera_position =
+            glm::vec3(glm::inverse(data.view_matrix) * glm::vec4(0.0, 0.0, 0.0, 1.0)); // TODO, have world_draw_data just contain the camera position
+
+        m_frame_uniform_buffer->writeData(stuff.cmd, m_frame_count, m_main_timeline_semaphore, m_main_timeline_value + 1, std::span(reinterpret_cast<const uint8_t*>(&data), sizeof(data)));
+
+        VkBufferMemoryBarrier2 b{};
+        b.sType = VK_STRUCTURE_TYPE_BUFFER_MEMORY_BARRIER_2;
+        b.srcStageMask = VK_PIPELINE_STAGE_2_COPY_BIT;
+        b.srcAccessMask = VK_ACCESS_2_TRANSFER_WRITE_BIT;
+        b.dstStageMask = VK_PIPELINE_STAGE_2_VERTEX_SHADER_BIT;
+        b.dstAccessMask = VK_ACCESS_2_UNIFORM_READ_BIT;
+        b.srcQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
+        b.dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
+        b.buffer = m_frame_uniform_buffer->getBuffer();
+        b.size = VkDeviceSize(sizeof(data));
+        b.offset = 0;
+        VkDependencyInfo dep{};
+        dep.sType = VK_STRUCTURE_TYPE_DEPENDENCY_INFO;
+        dep.bufferMemoryBarrierCount = 1;
+        dep.pBufferMemoryBarriers = &b;
+        vkCmdPipelineBarrier2(stuff.cmd, &dep);
+    }
+
     if (!world_draw_data.getInstancedDrawTransforms().empty()) {
         TracyVkZone(m_tracy_vulkan_context.ctx, stuff.cmd, "Copy instance transforms");
 
@@ -483,7 +544,7 @@ void RenderBackend::submitFrame(bool window_resized, const WorldDrawData& world_
         b.sType = VK_STRUCTURE_TYPE_BUFFER_MEMORY_BARRIER_2;
         b.srcStageMask = VK_PIPELINE_STAGE_2_COPY_BIT;
         b.srcAccessMask = VK_ACCESS_2_TRANSFER_WRITE_BIT;
-        b.dstStageMask = VK_PIPELINE_STAGE_2_VERTEX_INPUT_BIT;
+        b.dstStageMask = VK_PIPELINE_STAGE_2_VERTEX_ATTRIBUTE_INPUT_BIT;
         b.dstAccessMask = VK_ACCESS_2_VERTEX_ATTRIBUTE_READ_BIT;
         b.srcQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
         b.dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
@@ -551,13 +612,9 @@ void RenderBackend::submitFrame(bool window_resized, const WorldDrawData& world_
         scissor.extent = swapchain_extent;
         vkCmdSetScissor(stuff.cmd, 0, 1, &scissor);
 
-        if (m_pipeline) {
-            recordWorldRenderingCommands(stuff.cmd, m_pipeline_layout, *m_pipeline, *m_instancing_pipeline, m_main_timeline_semaphore,
-                                         m_main_timeline_value + 1, world_draw_data, m_instancing_transforms_buffer->getBuffer());
-        }
-        else {
-            GC_ERROR("No pipeline set. Cannot render!");
-        }
+        recordWorldRenderingCommands(stuff.cmd, m_main_pipeline_layout, *m_main_pipeline, m_instancing_pipeline_layout, *m_instancing_pipeline,
+                                     m_main_timeline_semaphore, m_main_timeline_value + 1, world_draw_data, *m_frame_uniform_buffer_set,
+                                     *m_instancing_transforms_buffer);
 
         if (post_render_callback) {
             bool ret = post_render_callback(stuff.cmd);
@@ -666,7 +723,7 @@ void RenderBackend::cleanupGPUResources()
 }
 
 GPUPipeline RenderBackend::createPipeline(std::span<const uint8_t> vertex_spv, std::span<const uint8_t> fragment_spv,
-                                          const VkPipelineVertexInputStateCreateInfo& vertex_input_state)
+                                          const VkPipelineVertexInputStateCreateInfo& vertex_input_state, VkPipelineLayout pipeline_layout)
 {
     ZoneScoped;
 
@@ -798,7 +855,7 @@ GPUPipeline RenderBackend::createPipeline(std::span<const uint8_t> vertex_spv, s
     info.pDepthStencilState = &depth_stencil_state;
     info.pColorBlendState = &color_blend_state;
     info.pDynamicState = &dynamic_state;
-    info.layout = m_pipeline_layout;
+    info.layout = pipeline_layout;
     info.renderPass = VK_NULL_HANDLE;
     info.subpass = 0;
     info.basePipelineHandle = VK_NULL_HANDLE;
@@ -815,7 +872,7 @@ GPUPipeline RenderBackend::createPipeline(std::span<const uint8_t> vertex_spv, s
 
 void RenderBackend::createMainPipeline(std::span<const uint8_t> vertex_spv, std::span<const uint8_t> fragment_spv)
 {
-    if (m_pipeline) {
+    if (m_main_pipeline) {
         abortGame("Main pipeline already created!");
     }
 
@@ -854,7 +911,7 @@ void RenderBackend::createMainPipeline(std::span<const uint8_t> vertex_spv, std:
     vertex_input_state.vertexAttributeDescriptionCount = static_cast<uint32_t>(vertex_input_attributes.size());
     vertex_input_state.pVertexAttributeDescriptions = vertex_input_attributes.data();
 
-    m_pipeline = std::make_unique<GPUPipeline>(createPipeline(vertex_spv, fragment_spv, vertex_input_state));
+    m_main_pipeline = std::make_unique<GPUPipeline>(createPipeline(vertex_spv, fragment_spv, vertex_input_state, m_main_pipeline_layout));
 }
 
 void RenderBackend::createInstancingPipeline(std::span<const uint8_t> vertex_spv, std::span<const uint8_t> fragment_spv)
@@ -924,7 +981,7 @@ void RenderBackend::createInstancingPipeline(std::span<const uint8_t> vertex_spv
     vertex_input_state.vertexAttributeDescriptionCount = static_cast<uint32_t>(vertex_input_attributes.size());
     vertex_input_state.pVertexAttributeDescriptions = vertex_input_attributes.data();
 
-    m_instancing_pipeline = std::make_unique<GPUPipeline>(createPipeline(vertex_spv, fragment_spv, vertex_input_state));
+    m_instancing_pipeline = std::make_unique<GPUPipeline>(createPipeline(vertex_spv, fragment_spv, vertex_input_state, m_instancing_pipeline_layout));
 }
 
 RenderTexture RenderBackend::createTexture(std::span<const uint8_t> r8g8b8a8_pak, bool srgb)
@@ -1410,7 +1467,7 @@ RenderMaterial RenderBackend::createMaterial(RenderTexture& base_color, RenderTe
     info.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_ALLOCATE_INFO;
     info.descriptorPool = m_main_descriptor_pool;
     info.descriptorSetCount = 1;
-    info.pSetLayouts = &m_descriptor_set_layout;
+    info.pSetLayouts = &m_material_set_layout;
     GC_CHECKVK(vkAllocateDescriptorSets(m_device.getHandle(), &info, &descriptor_set));
     return RenderMaterial(m_device.getHandle(), GPUDescriptorSet(m_delete_queue, m_main_descriptor_pool, descriptor_set), base_color, orm, normal);
 }
@@ -1484,9 +1541,41 @@ void RenderBackend::recreateFramesInFlightResources()
     }
 
     // RenderBuffers rely on the number of frames in flight
+
+    constexpr VkDeviceSize FRAME_UNIFORM_BUFFER_SIZE =
+        sizeof(glm::mat4) + sizeof(glm::mat4) + sizeof(glm::vec3); // projection matrix, view matrix, camera position
+    m_frame_uniform_buffer = std::make_unique<RenderBuffer>(m_delete_queue, m_allocator.getHandle(), static_cast<uint32_t>(m_fif.size()),
+                                                            FRAME_UNIFORM_BUFFER_SIZE, VK_BUFFER_USAGE_UNIFORM_BUFFER_BIT);
+
     constexpr VkDeviceSize INSTANCING_BUFFER_INITIAL_SIZE = sizeof(glm::mat4) * 100; // 100 instances
     m_instancing_transforms_buffer = std::make_unique<RenderBuffer>(m_delete_queue, m_allocator.getHandle(), static_cast<uint32_t>(m_fif.size()),
                                                                     INSTANCING_BUFFER_INITIAL_SIZE, VK_BUFFER_USAGE_VERTEX_BUFFER_BIT);
+    {
+        VkDescriptorSet ds{};
+        VkDescriptorSetAllocateInfo info{};
+        info.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_ALLOCATE_INFO;
+        info.descriptorPool = m_main_descriptor_pool;
+        info.descriptorSetCount = 1;
+        info.pSetLayouts = &m_frame_set_layout;
+        GC_CHECKVK(vkAllocateDescriptorSets(m_device.getHandle(), &info, &ds));
+
+        VkDescriptorBufferInfo buf_info{};
+        buf_info.buffer = m_frame_uniform_buffer->getBuffer();
+        buf_info.offset = 0;
+        buf_info.range = FRAME_UNIFORM_BUFFER_SIZE;
+        VkWriteDescriptorSet write{};
+        write.sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
+        write.dstSet = ds;
+        write.dstBinding = 0;
+        write.dstArrayElement = 0;
+        write.descriptorCount = 1;
+        write.descriptorType = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER;
+        write.pBufferInfo = &buf_info;
+
+        vkUpdateDescriptorSets(m_device.getHandle(), 1, &write, 0, nullptr);
+
+        m_frame_uniform_buffer_set = std::make_unique<GPUDescriptorSet>(m_delete_queue, m_main_descriptor_pool, ds);
+    }
 }
 
 void RenderBackend::waitForFrameReady()

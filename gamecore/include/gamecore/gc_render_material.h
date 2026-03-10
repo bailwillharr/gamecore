@@ -83,7 +83,7 @@ public:
         m_normal_texture.useResource(timeline_semaphore, signal_value);
 
         const VkDescriptorSet handle = m_descriptor_set.getHandle();
-        vkCmdBindDescriptorSets(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, pipeline_layout, 0, 1, &handle, 0, nullptr);
+        vkCmdBindDescriptorSets(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, pipeline_layout, 1, 1, &handle, 0, nullptr);
     }
 
     // Checks that all textures for this material are uploaded

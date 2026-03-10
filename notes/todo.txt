@@ -2,15 +2,11 @@ Replace mutable FrameState with immutable FrameInput, Mutable FrameOutput. Split
 Simulation systems cannot modify FrameOutput, they only receive FrameInput as const ref parameter.
 Presentation systems receive FrameInput const ref, but also receive FrameOutput as a mutable ref parameter.
 
-Potentially create a built-in imgui system that calls callbacks on ImGuiComponents.
-However since components are supposed to be serialisable and rely on resources for complex data,
-this approach may require ImGuiUIResources, which contain the custom behaviour. This seems needlessly complicated for a debug UI.
-ALTERNATIVE APPROACH: Ensure the relevant ImGui newFrame() functions are called before system updates. Then custom systems can show
-ImGui windows. with immediate mode commands.
-
 Pipeline variants
 	If a given material doesn't use a normal map, for example, it shouldn't sample a normal texture in the fragment shader.
 	Use multiple pipelines instead or maybe just use null descriptors.
 	Either way, don't store pipeline in material, just what features are wanted, such as:
 	 - use normal map
 	 - constant roughness vs roughness map
+
+Prefabs

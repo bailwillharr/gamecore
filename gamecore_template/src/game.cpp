@@ -297,7 +297,7 @@ public:
             {
                 const auto wall3 = world.createEntity(gc::Name("wall3"));
                 world.getComponent<gc::TransformComponent>(wall3)->setPosition({0.0f, 5.0f, 2.0f});
-                world.getComponent<gc::TransformComponent>(wall3)->setScale({6.0f, 4.0f, 1.0f});
+                world.getComponent<gc::TransformComponent>(wall3)->setScale({10.0f, 4.0f, 1.0f});
                 world.getComponent<gc::TransformComponent>(wall3)->setRotation(
                     glm::quat(0.0f, 0.0f, glm::one_over_root_two<float>(), -glm::one_over_root_two<float>()));
                 world.addComponent<gc::RenderableComponent>(wall3).setMaterial(gc::Name("bricks-mortar")).setMesh(gc::Name("wall1"));
@@ -307,7 +307,7 @@ public:
             {
                 const auto wall3 = world.createEntity(gc::Name("wall3"));
                 world.getComponent<gc::TransformComponent>(wall3)->setPosition({0.0f, -5.0f, 2.0f});
-                world.getComponent<gc::TransformComponent>(wall3)->setScale({6.0f, 4.0f, 1.0f});
+                world.getComponent<gc::TransformComponent>(wall3)->setScale({10.0f, 4.0f, 1.0f});
                 world.getComponent<gc::TransformComponent>(wall3)->setRotation(
                     glm::quat(0.0f, 0.0f, -glm::one_over_root_two<float>(), -glm::one_over_root_two<float>()));
                 world.addComponent<gc::RenderableComponent>(wall3).setMaterial(gc::Name("bricks-mortar")).setMesh(gc::Name("wall1"));

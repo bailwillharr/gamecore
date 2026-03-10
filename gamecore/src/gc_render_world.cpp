@@ -8,23 +8,29 @@
 #include "gamecore/gc_render_backend.h"
 #include "gamecore/gc_format_specialisations.h"
 #include "gamecore/gc_render_buffer.h"
+#include "gamecore/gc_gpu_resources.h"
 
 namespace gc {
 
-void recordWorldRenderingCommands(VkCommandBuffer cmd, VkPipelineLayout world_pipeline_layout, GPUPipeline& world_pipeline, GPUPipeline& instancing_pipeline,
-                                  VkSemaphore timeline_semaphore, uint64_t signal_value, const WorldDrawData& draw_data,
-                                  VkBuffer instance_transforms_buffer)
+void recordWorldRenderingCommands(VkCommandBuffer cmd, VkPipelineLayout main_pipeline_layout, GPUPipeline& main_pipeline,
+                                  VkPipelineLayout instancing_pipeline_layout, GPUPipeline& instancing_pipeline, VkSemaphore timeline_semaphore,
+                                  uint64_t signal_value, const WorldDrawData& draw_data, GPUDescriptorSet& frame_uniform_buffer_set,
+                                  RenderBuffer& instance_transforms_buffer)
 {
     GC_ASSERT(cmd);
-    GC_ASSERT(world_pipeline_layout);
+    GC_ASSERT(main_pipeline_layout);
+    GC_ASSERT(instancing_pipeline_layout);
     GC_ASSERT(timeline_semaphore);
 
-    world_pipeline.useResource(timeline_semaphore, signal_value);
-    vkCmdBindPipeline(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, world_pipeline.getHandle());
+    main_pipeline.useResource(timeline_semaphore, signal_value);
+    vkCmdBindPipeline(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, main_pipeline.getHandle());
 
-    vkCmdPushConstants(cmd, world_pipeline_layout, VK_SHADER_STAGE_VERTEX_BIT, 64, 64, &draw_data.getViewMatrix());
-    vkCmdPushConstants(cmd, world_pipeline_layout, VK_SHADER_STAGE_VERTEX_BIT, 128, 64, &draw_data.getProjectionMatrix());
-    vkCmdPushConstants(cmd, world_pipeline_layout, VK_SHADER_STAGE_VERTEX_BIT, 192, sizeof(glm::vec3), &draw_data.getLightPos());
+    // this descriptor set is used by both the main_pipeline and instancing_pipeline
+    frame_uniform_buffer_set.useResource(timeline_semaphore, signal_value);
+    {
+        const auto ds = frame_uniform_buffer_set.getHandle();
+        vkCmdBindDescriptorSets(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, main_pipeline_layout, 0, 1, &ds, 0, nullptr);
+    }
 
     RenderMaterial* last_bound_material = nullptr;
     RenderMesh* last_bound_mesh = nullptr;
@@ -36,7 +42,7 @@ void recordWorldRenderingCommands(VkCommandBuffer cmd, VkPipelineLayout world_pi
 
         if (entry.mesh->isUploaded() && entry.material->isUploaded()) {
             if (last_bound_material != entry.material) {
-                entry.material->bind(cmd, world_pipeline_layout, timeline_semaphore, signal_value);
+                entry.material->bind(cmd, main_pipeline_layout, timeline_semaphore, signal_value);
                 last_bound_material = entry.material;
             }
 
@@ -45,7 +51,7 @@ void recordWorldRenderingCommands(VkCommandBuffer cmd, VkPipelineLayout world_pi
                 last_bound_mesh = entry.mesh;
             }
 
-            vkCmdPushConstants(cmd, world_pipeline_layout, VK_SHADER_STAGE_VERTEX_BIT, 0, 64, &entry.world_matrix);
+            vkCmdPushConstants(cmd, main_pipeline_layout, VK_SHADER_STAGE_VERTEX_BIT, 0, 64, &entry.world_matrix);
             vkCmdDrawIndexed(cmd, entry.mesh->getNumIndices(), 1, 0, 0, 0);
         }
     }
@@ -55,9 +61,11 @@ void recordWorldRenderingCommands(VkCommandBuffer cmd, VkPipelineLayout world_pi
         instancing_pipeline.useResource(timeline_semaphore, signal_value);
         vkCmdBindPipeline(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, instancing_pipeline.getHandle());
 
+        // frame_uniform_buffer_set will still be bound
+
         {
             VkDeviceSize offset{0};
-            VkBuffer buffer = instance_transforms_buffer;
+            VkBuffer buffer = instance_transforms_buffer.getBuffer();
             vkCmdBindVertexBuffers(cmd, 1, 1, &buffer, &offset);
         }
 
@@ -68,7 +76,7 @@ void recordWorldRenderingCommands(VkCommandBuffer cmd, VkPipelineLayout world_pi
 
             if (entry.mesh->isUploaded() && entry.material->isUploaded()) {
                 if (last_bound_material != entry.material) {
-                    entry.material->bind(cmd, world_pipeline_layout, timeline_semaphore, signal_value);
+                    entry.material->bind(cmd, instancing_pipeline_layout, timeline_semaphore, signal_value);
                     last_bound_material = entry.material;
                 }
 
