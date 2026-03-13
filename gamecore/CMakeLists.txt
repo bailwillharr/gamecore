@@ -38,8 +38,8 @@ set(SRC_FILES
   "src/gc_light_system.cpp"
   "src/gc_gen_mesh.cpp"
   "src/gc_render_buffer.cpp"
+  "src/gc_prefab.cpp"
   "src/gc_net.cpp"
-  "include/gamecore/gc_net.h"
 )
 
 # Public API includes
@@ -94,6 +94,8 @@ set(INCLUDE_FILES
   "include/gamecore/gc_light_system.h"
   "include/gamecore/gc_gen_mesh.h"
   "include/gamecore/gc_render_buffer.h"
+  "include/gamecore/gc_prefab.h"
+  "include/gamecore/gc_net.h"
 )
 
 # gamecore is a static library

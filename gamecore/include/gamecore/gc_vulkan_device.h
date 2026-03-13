@@ -5,7 +5,7 @@
 #include <optional>
 #include <string_view>
 
-#include "gc_vulkan_common.h"
+#include "gamecore/gc_vulkan_common.h"
 
 namespace gc {
 
