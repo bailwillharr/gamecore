@@ -37,7 +37,10 @@ set(SRC_FILES
   "src/gc_resource_manager.cpp"
   "src/gc_light_system.cpp"
   "src/gc_gen_mesh.cpp"
- "src/gc_render_buffer.cpp")
+  "src/gc_render_buffer.cpp"
+  "src/gc_net.cpp"
+  "include/gamecore/gc_net.h"
+)
 
 # Public API includes
 # Care must be taken to ensure these headers do not reference private headers
@@ -90,7 +93,8 @@ set(INCLUDE_FILES
   "include/gamecore/gc_light_component.h"
   "include/gamecore/gc_light_system.h"
   "include/gamecore/gc_gen_mesh.h"
- "include/gamecore/gc_render_buffer.h")
+  "include/gamecore/gc_render_buffer.h"
+)
 
 # gamecore is a static library
 add_library(${PROJECT_NAME} STATIC
