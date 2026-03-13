@@ -17,6 +17,8 @@
 #include <unordered_map>
 #include <format>
 #include <thread>
+#include <ostream>
+#include <istream>
 
 #include "gamecore/gc_crc_table.h"
 #include "gamecore/gc_logger.h"
@@ -67,6 +69,15 @@ public:
 #else
         return std::format("{:#08x}", m_hash);
 #endif
+    }
+
+    void serialize(std::ostream& s) const { s.write(reinterpret_cast<const char*>(&m_hash), sizeof(uint32_t)); }
+
+    static Name deserialize(std::istream& s)
+    {
+        uint32_t hash{};
+        s.read(reinterpret_cast<char*>(&hash), sizeof(uint32_t));
+        return Name(hash);
     }
 };
 
