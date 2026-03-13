@@ -9,6 +9,6 @@ namespace gc {
 class World; // forward-dec
 
 // returns the number of loaded entities
-int loadPrefab(std::span<const uint8_t> data, World& world, Entity prefab_parent = ENTITY_NONE);
+Entity loadPrefab(std::span<const uint8_t> data, World& world, Entity prefab_parent = ENTITY_NONE);
 
 } // namespace gc

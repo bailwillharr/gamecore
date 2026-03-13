@@ -31,7 +31,7 @@ static Entity deserialiseTransform(gct::sv_istream& data_stream, World& world, s
                               deserialised_transform.getScale());
 }
 
-int loadPrefab(std::span<const uint8_t> data, World& world, Entity prefab_parent)
+Entity loadPrefab(std::span<const uint8_t> data, World& world, Entity prefab_parent)
 {
     const std::string_view data_sv(reinterpret_cast<const char*>(data.data()), data.size());
     gct::sv_istream data_stream(data_sv);
@@ -43,7 +43,7 @@ int loadPrefab(std::span<const uint8_t> data, World& world, Entity prefab_parent
         gcpak::PrefabComponentType type{};
         data_stream.read(reinterpret_cast<char*>(&type), sizeof(gcpak::PrefabComponentType));
         if (!data_stream) {
-            
+            abortGame("Failed to read prefab component type");
         }
 
         if (entities.empty() && type != gcpak::PrefabComponentType::TRANSFORM) {
@@ -78,12 +78,11 @@ int loadPrefab(std::span<const uint8_t> data, World& world, Entity prefab_parent
         case gcpak::PrefabComponentType::LIGHT:
             [[fallthrough]];
         default:
-            GC_ERROR("Unsupported component type {} found in prefab", static_cast<std::underlying_type_t<gcpak::PrefabComponentType>>(type));
-            return; // cannot skip unsupported components and continue because we don't know their size!
+            abortGame("Unsupported component type {} found in prefab", static_cast<std::underlying_type_t<gcpak::PrefabComponentType>>(type));
         }
     }
 
-    return static_cast<int>(entities.size());
+    return entities[0];
 }
 
 } // namespace gc
