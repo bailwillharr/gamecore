@@ -26,6 +26,7 @@
 #include <gamecore/gc_window.h>
 #include <gamecore/gc_world.h>
 #include <gamecore/gc_gen_mesh.h>
+#include <gamecore/gc_net.h>
 
 #include "mouse_move.h"
 #include "spin.h"
@@ -351,4 +352,6 @@ void buildAndStartGame(gc::App& app, Options options)
     gc::World& world = app.world();
     world.registerSystem<WorldLoadSystem>();
     app.run();
+
+    app.net().startServer();
 }

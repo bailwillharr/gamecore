@@ -21,6 +21,7 @@ class RenderBackend;   // forward-dec
 class DebugUI;         // forward-dec
 class World;           // forward-dec
 class ResourceManager; // forward-dec
+class Net;             // forward-dec
 
 struct AppInitOptions {
     // None of these strings should have spaces.
@@ -45,6 +46,7 @@ class App {
     std::unique_ptr<DebugUI> m_debug_ui{};
     std::unique_ptr<World> m_world{};
     std::unique_ptr<ResourceManager> m_resource_manager{};
+    std::unique_ptr<Net> m_net{};
 
     std::filesystem::path m_save_directory{};
     std::filesystem::path m_application_directory{};
@@ -70,6 +72,7 @@ public:
     DebugUI& debugUI();
     World& world();
     ResourceManager& resourceManager();
+    Net& net();
 
     // Call before using any engine functionality (apart from logging)
     static void initialise(const AppInitOptions& options);

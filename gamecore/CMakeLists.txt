@@ -46,6 +46,7 @@ set(SRC_FILES
 # Care must be taken to ensure these headers do not reference private headers
 set(INCLUDE_FILES
   "include/gamecore/gc_app.h"
+  "include/gamecore/gc_asio_throw_exception.h"
   "include/gamecore/gc_assert.h"
   "include/gamecore/gc_logger.h"
   "include/gamecore/gc_logger_spdlog.h"

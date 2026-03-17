@@ -24,6 +24,7 @@
 #include "gamecore/gc_world_draw_data.h"
 #include "gamecore/gc_frame_state.h"
 #include "gamecore/gc_resource_manager.h"
+#include "gamecore/gc_net.h"
 
 namespace gc {
 
@@ -95,6 +96,7 @@ App::App(const AppInitOptions& options)
     m_debug_ui = std::make_unique<DebugUI>(m_window->getHandle(), m_render_backend->getInfo(), m_save_directory / "imgui.ini");
     m_world = std::make_unique<World>();
     m_resource_manager = std::make_unique<ResourceManager>(*m_content);
+    m_net = std::make_unique<Net>();
 
     GC_TRACE("Initialised Application");
 }
@@ -177,6 +179,12 @@ ResourceManager& App::resourceManager()
 {
     GC_ASSERT(m_resource_manager);
     return *m_resource_manager;
+}
+
+Net& App::net()
+{
+    GC_ASSERT(m_net);
+    return *m_net;
 }
 
 void App::run()
