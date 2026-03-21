@@ -28,7 +28,7 @@ public:
         }
         // if the backing image is no longer in use by the queue, assuming the backing image was just created, this means the image is uploaded.
         if (m_texture.isFree()) {
-            GC_DEBUG("RenderTexture uploaded: {}", reinterpret_cast<void*>(m_texture.getImage()));
+            GC_TRACE("RenderTexture uploaded: {}", reinterpret_cast<void*>(m_texture.getImage()));
             m_uploaded = true;
             return true;
         }

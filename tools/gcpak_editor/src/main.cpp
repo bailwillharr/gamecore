@@ -45,11 +45,16 @@ static void initEditorWorld(gc::App& app, const std::filesystem::path& open_file
 
     {
         auto vert = content_manager.findAsset(gc::Name("editor.vert"));
+        auto vert_instanced = content_manager.findAsset(gc::Name("editor_instanced.vert"));
         auto frag = content_manager.findAsset(gc::Name("editor.frag"));
         if (vert.data.empty() || vert.type != gcpak::GcpakAssetType::SPIRV_SHADER || frag.data.empty() || frag.type != gcpak::GcpakAssetType::SPIRV_SHADER) {
             abortGame("Could not find editor.vert or editor.frag. Cannot load editor.");
         }
+        if (vert_instanced.data.empty() || vert_instanced.type != gcpak::GcpakAssetType::SPIRV_SHADER) {
+            abortGame("Could not find editor_instanced.vert");
+        }
         render_backend.createMainPipeline(vert.data, frag.data);
+        render_backend.createInstancingPipeline(vert_instanced.data, frag.data);
     }
 
     world.registerComponent<gc::RenderableComponent, gc::ComponentArrayType::DENSE>();

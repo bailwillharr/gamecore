@@ -512,7 +512,8 @@ void RenderBackend::submitFrame(bool window_resized, const WorldDrawData& world_
         data.camera_position =
             glm::vec3(glm::inverse(data.view_matrix) * glm::vec4(0.0, 0.0, 0.0, 1.0)); // TODO, have world_draw_data just contain the camera position
 
-        m_frame_uniform_buffer->writeData(stuff.cmd, m_frame_count, m_main_timeline_semaphore, m_main_timeline_value + 1, std::span(reinterpret_cast<const uint8_t*>(&data), sizeof(data)));
+        m_frame_uniform_buffer->writeData(stuff.cmd, m_frame_count, m_main_timeline_semaphore, m_main_timeline_value + 1,
+                                          std::span(reinterpret_cast<const uint8_t*>(&data), sizeof(data)));
 
         VkBufferMemoryBarrier2 b{};
         b.sType = VK_STRUCTURE_TYPE_BUFFER_MEMORY_BARRIER_2;
@@ -611,6 +612,9 @@ void RenderBackend::submitFrame(bool window_resized, const WorldDrawData& world_
         scissor.offset = {0, 0};
         scissor.extent = swapchain_extent;
         vkCmdSetScissor(stuff.cmd, 0, 1, &scissor);
+
+        GC_ASSERT(m_main_pipeline);
+        GC_ASSERT(m_instancing_pipeline);
 
         recordWorldRenderingCommands(stuff.cmd, m_main_pipeline_layout, *m_main_pipeline, m_instancing_pipeline_layout, *m_instancing_pipeline,
                                      m_main_timeline_semaphore, m_main_timeline_value + 1, world_draw_data, *m_frame_uniform_buffer_set,

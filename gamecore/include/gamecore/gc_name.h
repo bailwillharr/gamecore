@@ -79,6 +79,9 @@ public:
         s.read(reinterpret_cast<char*>(&hash), sizeof(uint32_t));
         return Name(hash);
     }
+
+    // For use with case statements. Never checks for collisions or adds to lookup table
+    static constexpr Name createConstexpr(const char* str) { return Name(crc32_impl(str)); }
 };
 
 inline void loadNameLookupTable(const std::filesystem::path& file_path)

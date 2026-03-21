@@ -98,8 +98,6 @@ Content::Content(const std::filesystem::path& content_dir, std::span<const std::
             break;
         }
 
-        GC_DEBUG("Loading .gcpak file: {}:", file_path.string());
-
         auto opt = openAndValidateGcpak(file_path); // cannot be const as opt.get() has a unique_ptr which is moved from
         if (opt) {
 
@@ -110,6 +108,9 @@ Content::Content(const std::filesystem::path& content_dir, std::span<const std::
 
             // pair in optional might be OTT?
             auto& [file, num_entries] = opt.value();
+
+            GC_DEBUG("Loading .gcpak file: {}: asset count: {}", file_path.filename().string(), num_entries);
+
             const unsigned int file_index = static_cast<unsigned int>(m_package_file_maps.size());
             for (uint32_t i = 0; i < num_entries; ++i) {
                 const auto asset_entry = getAssetEntry(file, i);
@@ -117,7 +118,7 @@ Content::Content(const std::filesystem::path& content_dir, std::span<const std::
                 info.entry = asset_entry;
                 info.file_index = file_index;
                 m_asset_infos.emplace(info.entry.crc32_id, info);
-                GC_DEBUG("    {} ({})", Name(info.entry.crc32_id).getString(), bytesToHumanReadable(info.entry.size));
+                GC_TRACE("    {} ({})", Name(info.entry.crc32_id).getString(), bytesToHumanReadable(info.entry.size));
             }
             m_package_file_maps.emplace_back(std::move(file)); // keep file handle
         }

@@ -191,6 +191,8 @@ void App::run()
 {
     GC_TRACE("Starting game loop...");
 
+    m_net->startServer();
+
     FrameState frame_state{};
 
     std::array<double, 20> delta_times{};
@@ -204,8 +206,8 @@ void App::run()
         frame_state.delta_time = static_cast<double>(frame_begin_stamp - last_frame_begin_stamp) * 1e-9;
         delta_times[frame_state.frame_count % delta_times.size()] = frame_state.delta_time;
         frame_state.average_frame_time = std::accumulate(delta_times.cbegin(), delta_times.cend(), 0.0) / static_cast<double>(delta_times.size());
-        frame_state.window_state = &m_window->processEvents(DebugUI::windowEventInterceptor);
 
+        frame_state.window_state = &m_window->processEvents(DebugUI::windowEventInterceptor);
         {
             if (frame_state.window_state->getKeyDown(SDL_SCANCODE_ESCAPE)) {
                 m_window->pushQuitEvent();
@@ -218,6 +220,15 @@ void App::run()
             if (frame_state.window_state->getKeyPress(SDL_SCANCODE_F10)) {
                 m_debug_ui->active = !m_debug_ui->active;
                 m_window->setMouseCaptured(!m_debug_ui->active);
+            }
+        }
+
+        NetEvent net_ev{};
+        while (m_net->pollEvents(net_ev)) {
+            switch (net_ev.type.getHash()) {
+            case Name::createConstexpr("shutdown").getHash():
+                m_window->pushQuitEvent();
+                break;
             }
         }
 
@@ -236,7 +247,10 @@ void App::run()
         ++frame_state.frame_count;
         FrameMark;
     }
+
     GC_TRACE("Quitting...");
+
+    m_net->stopServer();
 }
 
 } // namespace gc

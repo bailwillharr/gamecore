@@ -26,7 +26,6 @@
 #include <gamecore/gc_window.h>
 #include <gamecore/gc_world.h>
 #include <gamecore/gc_gen_mesh.h>
-#include <gamecore/gc_net.h>
 
 #include "mouse_move.h"
 #include "spin.h"
@@ -264,22 +263,21 @@ public:
                 resource_manager.add<gc::ResourceMaterial>(std::move(material), gc::Name("laminate-flooring-brown"));
             }
             {
-                resource_manager.add<gc::ResourceMesh>(gc::genPlaneMesh(6.0f, 10.0f), gc::Name("floor"));
+                resource_manager.add<gc::ResourceMesh>(gc::genPlaneMesh(10.0f, 10.0f), gc::Name("floor"));
                 resource_manager.add<gc::ResourceMesh>(gc::genPlaneMesh(10.0f, 4.0f), gc::Name("wall1"));
-                resource_manager.add<gc::ResourceMesh>(gc::genPlaneMesh(6.0f, 4.0f), gc::Name("wall3"));
             }
 
             // add a floor
             {
                 const auto floor = world.createEntity(gc::Name("floor"));
-                world.getComponent<gc::TransformComponent>(floor)->setScale({6.0f, 10.0f, 1.0f});
+                world.getComponent<gc::TransformComponent>(floor)->setScale({10.0f, 10.0f, 1.0f});
                 world.addComponent<gc::RenderableComponent>(floor).setMesh(gc::Name("floor")).setMaterial(gc::Name("laminate-flooring-brown"));
             }
 
             // wall1
             {
                 const auto wall1 = world.createEntity(gc::Name("wall1"));
-                world.getComponent<gc::TransformComponent>(wall1)->setPosition({-3.0f, 0.0f, 2.0f});
+                world.getComponent<gc::TransformComponent>(wall1)->setPosition({-5.0f, 0.0f, 2.0f});
                 world.getComponent<gc::TransformComponent>(wall1)->setScale({10.0f, 4.0f, 1.0f});
                 world.getComponent<gc::TransformComponent>(wall1)->setRotation(glm::quat(0.5f, 0.5f, 0.5f, 0.5f));
                 world.addComponent<gc::RenderableComponent>(wall1).setMaterial(gc::Name("bricks-mortar")).setMesh(gc::Name("wall1"));
@@ -288,7 +286,7 @@ public:
             // wall2
             {
                 const auto wall2 = world.createEntity(gc::Name("wall2"));
-                world.getComponent<gc::TransformComponent>(wall2)->setPosition({3.0f, 0.0f, 2.0f});
+                world.getComponent<gc::TransformComponent>(wall2)->setPosition({5.0f, 0.0f, 2.0f});
                 world.getComponent<gc::TransformComponent>(wall2)->setScale({10.0f, 4.0f, 1.0f});
                 world.getComponent<gc::TransformComponent>(wall2)->setRotation(glm::quat(0.5f, 0.5f, -0.5f, -0.5f));
                 world.addComponent<gc::RenderableComponent>(wall2).setMaterial(gc::Name("bricks-mortar")).setMesh(gc::Name("wall1"));
@@ -318,7 +316,7 @@ public:
             {
                 using namespace gc::literals;
                 const auto roof = world.createEntity("roof"_name);
-                world.getComponent<gc::TransformComponent>(roof)->setPosition(0, 0, 4).setRotation(0, -1, 0, 0).setScale(6, 10, 1);
+                world.getComponent<gc::TransformComponent>(roof)->setPosition(0, 0, 4).setRotation(0, -1, 0, 0).setScale(10, 10, 1);
                 world.addComponent<gc::RenderableComponent>(roof).setMesh("floor"_name);
             }
 
@@ -344,14 +342,14 @@ void buildAndStartGame(gc::App& app, Options options)
     app.window().setTitle("Hello world!");
     app.window().setIsResizable(true);
     app.window().setMouseCaptured(true);
-    // app.window().setSize(0, 0, true);
-    app.window().setWindowVisibility(true);
 
+    // app.window().setSize(0, 0, true);
     // app.debugUI().active = true;
 
     gc::World& world = app.world();
     world.registerSystem<WorldLoadSystem>();
-    app.run();
 
-    app.net().startServer();
+    app.window().setWindowVisibility(true);
+
+    app.run();
 }
