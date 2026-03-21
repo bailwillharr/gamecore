@@ -96,11 +96,11 @@ cpmaddpackage(
   SYSTEM YES
 )
 
-# asio
+# asio (What a mess...)
 cpmaddpackage(
   NAME asio
-  VERSION 1.16.1
-  URL https://github.com/chriskohlhoff/asio/archive/asio-1-32-0.zip
+  VERSION 1.38.0
+  URL https://github.com/chriskohlhoff/asio/archive/asio-1-38-0.zip
 )
 add_library(asio INTERFACE)
 add_library(asio::asio ALIAS asio)
@@ -113,6 +113,28 @@ target_compile_definitions(asio INTERFACE
   ASIO_NO_EXCEPTIONS
   ASIO_SEPARATE_COMPILATION
 )
+if(WIN32)
+    macro(get_win32_winnt version)
+        if(CMAKE_SYSTEM_VERSION)
+            set(ver ${CMAKE_SYSTEM_VERSION})
+            string(REGEX MATCH "^([0-9]+).([0-9])" ver ${ver})
+            string(REGEX MATCH "^([0-9]+)" verMajor ${ver})
+            # Check for Windows 10, b/c we'll need to convert to hex 'A'.
+            if("${verMajor}" MATCHES "10")
+                set(verMajor "A")
+                string(REGEX REPLACE "^([0-9]+)" ${verMajor} ver ${ver})
+            endif()
+            # Remove all remaining '.' characters.
+            string(REPLACE "." "" ver ${ver})
+            # Prepend each digit with a zero.
+            string(REGEX REPLACE "([0-9A-Z])" "0\\1" ver ${ver})
+            set(${version} "0x${ver}")
+        endif()
+    endmacro()
+
+    get_win32_winnt(ver)
+    target_compile_definitions(asio INTERFACE _WIN32_WINNT=${ver})
+endif()
 
 # json
 cpmaddpackage(
