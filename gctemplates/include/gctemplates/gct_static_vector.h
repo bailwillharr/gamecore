@@ -53,6 +53,9 @@ public:
 
     static_vector& operator=(const static_vector& other)
     {
+        if (this == &other) {
+            return *this;
+        }
         clear();
         m_size = other.size();
         const T* const other_typed_ptr = reinterpret_cast<const T*>(other.m_buffer);
@@ -170,7 +173,7 @@ public:
         std::destroy_at(&reinterpret_cast<T*>(m_buffer)[m_size]);
     }
 
-    void resize(uint32_t count)
+    void resize(uint32_t count, const T& value = T{})
     {
         assert(count <= Capacity);
         if (count < m_size) {
@@ -180,7 +183,7 @@ public:
         }
         else if (count > m_size) {
             while (m_size < count) {
-                push_back(T{});
+                push_back(value);
             }
         }
     }
