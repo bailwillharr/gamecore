@@ -46,11 +46,12 @@ public:
     void release(Name name)
     {
         auto it = m_textures.find(name);
-        GC_ASSERT(it != m_textures.end());
-        it->second.ref_count -= 1;
-        if (it->second.ref_count <= 0) {
-            GC_ASSERT(it->second.ref_count == 0);
-            m_textures.erase(it);
+        if (it != m_textures.end()) {
+            it->second.ref_count -= 1;
+            if (it->second.ref_count <= 0) {
+                GC_ASSERT(it->second.ref_count == 0);
+                m_textures.erase(it);
+            }
         }
     }
 

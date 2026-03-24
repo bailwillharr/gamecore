@@ -1,0 +1,14 @@
+# How to do networking
+
+The Net backend either runs as a client or a server. Though at the Net subsystem level, things like world authority don't mean anything.
+Whether it's running as a client or a server, it just waits for outward events to be passed to it, and then sends them to the relevant endpoints.
+Likewise, whether running as a client or a server, it forwards all incoming events to the outer engine loop/world.
+
+# How this architecture works with common use cases
+
+- Singleplayer game -- Net subsystem is completely unused. There is no active client or server. Input and rendering are enabled.
+- multiplayer host (open to LAN) -- Net subsystem is in server mode. Input and rendering are enabled. The World should be somehow aware that it is the simulation authority.
+- Multiplayer client -- Net subsystem is in client mode. Input and rendering are enabled. The World knows it is not the authority, and should use relevant events from the
+  Net backend (from the server) to keep the local World up to date.
+- Dedicated server -- Net subsystem is in server mode. Input and rendering are DISABLED. The World knows it is the simulation authority. Gameplay code is aware there is no
+  actual local player.

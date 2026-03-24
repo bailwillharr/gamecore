@@ -250,7 +250,7 @@ void App::run()
 
     GC_TRACE("Quitting...");
 
-    m_net->stop();
+    m_net->stopServer();
 }
 
 } // namespace gc

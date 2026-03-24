@@ -41,6 +41,7 @@ set(SRC_FILES
   "src/gc_render_buffer.cpp"
   "src/gc_prefab.cpp"
   "src/gc_net.cpp"
+  "src/gc_net_server.cpp"
 )
 
 # Public API includes
@@ -98,6 +99,7 @@ set(INCLUDE_FILES
   "include/gamecore/gc_render_buffer.h"
   "include/gamecore/gc_prefab.h"
   "include/gamecore/gc_net.h"
+  "include/gamecore/gc_net_server.h"
 )
 
 # gamecore is a static library
