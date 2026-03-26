@@ -2,7 +2,6 @@
 
 #include <asio/error.hpp>
 #include <asio/io_context.hpp>
-#include <thread>
 
 #include <asio/awaitable.hpp>
 #include <asio/ip/address_v4.hpp>
@@ -42,12 +41,46 @@ bool NetEventQueue::pop(NetEvent& ev)
     }
 }
 
-Net::Net() {}
+bool Net::startServer(asio::ip::udp::endpoint endpoint)
+{
+    if (m_local_mode != NetMode::DISCONNECTED) {
+        GC_ERROR("Cannot start server if already running as a client or server");
+        return false;
+    }
 
-void Net::startServer() { m_server.start(); }
+    if (m_server.start(std::move(endpoint))) {
+        return false;
+    }
 
-void Net::stopServer() { m_server.stop(); }
+    m_local_mode = NetMode::SERVER;
+    return true;
+}
 
-bool Net::pollEvents(NetEvent& ev) { return m_event_queue.pop(ev); }
+void Net::stopServer()
+{
+    m_server.stop();
+    if (m_local_mode == NetMode::SERVER) {
+        m_local_mode = NetMode::DISCONNECTED;
+    }
+}
+
+bool Net::connectToServer(const asio::ip::udp::endpoint& endpoint)
+{
+    if (m_local_mode != NetMode::DISCONNECTED) {
+        GC_ERROR("Cannot connect to a server if already running as a client or server");
+        return false;
+    }
+
+    return false;
+}
+
+void Net::disconnectFromServer()
+{
+    if (m_local_mode == NetMode::CLIENT) {
+        m_local_mode = NetMode::DISCONNECTED;
+    }
+}
+
+bool Net::pollEvents(NetEvent& ev) { return false; }
 
 } // namespace gc

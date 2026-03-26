@@ -10,10 +10,6 @@
 
 namespace gc {
 
-enum class NetServerClientSessionStatus {
-
-};
-
 struct NetServerClientSession {};
 
 class NetServer {
@@ -23,7 +19,9 @@ class NetServer {
     std::jthread m_server_thread{};
 
 public:
-    void start();
+    ~NetServer();
+
+    bool start(asio::ip::udp::endpoint endpoint);
     void stop();
 
 private:

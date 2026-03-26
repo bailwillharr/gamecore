@@ -191,8 +191,6 @@ void App::run()
 {
     GC_TRACE("Starting game loop...");
 
-    m_net->startServer();
-
     FrameState frame_state{};
 
     std::array<double, 20> delta_times{};
@@ -249,8 +247,6 @@ void App::run()
     }
 
     GC_TRACE("Quitting...");
-
-    m_net->stopServer();
 }
 
 } // namespace gc

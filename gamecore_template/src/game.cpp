@@ -26,6 +26,7 @@
 #include <gamecore/gc_window.h>
 #include <gamecore/gc_world.h>
 #include <gamecore/gc_gen_mesh.h>
+#include <gamecore/gc_net.h>
 
 #include "mouse_move.h"
 #include "spin.h"
@@ -243,8 +244,8 @@ public:
             // shrek
             const auto shrek = world.createEntity(gc::Name("shrek"), gc::ENTITY_NONE, glm::vec3{0.0f, +10.0f, 0.0f}, {}, {0.5f, 0.5f, 0.5f});
             world.addComponent<gc::RenderableComponent>(shrek).setMaterial(gc::Name()).setMesh(gc::Name("shrek.obj"));
-            world.addComponent<FollowComponent>(shrek).setTarget(camera).setMinDistance(2.0f).setSpeed(1.0f);
-            world.getComponent<FollowComponent>(shrek)->setTextureTarget(shrek);
+            // world.addComponent<FollowComponent>(shrek).setTarget(camera).setMinDistance(2.0f).setSpeed(1.0f);
+            // world.getComponent<FollowComponent>(shrek)->setTextureTarget(shrek);
             const auto shrek_light = world.createEntity(gc::Name("shrek_light"), shrek, {0.0f, -1.26688, 4.61091});
             world.addComponent<gc::LightComponent>(shrek_light);
 
@@ -344,12 +345,17 @@ void buildAndStartGame(gc::App& app, Options options)
     app.window().setMouseCaptured(true);
 
     // app.window().setSize(0, 0, true);
-    // app.debugUI().active = true;
+    app.debugUI().active = true;
+    app.window().setMouseCaptured(false);
 
     gc::World& world = app.world();
     world.registerSystem<WorldLoadSystem>();
 
     app.window().setWindowVisibility(true);
 
+    app.net().startServer(asio::ip::udp::endpoint(asio::ip::address{}, 6969));
+
     app.run();
+
+    app.net().stopServer();
 }

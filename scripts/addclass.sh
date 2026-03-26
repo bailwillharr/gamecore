@@ -63,9 +63,7 @@ sed "/^set(SRC_FILES/,/^[)]/ {
 
 echo "creating ${include_filepath}"
 
-sed "/^set(SRC_FILES/,/^[)]/ {
+sed "/^set(INCLUDE_FILES/,/^[)]/ {
   /^[)]/ i\\
   \"include/gamecore/${include_filename}\"
 }" "$cmake_file" >"$cmake_file.tmp" && mv "$cmake_file.tmp" "$cmake_file"
-
-cmake --preset=x64-debug-linux .

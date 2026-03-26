@@ -42,6 +42,8 @@ set(SRC_FILES
   "src/gc_prefab.cpp"
   "src/gc_net.cpp"
   "src/gc_net_server.cpp"
+  "src/gc_net_client.cpp"
+  "src/gc_net_common.cpp"
 )
 
 # Public API includes
@@ -100,6 +102,8 @@ set(INCLUDE_FILES
   "include/gamecore/gc_prefab.h"
   "include/gamecore/gc_net.h"
   "include/gamecore/gc_net_server.h"
+  "include/gamecore/gc_net_client.h"
+  "include/gamecore/gc_net_common.h"
 )
 
 # gamecore is a static library
