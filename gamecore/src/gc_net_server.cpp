@@ -1,6 +1,7 @@
 #include "gamecore/gc_net_server.h"
 
 #include <chrono>
+#include <random>
 
 #include <asio/awaitable.hpp>
 #include <asio/ip/address_v4.hpp>
@@ -130,7 +131,8 @@ asio::awaitable<void> NetServer::serverLoop(asio::ip::udp::endpoint endpoint)
 
     GC_INFO("Starting server on {}:{}", endpoint.address().to_string(), endpoint.port());
 
-    const uint64_t secret = rand(); // TODO VERY INSECURE AND BAD
+    std::mt19937_64 rand64(std::random_device{}());
+    const uint64_t secret = rand64(); // TODO VERY INSECURE AND BAD
 
     for (;;) {
         size_t bytes_read{};
@@ -156,13 +158,17 @@ asio::awaitable<void> NetServer::serverLoop(asio::ip::udp::endpoint endpoint)
             continue;
         }
 
+        GC_DEBUG("Incoming packet type: {}", static_cast<uint32_t>(header.type));
+
         std::array<uint8_t, NET_MAX_PACKET_SIZE> send_buf;
         NetByteWriter writer(send_buf);
         switch (header.type) {
         case NetPacketType::CONNECT_REQUEST: {
             if (reader.remaining() < NetPacketConnectRequest::getSerialisedSize()) {
+                GC_DEBUG("incoming connect request packet has invalid size");
                 continue;
             }
+            GC_DEBUG("Creating challenge packet");
             NetPacketHeader::createValid(NetPacketType::CONNECT_CHALLENGE).serialise(writer);
             createChallengePacket(NetPacketConnectRequest::deserialise(reader), secret, client_endpoint, time_bucket).serialise(writer);
         } break;
@@ -190,6 +196,7 @@ asio::awaitable<void> NetServer::serverLoop(asio::ip::udp::endpoint endpoint)
                 GC_ERROR("Failed to send all data from socket. {}/{} bytes", bytes_written, writer.pos());
                 continue;
             }
+            GC_DEBUG("Sent packet of size: {} to {}:{}", writer.pos(), client_endpoint.address().to_string(), client_endpoint.port());
         }
     }
 }
