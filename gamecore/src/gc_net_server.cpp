@@ -144,6 +144,8 @@ asio::awaitable<void> NetServer::serverLoop(asio::ip::udp::endpoint endpoint)
             continue;
         }
 
+        GC_DEBUG("Received packet from: {} port {}", client_endpoint.address().to_string(), client_endpoint.port());
+
         const uint32_t time_bucket = getTimeBucket();
 
         NetByteReader reader(std::span(recv_buf.data(), bytes_read));

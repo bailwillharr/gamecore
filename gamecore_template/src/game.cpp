@@ -353,7 +353,7 @@ void buildAndStartGame(gc::App& app, Options options)
 
     app.window().setWindowVisibility(true);
 
-    app.net().startServer(asio::ip::udp::endpoint(asio::ip::address{}, 6969));
+    app.net().startServer(asio::ip::udp::endpoint(asio::ip::address_v6{}, 6969));
 
     app.run();
 

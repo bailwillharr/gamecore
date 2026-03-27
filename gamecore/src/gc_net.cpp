@@ -71,6 +71,8 @@ bool Net::connectToServer(const asio::ip::udp::endpoint& endpoint)
         return false;
     }
 
+    (void)endpoint;
+
     return false;
 }
 
@@ -81,6 +83,10 @@ void Net::disconnectFromServer()
     }
 }
 
-bool Net::pollEvents(NetEvent& ev) { return false; }
+bool Net::pollEvents(NetEvent& ev)
+{
+    (void)ev;
+    return false;
+}
 
 } // namespace gc
