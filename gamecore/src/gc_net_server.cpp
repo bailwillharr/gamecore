@@ -33,7 +33,7 @@ static uint32_t getTimeBucket()
     return static_cast<uint32_t>(bucket); // truncates uint64_t to uint32_t
 }
 
-static NetServerToken createToken(uint64_t secret, const asio::ip::udp::endpoint& client_endpoint, uint64_t client_nonce, uint32_t time_bucket)
+static NetSessionToken createToken(uint64_t secret, const asio::ip::udp::endpoint& client_endpoint, uint64_t client_nonce, uint32_t time_bucket)
 {
     // TODO
     // THIS IS NOT SECURE AT ALL!
@@ -53,27 +53,13 @@ static NetServerToken createToken(uint64_t secret, const asio::ip::udp::endpoint
 
     uint32_t hash = crc32_impl(data.str().c_str());
 
-    NetServerToken token{};
+    NetSessionToken token{};
 
     for (int i = 0; i < token.size(); ++i) {
         token[i] = (hash >> ((i % 4) * 8)) & 0xFF;
     }
 
     return token;
-}
-
-static bool verifyPacketHeader(const NetPacketHeader& header)
-{
-    if (header.magic != NET_PACKET_MAGIC) {
-        return false;
-    }
-    if (header.version != NET_PACKET_VERSION) {
-        return false;
-    }
-    if (header.type >= NetPacketType::INVALID) {
-        return false;
-    }
-    return true;
 }
 
 static NetPacketConnectChallenge createChallengePacket(const NetPacketConnectRequest& request, uint64_t secret, const asio::ip::udp::endpoint& client_endpoint,
@@ -86,16 +72,12 @@ static NetPacketConnectChallenge createChallengePacket(const NetPacketConnectReq
     return challenge;
 }
 
-static bool checkChallengeResponse(const NetPacketConnectChallenge& response, uint64_t secret, const asio::ip::udp::endpoint& client_endpoint)
-{
-    const auto real_token = createToken(secret, client_endpoint, response.client_nonce, response.time_bucket);
-    return response.token == real_token;
-}
-
 NetServer::~NetServer() { stop(); }
 
 bool NetServer::start(asio::ip::udp::endpoint endpoint)
 {
+    stop(); // just in case
+    m_context.restart();
     m_server_thread = std::jthread(
         [](NetServer& self, asio::ip::udp::endpoint endpoint) {
             asio::co_spawn(self.m_context, self.serverLoop(endpoint), asio::detached);
@@ -106,7 +88,13 @@ bool NetServer::start(asio::ip::udp::endpoint endpoint)
     return true;
 }
 
-void NetServer::stop() { m_context.stop(); }
+void NetServer::stop()
+{
+    m_context.stop();
+    m_server_thread = {};
+}
+
+bool NetServer::isRunning() const { return !m_context.stopped(); }
 
 asio::awaitable<void> NetServer::serverLoop(asio::ip::udp::endpoint endpoint)
 {
@@ -133,6 +121,12 @@ asio::awaitable<void> NetServer::serverLoop(asio::ip::udp::endpoint endpoint)
 
     std::mt19937_64 rand64(std::random_device{}());
     const uint64_t secret = rand64(); // TODO VERY INSECURE AND BAD
+
+    struct Session {
+        NetSessionToken token;
+    };
+
+    std::unordered_map<asio::ip::udp::endpoint, Session> sessions{};
 
     for (;;) {
         size_t bytes_read{};
@@ -178,9 +172,29 @@ asio::awaitable<void> NetServer::serverLoop(asio::ip::udp::endpoint endpoint)
             if (reader.remaining() < NetPacketConnectChallenge::getSerialisedSize()) {
                 continue;
             }
-            if (checkChallengeResponse(NetPacketConnectChallenge::deserialise(reader), secret, client_endpoint)) {
-                GC_INFO("Successfully verified connection");
+            const auto response = NetPacketConnectChallenge::deserialise(reader);
+            const auto real_token = createToken(secret, client_endpoint, response.client_nonce, response.time_bucket);
+            if (response.token == real_token) {
+                Session session{real_token};
+                sessions.emplace(client_endpoint, session);
             }
+        } break;
+        case NetPacketType::PING: {
+            if (reader.remaining() < NetPacketPing::getSerialisedSize()) {
+                continue;
+            }
+            const auto ping = NetPacketPing::deserialise(reader);
+            const auto it = sessions.find(client_endpoint);
+            if (it == sessions.end()) {
+                continue;
+            }
+            else if (it->second.token != ping.token) {
+                continue;
+            }
+
+            NetPacketHeader::createValid(NetPacketType::PONG).serialise(writer);
+            const NetPacketPong pong{ping.token, ping.seq_num};
+            pong.serialise(writer);
         } break;
         default:
             continue;

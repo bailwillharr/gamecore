@@ -44,6 +44,7 @@ set(SRC_FILES
   "src/gc_net_server.cpp"
   "src/gc_net_client.cpp"
   "src/gc_net_common.cpp"
+  "src/gc_net_ui.cpp"
 )
 
 # Public API includes
@@ -104,6 +105,7 @@ set(INCLUDE_FILES
   "include/gamecore/gc_net_server.h"
   "include/gamecore/gc_net_client.h"
   "include/gamecore/gc_net_common.h"
+  "include/gamecore/gc_net_ui.h"
 )
 
 # gamecore is a static library

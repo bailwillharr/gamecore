@@ -10,12 +10,9 @@
 
 namespace gc {
 
-struct NetServerClientSession {};
-
 class NetServer {
     asio::io_context m_context;
     std::mutex m_sessions_mutex{};
-    std::unordered_map<asio::ip::udp::endpoint, NetServerClientSession> m_sessions{};
     std::jthread m_server_thread{};
 
 public:
@@ -23,6 +20,8 @@ public:
 
     bool start(asio::ip::udp::endpoint endpoint);
     void stop();
+
+    bool isRunning() const;
 
 private:
     asio::awaitable<void> serverLoop(asio::ip::udp::endpoint endpoint);

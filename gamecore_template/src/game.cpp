@@ -239,7 +239,7 @@ public:
             // camera
             auto camera = world.createEntity(gc::Name("light"), gc::ENTITY_NONE, {0.0f, 0.0f, 67.5f * 25.4e-3f});
             world.addComponent<gc::CameraComponent>(camera).setFOV(glm::radians(45.0f)).setNearPlane(0.1f).setActive(true);
-            world.addComponent<MouseMoveComponent>(camera).setMoveSpeed(10.0f).setAcceleration(40.0f).setDeceleration(100.0f).setSensitivity(1e-3f);
+            world.addComponent<MouseMoveComponent>(camera).setMoveSpeed(10.0f).setAcceleration(100.0f).setDeceleration(100.0f).setSensitivity(1e-3f);
 
             // shrek
             const auto shrek = world.createEntity(gc::Name("shrek"), gc::ENTITY_NONE, glm::vec3{0.0f, +10.0f, 0.0f}, {}, {0.5f, 0.5f, 0.5f});
@@ -353,9 +353,5 @@ void buildAndStartGame(gc::App& app, Options options)
 
     app.window().setWindowVisibility(true);
 
-    app.net().startServer(asio::ip::udp::endpoint(asio::ip::address_v6{}, 6969));
-
     app.run();
-
-    app.net().stopServer();
 }

@@ -25,6 +25,7 @@
 #include "gamecore/gc_frame_state.h"
 #include "gamecore/gc_resource_manager.h"
 #include "gamecore/gc_net.h"
+#include "gamecore/gc_net_ui.h"
 
 namespace gc {
 
@@ -235,6 +236,8 @@ void App::run()
         m_world->update(frame_state);
 
         m_debug_ui->update(frame_state);
+
+        renderNetUI(*m_net);
 
         m_debug_ui->render();
 

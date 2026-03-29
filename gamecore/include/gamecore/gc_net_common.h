@@ -1,11 +1,15 @@
 #pragma once
 
+#include <queue>
 #include <array>
 #include <cstddef>
 #include <cstdint>
 #include <span>
 #include <bit>
 #include <type_traits>
+#include <mutex>
+
+#include "gamecore/gc_name.h"
 
 namespace gc {
 
@@ -26,6 +30,7 @@ public:
     void writeBytes(std::span<const uint8_t> bytes);
 
     void skip(size_t n);
+    void reset();
 
     size_t pos() const;
     size_t remaining() const;
@@ -45,6 +50,7 @@ public:
     void readBytes(std::span<uint8_t> out);
 
     void skip(size_t n);
+    void reset();
 
     size_t pos() const;
     size_t remaining() const;
@@ -53,12 +59,12 @@ public:
 constexpr size_t NET_MAX_PACKET_SIZE = 1200;
 
 using NetPacketMagic = std::array<uint8_t, 5>;
-using NetServerToken = std::array<uint8_t, 32>;
+using NetSessionToken = std::array<uint8_t, 32>;
 
 constexpr NetPacketMagic NET_PACKET_MAGIC{'G', 'C', 'N', 'E', 'T'};
 constexpr uint16_t NET_PACKET_VERSION = 1;
 
-enum class NetPacketType : uint8_t { CONNECT_REQUEST = 0, CONNECT_CHALLENGE = 1, CONNECT_CHALLENGE_RESPONSE = 2, INVALID };
+enum class NetPacketType : uint8_t { CONNECT_REQUEST = 0, CONNECT_CHALLENGE = 1, CONNECT_CHALLENGE_RESPONSE = 2, PING = 3, PONG = 4, INVALID };
 
 struct NetPacketHeader {
     NetPacketMagic magic;
@@ -120,7 +126,7 @@ struct NetPacketConnectRequest {
 
 // server -> client AND client -> server
 struct NetPacketConnectChallenge {
-    NetServerToken token;
+    NetSessionToken token;
     uint64_t client_nonce; // unique per connection request
     uint32_t time_bucket;
 
@@ -145,5 +151,66 @@ struct NetPacketConnectChallenge {
 
 // to prevent packet amplification
 static_assert(NetPacketConnectRequest::getSerialisedSize() > NetPacketConnectChallenge::getSerialisedSize());
+
+// client -> server
+struct NetPacketPing {
+    NetSessionToken token;
+    uint32_t seq_num;
+
+    void serialise(NetByteWriter& writer) const
+    {
+        writer.writeBytes(token);
+        writer.writeU32(seq_num);
+    }
+
+    static NetPacketPing deserialise(NetByteReader& reader)
+    {
+        NetPacketPing obj{};
+        reader.readBytes(obj.token);
+        obj.seq_num = reader.readU32();
+        return obj;
+    }
+
+    static consteval size_t getSerialisedSize() { return sizeof(token) + sizeof(seq_num); }
+};
+
+// server -> client
+struct NetPacketPong {
+    NetSessionToken token;
+    uint32_t seq_num;
+
+    void serialise(NetByteWriter& writer) const
+    {
+        writer.writeBytes(token);
+        writer.writeU32(seq_num);
+    }
+
+    static NetPacketPong deserialise(NetByteReader& reader)
+    {
+        NetPacketPong obj{};
+        reader.readBytes(obj.token);
+        obj.seq_num = reader.readU32();
+        return obj;
+    }
+
+    static consteval size_t getSerialisedSize() { return sizeof(token) + sizeof(seq_num); }
+};
+
+struct NetEvent {
+    Name type;
+};
+
+class NetEventQueue {
+    std::mutex m_mutex{};
+    std::queue<NetEvent> m_queue{};
+
+public:
+    void push(NetEvent event);
+
+    // returns true if an event was popped
+    bool pop(NetEvent& ev);
+};
+
+bool verifyPacketHeader(const NetPacketHeader& header);
 
 } // namespace gc

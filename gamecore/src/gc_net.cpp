@@ -16,6 +16,7 @@
 #include <asio/write.hpp>
 #include <asio/as_tuple.hpp>
 #include <asio/streambuf.hpp>
+#include <variant>
 
 #include "gamecore/gc_asio_throw_exception.h"
 #include "gamecore/gc_logger.h"
@@ -48,7 +49,9 @@ bool Net::startServer(asio::ip::udp::endpoint endpoint)
         return false;
     }
 
-    if (m_server.start(std::move(endpoint))) {
+    m_server_client.emplace<NetServer>();
+
+    if (!getServer().start(std::move(endpoint))) {
         return false;
     }
 
@@ -58,7 +61,7 @@ bool Net::startServer(asio::ip::udp::endpoint endpoint)
 
 void Net::stopServer()
 {
-    m_server.stop();
+    getServer().stop();
     if (m_local_mode == NetMode::SERVER) {
         m_local_mode = NetMode::DISCONNECTED;
     }
@@ -71,9 +74,14 @@ bool Net::connectToServer(const asio::ip::udp::endpoint& endpoint)
         return false;
     }
 
-    (void)endpoint;
+    m_server_client.emplace<NetClient>();
 
-    return false;
+    if (!getClient().connect(endpoint)) {
+        return false;
+    }
+
+    m_local_mode = NetMode::CLIENT;
+    return true;
 }
 
 void Net::disconnectFromServer()
@@ -81,12 +89,56 @@ void Net::disconnectFromServer()
     if (m_local_mode == NetMode::CLIENT) {
         m_local_mode = NetMode::DISCONNECTED;
     }
+
+    getClient().disconnect();
 }
 
 bool Net::pollEvents(NetEvent& ev)
 {
-    (void)ev;
-    return false;
+    switch (m_local_mode) {
+    case NetMode::CLIENT:
+        if (getClient().getState() == NetClientState::DISCONNECTED) {
+            m_local_mode = NetMode::DISCONNECTED;
+        }
+        return getClient().poll(ev);
+    case NetMode::SERVER:
+        if (getServer().isRunning() == false) {
+            m_local_mode = NetMode::DISCONNECTED;
+        }
+        return false;
+    default:
+        return false;
+    }
+}
+
+NetMode Net::getMode() const { return m_local_mode; }
+
+NetClientState Net::getClientState() const { return getClient().getState(); }
+
+bool Net::isServerRunning() const { return getServer().isRunning(); }
+
+NetServer& Net::getServer()
+{
+    GC_ASSERT(std::holds_alternative<NetServer>(m_server_client));
+    return std::get<NetServer>(m_server_client);
+}
+
+const NetServer& Net::getServer() const
+{
+    GC_ASSERT(std::holds_alternative<NetServer>(m_server_client));
+    return std::get<NetServer>(m_server_client);
+}
+
+NetClient& Net::getClient()
+{
+    GC_ASSERT(std::holds_alternative<NetClient>(m_server_client));
+    return std::get<NetClient>(m_server_client);
+}
+
+const NetClient& Net::getClient() const
+{
+    GC_ASSERT(std::holds_alternative<NetClient>(m_server_client));
+    return std::get<NetClient>(m_server_client);
 }
 
 } // namespace gc

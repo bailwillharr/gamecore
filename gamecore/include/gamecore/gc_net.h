@@ -1,6 +1,6 @@
 #pragma once
 
-#include <queue>
+#include <variant>
 
 #include <asio/ip/udp.hpp>
 #include <asio/io_context.hpp>
@@ -8,28 +8,14 @@
 
 #include "gamecore/gc_name.h"
 #include "gamecore/gc_net_server.h"
+#include "gamecore/gc_net_client.h"
 
 namespace gc {
-
-struct NetEvent {
-    Name type;
-};
-
-class NetEventQueue {
-    std::mutex m_mutex{};
-    std::queue<NetEvent> m_queue{};
-
-public:
-    void push(NetEvent event);
-
-    // returns true if an event was popped
-    bool pop(NetEvent& ev);
-};
 
 enum class NetMode { DISCONNECTED, SERVER, CLIENT };
 
 class Net {
-    NetServer m_server;
+    std::variant<NetServer, NetClient> m_server_client;
 
     NetMode m_local_mode{NetMode::DISCONNECTED};
 
@@ -46,6 +32,17 @@ public:
 
     // returns true if an event is available
     bool pollEvents(NetEvent& ev);
+
+    NetMode getMode() const;
+
+    NetClientState getClientState() const;
+    bool isServerRunning() const;
+
+private:
+    NetServer& getServer();
+    const NetServer& getServer() const;
+    NetClient& getClient();
+    const NetClient& getClient() const;
 };
 
 } // namespace gc

@@ -51,6 +51,8 @@ void NetByteWriter::skip(size_t n)
     m_pos += n;
 }
 
+void NetByteWriter::reset() { m_pos = 0; }
+
 size_t NetByteWriter::pos() const { return m_pos; }
 
 size_t NetByteWriter::remaining() const { return m_buffer.size() - m_pos; }
@@ -106,8 +108,24 @@ void NetByteReader::skip(size_t n)
     m_pos += n;
 }
 
+void NetByteReader::reset() { m_pos = 0; }
+
 size_t NetByteReader::pos() const { return m_pos; }
 
 size_t NetByteReader::remaining() const { return m_buffer.size() - m_pos; }
+
+bool verifyPacketHeader(const NetPacketHeader& header)
+{
+    if (header.magic != NET_PACKET_MAGIC) {
+        return false;
+    }
+    if (header.version != NET_PACKET_VERSION) {
+        return false;
+    }
+    if (header.type >= NetPacketType::INVALID) {
+        return false;
+    }
+    return true;
+}
 
 } // namespace gc
