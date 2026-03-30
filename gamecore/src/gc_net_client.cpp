@@ -5,6 +5,7 @@
 #include <asio/as_tuple.hpp>
 #include <asio/steady_timer.hpp>
 #include <asio/experimental/awaitable_operators.hpp>
+#include <chrono>
 
 #include "gamecore/gc_net_common.h"
 
@@ -156,47 +157,51 @@ asio::awaitable<void> NetClient::clientLoop(asio::ip::udp::endpoint server_endpo
             co_return;
         }
 
+        std::chrono::steady_clock::duration rtt{};
         for (int i = 0; i < MAX_RETRIES; ++i) {
-            {
-                ++seq_num;
+            ++seq_num;
 
-                auto header = NetPacketHeader::createValid(NetPacketType::PING);
-                auto ping = NetPacketPing{};
-                ping.token = session_token;
-                ping.seq_num = seq_num;
-                std::array<uint8_t, NET_MAX_PACKET_SIZE> buf{};
-                NetByteWriter writer(buf);
-                header.serialise(writer);
-                ping.serialise(writer);
+            auto header = NetPacketHeader::createValid(NetPacketType::PING);
+            auto ping = NetPacketPing{};
+            ping.token = session_token;
+            ping.seq_num = seq_num;
+            std::array<uint8_t, NET_MAX_PACKET_SIZE> buf{};
+            NetByteWriter writer(buf);
+            header.serialise(writer);
+            ping.serialise(writer);
 
-                std::tie(ec, std::ignore) = co_await socket.async_send(asio::buffer(buf.data(), writer.pos()), TOKEN);
+            const auto ping_send_time = std::chrono::steady_clock::now();
+
+            std::tie(ec, std::ignore) = co_await socket.async_send(asio::buffer(buf.data(), writer.pos()), TOKEN);
+            if (ec) {
+                GC_ERROR("Failed to send on socket: {}", ec.message());
+                co_return;
+            }
+
+            asio::steady_timer timer(executor, TIMEOUT);
+            auto results = co_await (socket.async_receive(asio::buffer(receive_buf), TOKEN) || timer.async_wait(TOKEN));
+
+            const auto pong_recv_time = std::chrono::steady_clock::now();
+            rtt = pong_recv_time - ping_send_time;
+
+            bytes_received = 0;
+            if (results.index() == 1) {
+                std::tie(ec) = std::get<1>(results);
                 if (ec) {
-                    GC_ERROR("Failed to send on socket: {}", ec.message());
+                    GC_ERROR("Timeout error: {}", ec.message());
                     co_return;
                 }
+                GC_WARN("Timeout pinging {}:{}", server_endpoint.address().to_string(), server_endpoint.port());
+                continue;
             }
-            {
-                asio::steady_timer timer(executor, TIMEOUT);
-                auto results = co_await (socket.async_receive(asio::buffer(receive_buf), TOKEN) || timer.async_wait(TOKEN));
-                bytes_received = 0;
-                if (results.index() == 1) {
-                    std::tie(ec) = std::get<1>(results);
-                    if (ec) {
-                        GC_ERROR("Timeout error: {}", ec.message());
-                        co_return;
-                    }
-                    GC_WARN("Timeout pinging {}:{}", server_endpoint.address().to_string(), server_endpoint.port());
-                    continue;
+            else {
+                std::tie(ec, bytes_received) = std::get<0>(results);
+                if (ec) {
+                    GC_ERROR("socket receive error: {}", ec.message());
+                    co_return;
                 }
-                else {
-                    std::tie(ec, bytes_received) = std::get<0>(results);
-                    if (ec) {
-                        GC_ERROR("socket receive error: {}", ec.message());
-                        co_return;
-                    }
-                    if (bytes_received > 0) {
-                        break; // RECEIVED PACKET
-                    }
+                if (bytes_received > 0) {
+                    break; // RECEIVED PACKET
                 }
             }
         }
@@ -207,6 +212,8 @@ asio::awaitable<void> NetClient::clientLoop(asio::ip::udp::endpoint server_endpo
                 const auto pong = NetPacketPong::deserialise(reader);
                 if (seq_num == pong.seq_num) {
                     // received pong
+                    // determine RTT here.
+                    GC_INFO("RTT: {}", std::chrono::duration_cast<std::chrono::milliseconds>(rtt));
                     continue;
                 }
             }

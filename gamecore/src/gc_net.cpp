@@ -19,6 +19,7 @@
 #include <variant>
 
 #include "gamecore/gc_asio_throw_exception.h"
+#include "gamecore/gc_assert.h"
 #include "gamecore/gc_logger.h"
 
 namespace gc {
