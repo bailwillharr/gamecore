@@ -15,7 +15,6 @@ struct FrameState {
     double delta_time{};
     double average_frame_time{};
     WorldDrawData draw_data{};
-    bool do_instancing{};
 };
 
 } // namespace gc

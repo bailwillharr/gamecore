@@ -96,6 +96,12 @@ void NetServer::stop()
 
 bool NetServer::isRunning() const { return !m_context.stopped(); }
 
+asio::ip::udp::endpoint NetServer::getLocalEndpoint() const
+{
+    std::scoped_lock lock(m_server_status.mutex);
+    return m_server_status.local_endpoint;
+}
+
 asio::awaitable<void> NetServer::serverLoop(asio::ip::udp::endpoint endpoint)
 {
     constexpr auto TOKEN = asio::as_tuple(asio::use_awaitable);
@@ -117,7 +123,11 @@ asio::awaitable<void> NetServer::serverLoop(asio::ip::udp::endpoint endpoint)
         co_return;
     }
 
-    GC_INFO("Starting server on {}:{}", endpoint.address().to_string(), endpoint.port());
+    {
+        std::scoped_lock lock(m_server_status.mutex);
+        m_server_status.local_endpoint = socket.local_endpoint();
+        GC_INFO("Starting server on {}:{}", m_server_status.local_endpoint.address().to_string(), m_server_status.local_endpoint.port());
+    }
 
     std::mt19937_64 rand64(std::random_device{}());
     const uint64_t secret = rand64(); // TODO VERY INSECURE AND BAD

@@ -150,11 +150,13 @@ asio::awaitable<void> NetClient::clientLoop(asio::ip::udp::endpoint server_endpo
 
     uint32_t seq_num = 0;
     for (;;) {
-        asio::steady_timer timer(executor, std::chrono::seconds(1));
-        std::tie(ec) = co_await timer.async_wait(TOKEN);
-        if (ec) {
-            GC_ERROR("Timeout error: {}", ec.message());
-            co_return;
+        {
+            asio::steady_timer timer(executor, std::chrono::seconds(1));
+            std::tie(ec) = co_await timer.async_wait(TOKEN);
+            if (ec) {
+                GC_ERROR("Timeout error: {}", ec.message());
+                co_return;
+            }
         }
 
         std::chrono::steady_clock::duration rtt{};

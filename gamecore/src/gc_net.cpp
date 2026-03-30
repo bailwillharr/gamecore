@@ -116,6 +116,8 @@ NetMode Net::getMode() const { return m_local_mode; }
 
 NetClientState Net::getClientState() const { return getClient().getState(); }
 
+asio::ip::udp::endpoint Net::getServerEndpoint() const { return getServer().getLocalEndpoint(); }
+
 bool Net::isServerRunning() const { return getServer().isRunning(); }
 
 NetServer& Net::getServer()

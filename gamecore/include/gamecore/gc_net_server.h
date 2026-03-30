@@ -10,10 +10,15 @@
 
 namespace gc {
 
+struct NetServerStatus {
+    mutable std::mutex mutex{};
+    asio::ip::udp::endpoint local_endpoint{};
+};
+
 class NetServer {
     asio::io_context m_context;
-    std::mutex m_sessions_mutex{};
     std::jthread m_server_thread{};
+    NetServerStatus m_server_status{};
 
 public:
     ~NetServer();
@@ -22,6 +27,7 @@ public:
     void stop();
 
     bool isRunning() const;
+    asio::ip::udp::endpoint getLocalEndpoint() const;
 
 private:
     asio::awaitable<void> serverLoop(asio::ip::udp::endpoint endpoint);

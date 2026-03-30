@@ -36,6 +36,8 @@ public:
     NetMode getMode() const;
 
     NetClientState getClientState() const;
+
+    asio::ip::udp::endpoint getServerEndpoint() const;
     bool isServerRunning() const;
 
 private:

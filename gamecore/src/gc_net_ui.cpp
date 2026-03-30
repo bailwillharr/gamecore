@@ -52,7 +52,7 @@ void renderNetUI(Net& net)
                 break;
             }
 
-            asio::ip::udp::endpoint endpoint(address, port);
+            asio::ip::udp::endpoint endpoint(address, asio::ip::port_type(port));
 
             if (ImGui::Button("Start Server")) {
                 net.startServer(endpoint);
@@ -63,6 +63,8 @@ void renderNetUI(Net& net)
         } break;
         case NetMode::SERVER: {
             ImGui::Text("Running: %d", net.isServerRunning());
+            const auto server_addr = net.getServerEndpoint();
+            ImGui::Text("Address: %s:%d", server_addr.address().to_string().c_str(), server_addr.port());
             if (ImGui::Button("Stop Server")) {
                 net.stopServer();
             }
