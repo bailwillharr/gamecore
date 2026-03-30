@@ -9,6 +9,7 @@
 #include <type_traits>
 #include <mutex>
 #include <optional>
+#include <format>
 
 #include <asio/ip/udp.hpp>
 

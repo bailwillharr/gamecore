@@ -78,6 +78,7 @@ struct PacketContext {
 };
 
 struct Session {
+    NetSessionToken session_token;
     asio::ip::udp::endpoint endpoint;
     uint32_t time_bucket_last_received;
 };
@@ -129,6 +130,7 @@ static void handleAuthenticated(PacketContext& ctx, std::unordered_map<NetSessio
                 return;
             }
             Session session{};
+            session.session_token = ctx.received_header.token;
             session.endpoint = ctx.endpoint;
             session.time_bucket_last_received = ctx.time_bucket;
             sessions.emplace(ctx.received_header.token, std::move(session));
@@ -223,6 +225,7 @@ asio::awaitable<void> NetServer::serverLoop(asio::ip::udp::endpoint endpoint)
 
     std::unordered_map<NetSessionToken, Session> sessions{};
 
+    std::optional<uint32_t> last_cleanup_bucket{};
     std::array<uint8_t, NET_MAX_PACKET_SIZE> recv_buf{};
     std::array<uint8_t, NET_MAX_PACKET_SIZE> send_buf{};
     for (;;) {
@@ -272,8 +275,11 @@ asio::awaitable<void> NetServer::serverLoop(asio::ip::udp::endpoint endpoint)
         }
 
         // remove expired sessions
-        if (size_t num_erased = std::erase_if(sessions, [&](const auto& entry) { return isSessionExpired(entry.second, time_bucket); }); num_erased > 0) {
-            GC_DEBUG("removed {} sessions", num_erased);
+        if (!last_cleanup_bucket || *last_cleanup_bucket != time_bucket) {
+            last_cleanup_bucket = time_bucket;
+            if (size_t num_erased = std::erase_if(sessions, [&](const auto& entry) { return isSessionExpired(entry.second, time_bucket); }); num_erased > 0) {
+                GC_DEBUG("removed {} sessions", num_erased);
+            }
         }
     }
 }
