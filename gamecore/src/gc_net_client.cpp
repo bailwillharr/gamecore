@@ -119,7 +119,8 @@ asio::awaitable<void> NetClient::clientLoop(asio::ip::udp::endpoint server_endpo
     }
 
     if (bytes_received < NetPacketHeader::getSerialisedSize() + NetPacketConnectChallenge::getSerialisedSize()) {
-        GC_ERROR("Could not connect to server");
+        GC_ERROR("Could not connect to server. Received: {}, expected: {}", bytes_received,
+                 NetPacketHeader::getSerialisedSize() + NetPacketConnectChallenge::getSerialisedSize());
         co_return;
     }
 

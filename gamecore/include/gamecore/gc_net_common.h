@@ -140,10 +140,7 @@ struct NetPacketConnectChallenge {
 
     uint64_t client_nonce; // unique per connection request
 
-    void serialise(NetByteWriter& writer) const
-    {
-        writer.writeU64(client_nonce);
-    }
+    void serialise(NetByteWriter& writer) const { writer.writeU64(client_nonce); }
 
     static NetPacketConnectChallenge deserialise(NetByteReader& reader)
     {
@@ -165,10 +162,7 @@ struct NetPacketConnectChallengeResponse {
 
     uint64_t client_nonce; // unique per connection request
 
-    void serialise(NetByteWriter& writer) const
-    {
-        writer.writeU64(client_nonce);
-    }
+    void serialise(NetByteWriter& writer) const { writer.writeU64(client_nonce); }
 
     static NetPacketConnectChallengeResponse deserialise(NetByteReader& reader)
     {
@@ -186,10 +180,7 @@ struct NetPacketPing {
 
     uint32_t seq_num;
 
-    void serialise(NetByteWriter& writer) const
-    {
-        writer.writeU32(seq_num);
-    }
+    void serialise(NetByteWriter& writer) const { writer.writeU32(seq_num); }
 
     static NetPacketPing deserialise(NetByteReader& reader)
     {
@@ -207,10 +198,7 @@ struct NetPacketPong {
 
     uint32_t seq_num;
 
-    void serialise(NetByteWriter& writer) const
-    {
-        writer.writeU32(seq_num);
-    }
+    void serialise(NetByteWriter& writer) const { writer.writeU32(seq_num); }
 
     static NetPacketPong deserialise(NetByteReader& reader)
     {
@@ -267,9 +255,8 @@ bool verifyPacketHeader(const NetPacketHeader& header);
 
 } // namespace gc
 
-namespace std {
 template <>
-struct hash<gc::NetSessionToken> {
+struct std::hash<gc::NetSessionToken> {
     size_t operator()(const gc::NetSessionToken& token) const noexcept
     {
         // truncating works as a hash function since NetSessionToken is already high entropy
@@ -283,6 +270,8 @@ struct hash<gc::NetSessionToken> {
 template <>
 struct std::formatter<asio::ip::udp::endpoint> {
     constexpr auto parse(std::format_parse_context& ctx) const { return ctx.begin(); }
-    auto format(const asio::ip::udp::endpoint& endpoint, std::format_context& ctx) const { return std::format_to(ctx.out(), "{}:{}", endpoint.address().to_string(), endpoint.port()); }
+    auto format(const asio::ip::udp::endpoint& endpoint, std::format_context& ctx) const
+    {
+        return std::format_to(ctx.out(), "{}:{}", endpoint.address().to_string(), endpoint.port());
+    }
 };
-} // namespace std
