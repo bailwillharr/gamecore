@@ -8,6 +8,9 @@
 #include <bit>
 #include <type_traits>
 #include <mutex>
+#include <optional>
+
+#include <asio/ip/udp.hpp>
 
 #include "gamecore/gc_name.h"
 
@@ -108,6 +111,7 @@ struct NetPacketHeader {
 // client -> server
 // token in header is 0
 struct NetPacketConnectRequest {
+    static constexpr NetPacketType TYPE = NetPacketType::CONNECT_REQUEST;
     static constexpr size_t PADDING_SIZE_BYTES = 56;
 
     uint64_t client_nonce; // unique per connection request
@@ -129,34 +133,57 @@ struct NetPacketConnectRequest {
     static consteval size_t getSerialisedSize() { return PADDING_SIZE_BYTES + sizeof(client_nonce); }
 };
 
-// server -> client AND client -> server
+// server -> client
 // token in header is set
 struct NetPacketConnectChallenge {
+    static constexpr NetPacketType TYPE = NetPacketType::CONNECT_CHALLENGE;
+
     uint64_t client_nonce; // unique per connection request
-    uint32_t time_bucket;
 
     void serialise(NetByteWriter& writer) const
     {
         writer.writeU64(client_nonce);
-        writer.writeU32(time_bucket);
     }
 
     static NetPacketConnectChallenge deserialise(NetByteReader& reader)
     {
         NetPacketConnectChallenge obj{};
         obj.client_nonce = reader.readU64();
-        obj.time_bucket = reader.readU32();
         return obj;
     }
 
-    static consteval size_t getSerialisedSize() { return sizeof(client_nonce) + sizeof(time_bucket); }
+    static consteval size_t getSerialisedSize() { return sizeof(client_nonce); }
 };
 
 // to prevent packet amplification
 static_assert(NetPacketConnectRequest::getSerialisedSize() > NetPacketConnectChallenge::getSerialisedSize());
 
 // client -> server
+// token in header is set
+struct NetPacketConnectChallengeResponse {
+    static constexpr NetPacketType TYPE = NetPacketType::CONNECT_CHALLENGE_RESPONSE;
+
+    uint64_t client_nonce; // unique per connection request
+
+    void serialise(NetByteWriter& writer) const
+    {
+        writer.writeU64(client_nonce);
+    }
+
+    static NetPacketConnectChallengeResponse deserialise(NetByteReader& reader)
+    {
+        NetPacketConnectChallengeResponse obj{};
+        obj.client_nonce = reader.readU64();
+        return obj;
+    }
+
+    static consteval size_t getSerialisedSize() { return sizeof(client_nonce); }
+};
+
+// client -> server
 struct NetPacketPing {
+    static constexpr NetPacketType TYPE = NetPacketType::PING;
+
     uint32_t seq_num;
 
     void serialise(NetByteWriter& writer) const
@@ -176,6 +203,8 @@ struct NetPacketPing {
 
 // server -> client
 struct NetPacketPong {
+    static constexpr NetPacketType TYPE = NetPacketType::PONG;
+
     uint32_t seq_num;
 
     void serialise(NetByteWriter& writer) const
@@ -192,6 +221,32 @@ struct NetPacketPong {
 
     static consteval size_t getSerialisedSize() { return sizeof(seq_num); }
 };
+
+template <typename T>
+std::optional<T> tryDeserialise(NetByteReader& reader)
+{
+    if (reader.remaining() < T::getSerialisedSize()) {
+        return std::nullopt;
+    }
+    return T::deserialise(reader);
+}
+
+template <typename T>
+std::optional<T> tryDeserialiseExact(NetByteReader& reader)
+{
+    if (reader.remaining() != T::getSerialisedSize()) {
+        return std::nullopt;
+    }
+    return T::deserialise(reader);
+}
+
+template <typename T>
+void writePacketWithHeader(NetByteWriter& writer, NetSessionToken token, const T& payload)
+{
+    static_assert(!std::is_same_v<T, NetPacketHeader>);
+    NetPacketHeader::createValid(T::TYPE, token).serialise(writer);
+    payload.serialise(writer);
+}
 
 struct NetEvent {
     Name type;
@@ -211,3 +266,23 @@ public:
 bool verifyPacketHeader(const NetPacketHeader& header);
 
 } // namespace gc
+
+namespace std {
+template <>
+struct hash<gc::NetSessionToken> {
+    size_t operator()(const gc::NetSessionToken& token) const noexcept
+    {
+        // truncating works as a hash function since NetSessionToken is already high entropy
+        static_assert(sizeof(token) >= sizeof(size_t));
+        size_t value;
+        std::memcpy(&value, token.data(), sizeof(value));
+        return value;
+    }
+};
+
+template <>
+struct std::formatter<asio::ip::udp::endpoint> {
+    constexpr auto parse(std::format_parse_context& ctx) const { return ctx.begin(); }
+    auto format(const asio::ip::udp::endpoint& endpoint, std::format_context& ctx) const { return std::format_to(ctx.out(), "{}:{}", endpoint.address().to_string(), endpoint.port()); }
+};
+} // namespace std

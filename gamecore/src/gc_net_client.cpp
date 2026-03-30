@@ -24,7 +24,7 @@ bool NetClient::connect(const asio::ip::udp::endpoint& endpoint)
             self.m_context.run();
             self.m_state.store(NetClientState::DISCONNECTED);
         },
-        std::ref(*this), std::move(endpoint));
+        std::ref(*this), endpoint);
     return true;
 }
 
@@ -136,7 +136,9 @@ asio::awaitable<void> NetClient::clientLoop(asio::ip::udp::endpoint server_endpo
         std::array<uint8_t, NET_MAX_PACKET_SIZE> buf{};
         NetByteWriter writer(buf);
         header.serialise(writer);
-        challenge.serialise(writer); // send the challenge back as is
+        auto challenge_response = NetPacketConnectChallengeResponse{};
+        challenge_response.client_nonce = challenge.client_nonce;
+        challenge_response.serialise(writer);
         std::tie(ec, std::ignore) = co_await socket.async_send(asio::buffer(buf.data(), writer.pos()), TOKEN);
         if (ec) {
             GC_ERROR("Failed to send on socket: {}", ec.message());

@@ -33,7 +33,7 @@ static uint32_t getTimeBucket()
     return static_cast<uint32_t>(bucket); // truncates uint64_t to uint32_t
 }
 
-static NetSessionToken createToken(uint64_t secret, const asio::ip::udp::endpoint& client_endpoint, uint64_t client_nonce, uint32_t time_bucket)
+static NetSessionToken computeSessionToken(uint64_t server_secret, const asio::ip::udp::endpoint& client_endpoint, uint64_t client_nonce, uint32_t time_bucket)
 {
     // TODO
     // THIS IS NOT SECURE AT ALL!
@@ -41,7 +41,7 @@ static NetSessionToken createToken(uint64_t secret, const asio::ip::udp::endpoin
     //
     // it also allocates on the heap, which the server code SHOULD NOT DO prior to client authentication
     std::stringstream data;
-    data << secret;
+    data << server_secret;
     data << '|';
     data << client_endpoint.address().to_string();
     data << '|';
@@ -60,6 +60,109 @@ static NetSessionToken createToken(uint64_t secret, const asio::ip::udp::endpoin
     }
 
     return token;
+}
+
+static uint64_t generateServerSecret()
+{
+    std::mt19937_64 rand64(std::random_device{}());
+    return rand64(); // TODO use cryptographically secure PRNG
+}
+
+struct PacketContext {
+    const asio::ip::udp::endpoint& endpoint;
+    const NetPacketHeader& received_header;
+    NetByteReader& reader;
+    NetByteWriter& writer;
+    uint64_t server_secret;
+    uint32_t time_bucket;
+};
+
+struct Session {
+    asio::ip::udp::endpoint endpoint;
+    uint32_t time_bucket_last_received;
+};
+
+// returns true on success.
+// func has signature: void(T packet);
+template <typename T, typename Func>
+static void handleParsed(PacketContext& ctx, Func&& func)
+{
+    const auto pkt = tryDeserialiseExact<T>(ctx.reader);
+    if (!pkt) {
+        return;
+    }
+    func(std::move(*pkt));
+}
+
+static void handleUnauthenticated(PacketContext& ctx)
+{
+    // Unauthenticated packets are handled statelessly
+    if (ctx.received_header.type != NetPacketType::CONNECT_REQUEST) {
+        return;
+    }
+    handleParsed<NetPacketConnectRequest>(ctx, [&](const auto request) {
+        const auto session_token = computeSessionToken(ctx.server_secret, ctx.endpoint, request.client_nonce, ctx.time_bucket);
+        writePacketWithHeader(ctx.writer, session_token, NetPacketConnectChallenge{.client_nonce = request.client_nonce});
+    });
+}
+
+static void handlePing(PacketContext& ctx)
+{
+    handleParsed<NetPacketPing>(ctx,
+                                [&](const auto ping) { writePacketWithHeader(ctx.writer, ctx.received_header.token, NetPacketPong{.seq_num = ping.seq_num}); });
+}
+
+static void handleAuthenticated(PacketContext& ctx, std::unordered_map<NetSessionToken, Session>& sessions)
+{
+    // verify token
+    const auto it = sessions.find(ctx.received_header.token);
+    if (it == sessions.end()) {
+        // token not found, might be a new valid session...
+        if (ctx.received_header.type != NetPacketType::CONNECT_CHALLENGE_RESPONSE) {
+            return;
+        }
+        handleParsed<NetPacketConnectChallengeResponse>(ctx, [&](const auto challenge_response) {
+            // Also compare against what the session token would have been during the previous time bucket.
+            const auto session_token1 = computeSessionToken(ctx.server_secret, ctx.endpoint, challenge_response.client_nonce, ctx.time_bucket);
+            const auto session_token2 = computeSessionToken(ctx.server_secret, ctx.endpoint, challenge_response.client_nonce, ctx.time_bucket - 1);
+            if (ctx.received_header.token != session_token1 && ctx.received_header.token != session_token2) {
+                return;
+            }
+            Session session{};
+            session.endpoint = ctx.endpoint;
+            session.time_bucket_last_received = ctx.time_bucket;
+            sessions.emplace(ctx.received_header.token, std::move(session));
+            GC_DEBUG("Created new session");
+        });
+        return;
+    }
+
+    Session& session = it->second;
+
+    // Verify session has same endpoint
+    if (session.endpoint != ctx.endpoint) {
+        // Might just be a NAT rebind or carrier handoff.
+        // TODO: Handle endpoint migration
+        GC_ERROR("Packet from {} has session token corresponding to existing session with {}", ctx.endpoint, session.endpoint);
+        return;
+    }
+
+    // Authenticated session
+    session.time_bucket_last_received = ctx.time_bucket;
+
+    switch (ctx.received_header.type) {
+    case NetPacketType::PING:
+        handlePing(ctx);
+        break;
+    default:
+        break;
+    }
+}
+
+static bool isSessionExpired(const Session& session, uint32_t current_time_bucket)
+{
+    // a time bucket is 10 seconds, so a session is expired if its been at least 10-20 seconds.
+    return static_cast<uint32_t>(current_time_bucket - session.time_bucket_last_received) >= 2; // handles wrap around
 }
 
 NetServer::~NetServer() { stop(); }
@@ -95,18 +198,15 @@ asio::ip::udp::endpoint NetServer::getLocalEndpoint() const
 asio::awaitable<void> NetServer::serverLoop(asio::ip::udp::endpoint endpoint)
 {
     constexpr auto TOKEN = asio::as_tuple(asio::use_awaitable);
-
+    const auto executor = co_await asio::this_coro::executor;
     asio::error_code ec{};
-    auto executor = co_await asio::this_coro::executor;
 
     asio::ip::udp::socket socket(executor);
-
     socket.open(endpoint.protocol(), ec);
     if (ec) {
         GC_ERROR("Failed to open socket: {}", ec.message());
         co_return;
     }
-
     socket.bind(endpoint, ec);
     if (ec) {
         GC_ERROR("Failed to bind socket: {}", ec.message());
@@ -116,16 +216,12 @@ asio::awaitable<void> NetServer::serverLoop(asio::ip::udp::endpoint endpoint)
     {
         std::scoped_lock lock(m_server_status.mutex);
         m_server_status.local_endpoint = socket.local_endpoint();
-        GC_INFO("Starting server on {}:{}", m_server_status.local_endpoint.address().to_string(), m_server_status.local_endpoint.port());
+        GC_INFO("Started server on {}", m_server_status.local_endpoint);
     }
 
-    std::mt19937_64 rand64(std::random_device{}());
-    const uint64_t secret = rand64(); // TODO use cryptographically secure PRNG
+    const uint64_t server_secret = generateServerSecret();
 
-    struct Session {
-        NetSessionToken token;
-    };
-    std::unordered_map<asio::ip::udp::endpoint, Session> sessions{};
+    std::unordered_map<NetSessionToken, Session> sessions{};
 
     std::array<uint8_t, NET_MAX_PACKET_SIZE> recv_buf{};
     std::array<uint8_t, NET_MAX_PACKET_SIZE> send_buf{};
@@ -139,69 +235,26 @@ asio::awaitable<void> NetServer::serverLoop(asio::ip::udp::endpoint endpoint)
         }
 
         const uint32_t time_bucket = getTimeBucket();
-
         NetByteReader reader(std::span(recv_buf.data(), bytes_read));
-        if (reader.remaining() < NetPacketHeader::getSerialisedSize()) {
-            continue;
-        }
-
-        auto header = NetPacketHeader::deserialise(reader);
-        if (!verifyPacketHeader(header)) {
-            GC_DEBUG("Received packet has invalid header");
-            continue;
-        }
-
         NetByteWriter writer(send_buf);
 
-        if (header.token.empty()) {
-            // Unauthenticated packets are handled statelessly
-            if (header.type != NetPacketType::CONNECT_REQUEST) {
-                continue;
-            }
-            if (reader.remaining() < NetPacketConnectRequest::getSerialisedSize()) {
-                continue;
-            }
-            const auto request = NetPacketConnectRequest::deserialise(reader);
-            const auto session_token = createToken(secret, client_endpoint, request.client_nonce, time_bucket);
-            NetPacketHeader::createValid(NetPacketType::CONNECT_CHALLENGE, session_token).serialise(writer);
-            NetPacketConnectChallenge{.client_nonce = request.client_nonce, .time_bucket = time_bucket}.serialise(writer);
+        const auto header = tryDeserialise<NetPacketHeader>(reader);
+        if (!header || !verifyPacketHeader(*header)) {
+            continue;
+        }
+
+        PacketContext ctx{.endpoint = client_endpoint, //
+                          .received_header = *header,
+                          .reader = reader,
+                          .writer = writer,
+                          .server_secret = server_secret,
+                          .time_bucket = time_bucket};
+
+        if (header->token == NetSessionToken{}) {
+            handleUnauthenticated(ctx);
         }
         else {
-            // verify token
-            const auto it = sessions.find(client_endpoint);
-            if (it == sessions.end()) {
-                // token not found, might be a new valid session...
-                if (header.type != NetPacketType::CONNECT_CHALLENGE_RESPONSE) {
-                    continue;
-                }
-                if (reader.remaining() < NetPacketConnectChallenge::getSerialisedSize()) {
-                    continue;
-                }
-                const auto challenge_response = NetPacketConnectChallenge::deserialise(reader);
-                const auto real_session_token = createToken(secret, client_endpoint, challenge_response.client_nonce, challenge_response.time_bucket);
-                if (header.token != real_session_token) {
-                    continue;
-                }
-                sessions.emplace(client_endpoint, real_session_token);
-                continue;
-            }
-            else if (header.token != it->second.token) {
-                continue; // invalid token
-            }
-
-            // Authenticated session
-            switch (header.type) {
-            case NetPacketType::PING: {
-                if (reader.remaining() < NetPacketPing::getSerialisedSize()) {
-                    continue;
-                }
-                const auto ping = NetPacketPing::deserialise(reader);
-                NetPacketHeader::createValid(NetPacketType::PONG, header.token).serialise(writer);
-                NetPacketPong{.seq_num = ping.seq_num}.serialise(writer);
-            } break;
-            default:
-                break;
-            }
+            handleAuthenticated(ctx, sessions);
         }
 
         if (writer.pos() > 0) {
@@ -216,6 +269,11 @@ asio::awaitable<void> NetServer::serverLoop(asio::ip::udp::endpoint endpoint)
                 GC_ERROR("Failed to send all data from socket. {}/{} bytes", bytes_written, writer.pos());
                 continue;
             }
+        }
+
+        // remove expired sessions
+        if (size_t num_erased = std::erase_if(sessions, [&](const auto& entry) { return isSessionExpired(entry.second, time_bucket); }); num_erased > 0) {
+            GC_DEBUG("removed {} sessions", num_erased);
         }
     }
 }
