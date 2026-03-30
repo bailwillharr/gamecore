@@ -62,16 +62,6 @@ static NetSessionToken createToken(uint64_t secret, const asio::ip::udp::endpoin
     return token;
 }
 
-static NetPacketConnectChallenge createChallengePacket(const NetPacketConnectRequest& request, uint64_t secret, const asio::ip::udp::endpoint& client_endpoint,
-                                                       uint32_t time_bucket)
-{
-    NetPacketConnectChallenge challenge{};
-    challenge.token = createToken(secret, client_endpoint, request.client_nonce, time_bucket);
-    challenge.client_nonce = request.client_nonce;
-    challenge.time_bucket = time_bucket;
-    return challenge;
-}
-
 NetServer::~NetServer() { stop(); }
 
 bool NetServer::start(asio::ip::udp::endpoint endpoint)
@@ -130,17 +120,17 @@ asio::awaitable<void> NetServer::serverLoop(asio::ip::udp::endpoint endpoint)
     }
 
     std::mt19937_64 rand64(std::random_device{}());
-    const uint64_t secret = rand64(); // TODO VERY INSECURE AND BAD
+    const uint64_t secret = rand64(); // TODO use cryptographically secure PRNG
 
     struct Session {
         NetSessionToken token;
     };
-
     std::unordered_map<asio::ip::udp::endpoint, Session> sessions{};
 
+    std::array<uint8_t, NET_MAX_PACKET_SIZE> recv_buf{};
+    std::array<uint8_t, NET_MAX_PACKET_SIZE> send_buf{};
     for (;;) {
         size_t bytes_read{};
-        std::array<uint8_t, NET_MAX_PACKET_SIZE> recv_buf{};
         asio::ip::udp::endpoint client_endpoint{};
         std::tie(ec, bytes_read) = co_await socket.async_receive_from(asio::buffer(recv_buf), client_endpoint, TOKEN);
         if (ec) {
@@ -148,13 +138,10 @@ asio::awaitable<void> NetServer::serverLoop(asio::ip::udp::endpoint endpoint)
             continue;
         }
 
-        GC_DEBUG("Received packet from: {} port {}", client_endpoint.address().to_string(), client_endpoint.port());
-
         const uint32_t time_bucket = getTimeBucket();
 
         NetByteReader reader(std::span(recv_buf.data(), bytes_read));
         if (reader.remaining() < NetPacketHeader::getSerialisedSize()) {
-            GC_DEBUG("Received packet too small");
             continue;
         }
 
@@ -164,50 +151,57 @@ asio::awaitable<void> NetServer::serverLoop(asio::ip::udp::endpoint endpoint)
             continue;
         }
 
-        GC_DEBUG("Incoming packet type: {}", static_cast<uint32_t>(header.type));
-
-        std::array<uint8_t, NET_MAX_PACKET_SIZE> send_buf;
         NetByteWriter writer(send_buf);
-        switch (header.type) {
-        case NetPacketType::CONNECT_REQUEST: {
+
+        if (header.token.empty()) {
+            // Unauthenticated packets are handled statelessly
+            if (header.type != NetPacketType::CONNECT_REQUEST) {
+                continue;
+            }
             if (reader.remaining() < NetPacketConnectRequest::getSerialisedSize()) {
-                GC_DEBUG("incoming connect request packet has invalid size");
                 continue;
             }
-            GC_DEBUG("Creating challenge packet");
-            NetPacketHeader::createValid(NetPacketType::CONNECT_CHALLENGE).serialise(writer);
-            createChallengePacket(NetPacketConnectRequest::deserialise(reader), secret, client_endpoint, time_bucket).serialise(writer);
-        } break;
-        case NetPacketType::CONNECT_CHALLENGE_RESPONSE: {
-            if (reader.remaining() < NetPacketConnectChallenge::getSerialisedSize()) {
-                continue;
-            }
-            const auto response = NetPacketConnectChallenge::deserialise(reader);
-            const auto real_token = createToken(secret, client_endpoint, response.client_nonce, response.time_bucket);
-            if (response.token == real_token) {
-                Session session{real_token};
-                sessions.emplace(client_endpoint, session);
-            }
-        } break;
-        case NetPacketType::PING: {
-            if (reader.remaining() < NetPacketPing::getSerialisedSize()) {
-                continue;
-            }
-            const auto ping = NetPacketPing::deserialise(reader);
+            const auto request = NetPacketConnectRequest::deserialise(reader);
+            const auto session_token = createToken(secret, client_endpoint, request.client_nonce, time_bucket);
+            NetPacketHeader::createValid(NetPacketType::CONNECT_CHALLENGE, session_token).serialise(writer);
+            NetPacketConnectChallenge{.client_nonce = request.client_nonce, .time_bucket = time_bucket}.serialise(writer);
+        }
+        else {
+            // verify token
             const auto it = sessions.find(client_endpoint);
             if (it == sessions.end()) {
+                // token not found, might be a new valid session...
+                if (header.type != NetPacketType::CONNECT_CHALLENGE_RESPONSE) {
+                    continue;
+                }
+                if (reader.remaining() < NetPacketConnectChallenge::getSerialisedSize()) {
+                    continue;
+                }
+                const auto challenge_response = NetPacketConnectChallenge::deserialise(reader);
+                const auto real_session_token = createToken(secret, client_endpoint, challenge_response.client_nonce, challenge_response.time_bucket);
+                if (header.token != real_session_token) {
+                    continue;
+                }
+                sessions.emplace(client_endpoint, real_session_token);
                 continue;
             }
-            else if (it->second.token != ping.token) {
-                continue;
+            else if (header.token != it->second.token) {
+                continue; // invalid token
             }
 
-            NetPacketHeader::createValid(NetPacketType::PONG).serialise(writer);
-            const NetPacketPong pong{ping.token, ping.seq_num};
-            pong.serialise(writer);
-        } break;
-        default:
-            continue;
+            // Authenticated session
+            switch (header.type) {
+            case NetPacketType::PING: {
+                if (reader.remaining() < NetPacketPing::getSerialisedSize()) {
+                    continue;
+                }
+                const auto ping = NetPacketPing::deserialise(reader);
+                NetPacketHeader::createValid(NetPacketType::PONG, header.token).serialise(writer);
+                NetPacketPong{.seq_num = ping.seq_num}.serialise(writer);
+            } break;
+            default:
+                break;
+            }
         }
 
         if (writer.pos() > 0) {
@@ -222,7 +216,6 @@ asio::awaitable<void> NetServer::serverLoop(asio::ip::udp::endpoint endpoint)
                 GC_ERROR("Failed to send all data from socket. {}/{} bytes", bytes_written, writer.pos());
                 continue;
             }
-            GC_DEBUG("Sent packet of size: {} to {}:{}", writer.pos(), client_endpoint.address().to_string(), client_endpoint.port());
         }
     }
 }

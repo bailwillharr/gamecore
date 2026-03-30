@@ -132,7 +132,7 @@ asio::awaitable<void> NetClient::clientLoop(asio::ip::udp::endpoint server_endpo
     const auto challenge = NetPacketConnectChallenge::deserialise(reader);
 
     {
-        auto header = NetPacketHeader::createValid(NetPacketType::CONNECT_CHALLENGE_RESPONSE);
+        auto header = NetPacketHeader::createValid(NetPacketType::CONNECT_CHALLENGE_RESPONSE, challenge_header.token);
         std::array<uint8_t, NET_MAX_PACKET_SIZE> buf{};
         NetByteWriter writer(buf);
         header.serialise(writer);
@@ -144,7 +144,7 @@ asio::awaitable<void> NetClient::clientLoop(asio::ip::udp::endpoint server_endpo
         }
     }
 
-    NetSessionToken session_token = challenge.token;
+    NetSessionToken session_token = challenge_header.token;
 
     m_state.store(NetClientState::CONNECTED);
 
@@ -163,9 +163,8 @@ asio::awaitable<void> NetClient::clientLoop(asio::ip::udp::endpoint server_endpo
         for (int i = 0; i < MAX_RETRIES; ++i) {
             ++seq_num;
 
-            auto header = NetPacketHeader::createValid(NetPacketType::PING);
+            auto header = NetPacketHeader::createValid(NetPacketType::PING, session_token);
             auto ping = NetPacketPing{};
-            ping.token = session_token;
             ping.seq_num = seq_num;
             std::array<uint8_t, NET_MAX_PACKET_SIZE> buf{};
             NetByteWriter writer(buf);
@@ -210,7 +209,7 @@ asio::awaitable<void> NetClient::clientLoop(asio::ip::udp::endpoint server_endpo
 
         reader.reset();
         if (bytes_received >= NetPacketHeader::getSerialisedSize() + NetPacketPong::getSerialisedSize()) {
-            if (NetPacketHeader::deserialise(reader).type == NetPacketType::PONG) {
+            if (const auto header = NetPacketHeader::deserialise(reader); header.type == NetPacketType::PONG && header.token == session_token) {
                 const auto pong = NetPacketPong::deserialise(reader);
                 if (seq_num == pong.seq_num) {
                     // received pong

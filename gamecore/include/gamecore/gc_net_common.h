@@ -59,7 +59,7 @@ public:
 constexpr size_t NET_MAX_PACKET_SIZE = 1200;
 
 using NetPacketMagic = std::array<uint8_t, 5>;
-using NetSessionToken = std::array<uint8_t, 32>;
+using NetSessionToken = std::array<uint8_t, 16>;
 
 constexpr NetPacketMagic NET_PACKET_MAGIC{'G', 'C', 'N', 'E', 'T'};
 constexpr uint16_t NET_PACKET_VERSION = 1;
@@ -69,12 +69,14 @@ enum class NetPacketType : uint8_t { CONNECT_REQUEST = 0, CONNECT_CHALLENGE = 1,
 struct NetPacketHeader {
     NetPacketMagic magic;
     uint16_t version;
+    NetSessionToken token; // 0 if type==CONNECT_REQUEST, since there is no session
     NetPacketType type;
 
     void serialise(NetByteWriter& writer) const
     {
         writer.writeBytes(magic);
         writer.writeU16(version);
+        writer.writeBytes(token);
         static_assert(std::is_same_v<std::underlying_type_t<NetPacketType>, uint8_t>);
         writer.writeU8(static_cast<uint8_t>(type));
     }
@@ -84,24 +86,27 @@ struct NetPacketHeader {
         NetPacketHeader obj{};
         reader.readBytes(obj.magic);
         obj.version = reader.readU16();
+        reader.readBytes(obj.token);
         static_assert(std::is_same_v<std::underlying_type_t<NetPacketType>, uint8_t>);
         obj.type = static_cast<NetPacketType>(reader.readU8());
         return obj;
     }
 
-    static consteval size_t getSerialisedSize() { return sizeof(magic) + sizeof(version) + sizeof(type); }
+    static consteval size_t getSerialisedSize() { return sizeof(magic) + sizeof(version) + sizeof(token) + sizeof(type); }
 
-    static NetPacketHeader createValid(NetPacketType type)
+    static NetPacketHeader createValid(NetPacketType type, NetSessionToken token = {})
     {
         NetPacketHeader header{};
         header.magic = NET_PACKET_MAGIC;
         header.version = NET_PACKET_VERSION;
+        header.token = std::move(token);
         header.type = type;
         return header;
     }
 };
 
 // client -> server
+// token in header is 0
 struct NetPacketConnectRequest {
     static constexpr size_t PADDING_SIZE_BYTES = 56;
 
@@ -125,14 +130,13 @@ struct NetPacketConnectRequest {
 };
 
 // server -> client AND client -> server
+// token in header is set
 struct NetPacketConnectChallenge {
-    NetSessionToken token;
     uint64_t client_nonce; // unique per connection request
     uint32_t time_bucket;
 
     void serialise(NetByteWriter& writer) const
     {
-        writer.writeBytes(token);
         writer.writeU64(client_nonce);
         writer.writeU32(time_bucket);
     }
@@ -140,13 +144,12 @@ struct NetPacketConnectChallenge {
     static NetPacketConnectChallenge deserialise(NetByteReader& reader)
     {
         NetPacketConnectChallenge obj{};
-        reader.readBytes(obj.token);
         obj.client_nonce = reader.readU64();
         obj.time_bucket = reader.readU32();
         return obj;
     }
 
-    static consteval size_t getSerialisedSize() { return sizeof(token) + sizeof(client_nonce) + sizeof(time_bucket); }
+    static consteval size_t getSerialisedSize() { return sizeof(client_nonce) + sizeof(time_bucket); }
 };
 
 // to prevent packet amplification
@@ -154,46 +157,40 @@ static_assert(NetPacketConnectRequest::getSerialisedSize() > NetPacketConnectCha
 
 // client -> server
 struct NetPacketPing {
-    NetSessionToken token;
     uint32_t seq_num;
 
     void serialise(NetByteWriter& writer) const
     {
-        writer.writeBytes(token);
         writer.writeU32(seq_num);
     }
 
     static NetPacketPing deserialise(NetByteReader& reader)
     {
         NetPacketPing obj{};
-        reader.readBytes(obj.token);
         obj.seq_num = reader.readU32();
         return obj;
     }
 
-    static consteval size_t getSerialisedSize() { return sizeof(token) + sizeof(seq_num); }
+    static consteval size_t getSerialisedSize() { return sizeof(seq_num); }
 };
 
 // server -> client
 struct NetPacketPong {
-    NetSessionToken token;
     uint32_t seq_num;
 
     void serialise(NetByteWriter& writer) const
     {
-        writer.writeBytes(token);
         writer.writeU32(seq_num);
     }
 
     static NetPacketPong deserialise(NetByteReader& reader)
     {
         NetPacketPong obj{};
-        reader.readBytes(obj.token);
         obj.seq_num = reader.readU32();
         return obj;
     }
 
-    static consteval size_t getSerialisedSize() { return sizeof(token) + sizeof(seq_num); }
+    static consteval size_t getSerialisedSize() { return sizeof(seq_num); }
 };
 
 struct NetEvent {
