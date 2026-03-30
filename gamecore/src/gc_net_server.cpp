@@ -16,6 +16,7 @@
 #include <asio/write.hpp>
 #include <asio/as_tuple.hpp>
 #include <asio/streambuf.hpp>
+#include <asio/experimental/channel.hpp>
 
 #include "gamecore/gc_asio_throw_exception.h"
 #include "gamecore/gc_logger.h"
@@ -73,8 +74,8 @@ struct PacketContext {
     const NetPacketHeader& received_header;
     NetByteReader& reader;
     NetByteWriter& writer;
-    uint64_t server_secret;
-    uint32_t time_bucket;
+    const uint64_t server_secret;
+    const uint32_t time_bucket;
 };
 
 struct Session {
@@ -169,16 +170,36 @@ static bool isSessionExpired(const Session& session, uint32_t current_time_bucke
 
 NetServer::~NetServer() { stop(); }
 
-bool NetServer::start(asio::ip::udp::endpoint endpoint)
+bool NetServer::start(const asio::ip::udp::endpoint& endpoint)
 {
     stop(); // just in case
+
+    asio::error_code ec{};
+    m_socket = asio::ip::udp::socket(m_context);
+    m_socket->open(endpoint.protocol(), ec);
+    if (ec) {
+        GC_ERROR("Failed to open socket: {}", ec.message());
+        return false;
+    }
+    m_socket->bind(endpoint, ec);
+    if (ec) {
+        GC_ERROR("Failed to bind socket: {}", ec.message());
+        return false;
+    }
+    {
+        std::scoped_lock lock(m_server_status.mutex);
+        m_server_status.local_endpoint = m_socket->local_endpoint();
+        GC_INFO("Starting server on {}", m_server_status.local_endpoint);
+    }
+
     m_context.restart();
     m_server_thread = std::jthread(
-        [](NetServer& self, asio::ip::udp::endpoint endpoint) {
-            asio::co_spawn(self.m_context, self.serverLoop(endpoint), asio::detached);
+        [](NetServer& self) {
+            asio::co_spawn(self.m_context, self.receiveLoop(), asio::detached);
+            asio::co_spawn(self.m_context, self.sendLoop(), asio::detached);
             self.m_context.run();
         },
-        std::ref(*this), std::move(endpoint));
+        std::ref(*this));
 
     return true;
 }
@@ -197,29 +218,49 @@ asio::ip::udp::endpoint NetServer::getLocalEndpoint() const
     return m_server_status.local_endpoint;
 }
 
-asio::awaitable<void> NetServer::serverLoop(asio::ip::udp::endpoint endpoint)
+void NetServer::pushToOutboundQueue(OutboundPacket packet)
+{
+    asio::post(m_context, [this, packet = std::move(packet)] {
+        if (!m_outbound_queue.try_send(asio::error_code{}, std::move(packet))) {
+            abortGame("NetServer outbound queue full! Capacity = {}", OUTBOUND_QUEUE_MAX_SIZE);
+        }
+    });
+}
+
+asio::awaitable<void> NetServer::sendLoop()
 {
     constexpr auto TOKEN = asio::as_tuple(asio::use_awaitable);
     const auto executor = co_await asio::this_coro::executor;
     asio::error_code ec{};
 
-    asio::ip::udp::socket socket(executor);
-    socket.open(endpoint.protocol(), ec);
-    if (ec) {
-        GC_ERROR("Failed to open socket: {}", ec.message());
-        co_return;
-    }
-    socket.bind(endpoint, ec);
-    if (ec) {
-        GC_ERROR("Failed to bind socket: {}", ec.message());
-        co_return;
-    }
+    GC_ASSERT(m_socket);
 
-    {
-        std::scoped_lock lock(m_server_status.mutex);
-        m_server_status.local_endpoint = socket.local_endpoint();
-        GC_INFO("Started server on {}", m_server_status.local_endpoint);
+    OutboundPacket packet{};
+    for (;;) {
+        std::tie(ec, packet) = co_await m_outbound_queue.async_receive(TOKEN);
+        if (ec) {
+            GC_ERROR("Outbound channel receive error: {}", ec.message());
+            continue; // context stopped
+        }
+
+        size_t bytes_written{};
+        std::tie(ec, bytes_written) = co_await m_socket->async_send_to(asio::buffer(packet.data), packet.endpoint, TOKEN);
+        if (ec) {
+            GC_ERROR("Failed to send from socket: {}", ec.message());
+        }
+        else if (bytes_written != packet.data.size()) {
+            GC_ERROR("Failed to send all data from socket. {}/{} bytes", bytes_written, packet.data.size());
+        }
     }
+}
+
+asio::awaitable<void> NetServer::receiveLoop()
+{
+    constexpr auto TOKEN = asio::as_tuple(asio::use_awaitable);
+    const auto executor = co_await asio::this_coro::executor;
+    asio::error_code ec{};
+
+    GC_ASSERT(m_socket);
 
     const uint64_t server_secret = generateServerSecret();
 
@@ -231,7 +272,7 @@ asio::awaitable<void> NetServer::serverLoop(asio::ip::udp::endpoint endpoint)
     for (;;) {
         size_t bytes_read{};
         asio::ip::udp::endpoint client_endpoint{};
-        std::tie(ec, bytes_read) = co_await socket.async_receive_from(asio::buffer(recv_buf), client_endpoint, TOKEN);
+        std::tie(ec, bytes_read) = co_await m_socket->async_receive_from(asio::buffer(recv_buf), client_endpoint, TOKEN);
         if (ec) {
             GC_ERROR("Failed to receive on socket: {}", ec.message());
             continue;
@@ -261,15 +302,12 @@ asio::awaitable<void> NetServer::serverLoop(asio::ip::udp::endpoint endpoint)
         }
 
         if (writer.pos() > 0) {
-            // send packet
-            size_t bytes_written{};
-            std::tie(ec, bytes_written) = co_await socket.async_send_to(asio::buffer(std::span(send_buf.data(), writer.pos())), client_endpoint, TOKEN);
+            OutboundPacket outbound{};
+            outbound.endpoint = client_endpoint;
+            outbound.data = std::vector<uint8_t>(send_buf.data(), send_buf.data() + writer.pos());
+            std::tie(ec) = co_await m_outbound_queue.async_send(asio::error_code{}, std::move(outbound), TOKEN);
             if (ec) {
-                GC_ERROR("Failed to send from socket: {}", ec.message());
-                continue;
-            }
-            else if (bytes_written != writer.pos()) {
-                GC_ERROR("Failed to send all data from socket. {}/{} bytes", bytes_written, writer.pos());
+                GC_ERROR("Outbound channel send error: {}", ec.message());
                 continue;
             }
         }
