@@ -201,6 +201,10 @@ void App::run()
 
     std::array<double, 20> delta_times{};
     uint64_t frame_begin_stamp = SDL_GetTicksNS() - 16'666'667LL; // set first delta time to something reasonable
+
+    constexpr auto MIN_FRAME_TIME_NS = std::chrono::microseconds(2000); // 500 fps
+    auto begin_frame = std::chrono::steady_clock::now();
+    auto end_frame = begin_frame + MIN_FRAME_TIME_NS;
     while (true) {
         if (m_window && m_window->shouldQuit()) {
             break;
@@ -210,7 +214,6 @@ void App::run()
 
         const uint64_t last_frame_begin_stamp = frame_begin_stamp;
         frame_begin_stamp = SDL_GetTicksNS();
-
         frame_state.delta_time = static_cast<double>(frame_begin_stamp - last_frame_begin_stamp) * 1e-9;
         delta_times[frame_state.frame_count % delta_times.size()] = frame_state.delta_time;
         frame_state.average_frame_time = std::accumulate(delta_times.cbegin(), delta_times.cend(), 0.0) / static_cast<double>(delta_times.size());
@@ -270,11 +273,9 @@ void App::run()
             m_render_backend->cleanupGPUResources();
         }
 
-        // throttling
-        constexpr uint64_t MAX_FRAME_TIME_NS{1'000'000}; // 1000 fps
-        if (const int64_t difference = SDL_GetTicksNS() - frame_begin_stamp; difference > MAX_FRAME_TIME_NS) {
-            SDL_DelayNS(difference);
-        }
+        std::this_thread::sleep_until(end_frame);
+        begin_frame = end_frame;
+        end_frame = begin_frame + MIN_FRAME_TIME_NS;
 
         ++frame_state.frame_count;
         FrameMark;
