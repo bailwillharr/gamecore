@@ -1,5 +1,7 @@
 #include "gamecore/gc_net_client.h"
 
+#include <random>
+
 #include <asio/co_spawn.hpp>
 #include <asio/detached.hpp>
 #include <asio/as_tuple.hpp>
@@ -10,6 +12,12 @@
 #include "gamecore/gc_net_common.h"
 
 namespace gc {
+
+static uint32_t generateClientNonce()
+{
+    std::mt19937 rand32(std::random_device{}());
+    return rand32();
+}
 
 NetClient::~NetClient() { disconnect(); }
 
@@ -81,7 +89,7 @@ asio::awaitable<void> NetClient::clientLoop(asio::ip::udp::endpoint server_endpo
         {
             auto header = NetPacketHeader::createValid(NetPacketType::CONNECT_REQUEST);
             auto connect_request = NetPacketConnectRequest{};
-            connect_request.client_nonce = static_cast<uint64_t>(rand()); // TODO
+            connect_request.client_nonce = static_cast<uint64_t>(generateClientNonce()); // TODO
             std::array<uint8_t, NET_MAX_PACKET_SIZE> buf{};
             NetByteWriter writer(buf);
             header.serialise(writer);
