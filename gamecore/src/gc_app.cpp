@@ -270,6 +270,12 @@ void App::run()
             m_render_backend->cleanupGPUResources();
         }
 
+        // throttling
+        constexpr uint64_t MAX_FRAME_TIME_NS{1'000'000}; // 1000 fps
+        if (const int64_t difference = SDL_GetTicksNS() - frame_begin_stamp; difference > MAX_FRAME_TIME_NS) {
+            SDL_DelayNS(difference);
+        }
+
         ++frame_state.frame_count;
         FrameMark;
     }
