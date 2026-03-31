@@ -89,15 +89,18 @@ App::App(const AppInitOptions& options)
 
     m_jobs = std::make_unique<Jobs>(std::thread::hardware_concurrency());
     m_content = std::make_unique<Content>(m_application_directory / "content", options.pak_files_override);
-    WindowInitInfo window_init_info{};
-    window_init_info.vulkan_support = true;
-    window_init_info.resizable = false;
-    m_window = std::make_unique<Window>(window_init_info);
-    m_render_backend = std::make_unique<RenderBackend>(m_window->getHandle());
-    m_debug_ui = std::make_unique<DebugUI>(m_window->getHandle(), m_render_backend->getInfo(), m_save_directory / "imgui.ini");
     m_world = std::make_unique<World>();
     m_resource_manager = std::make_unique<ResourceManager>(*m_content);
     m_net = std::make_unique<Net>();
+
+    if (!options.headless) {
+        WindowInitInfo window_init_info{};
+        window_init_info.vulkan_support = true;
+        window_init_info.resizable = false;
+        m_window = std::make_unique<Window>(window_init_info);
+        m_render_backend = std::make_unique<RenderBackend>(m_window->getHandle());
+        m_debug_ui = std::make_unique<DebugUI>(m_window->getHandle(), m_render_backend->getInfo(), m_save_directory / "imgui.ini");
+    }
 
     GC_TRACE("Initialised Application");
 }
@@ -106,7 +109,9 @@ App::~App()
 {
     GC_TRACE("Destroying Application...");
 
-    m_render_backend->waitIdle();
+    if (m_render_backend) {
+        m_render_backend->waitIdle();
+    }
 
     // job threads should be stopped here because otherwise other engine systems may shut down while still in use by those threads.
     // Ideally, job system shouldn't be busy at this point anyway since jobs shouldn't be left running.
@@ -196,7 +201,11 @@ void App::run()
 
     std::array<double, 20> delta_times{};
     uint64_t frame_begin_stamp = SDL_GetTicksNS() - 16'666'667LL; // set first delta time to something reasonable
-    while (!m_window->shouldQuit()) {
+    while (true) {
+        if (m_window && m_window->shouldQuit()) {
+            break;
+        }
+
         Logger::instance().incrementFrameNumber();
 
         const uint64_t last_frame_begin_stamp = frame_begin_stamp;
@@ -206,20 +215,25 @@ void App::run()
         delta_times[frame_state.frame_count % delta_times.size()] = frame_state.delta_time;
         frame_state.average_frame_time = std::accumulate(delta_times.cbegin(), delta_times.cend(), 0.0) / static_cast<double>(delta_times.size());
 
-        frame_state.window_state = &m_window->processEvents(DebugUI::windowEventInterceptor);
-        {
-            if (frame_state.window_state->getKeyDown(SDL_SCANCODE_ESCAPE)) {
-                m_window->pushQuitEvent();
-            }
-            if (frame_state.window_state->getKeyPress(SDL_SCANCODE_F11)) {
-                if (m_window->getIsResizable()) {
-                    m_window->setSize(0, 0, !frame_state.window_state->getIsFullscreen());
+        if (m_window) {
+            frame_state.window_state = &m_window->processEvents(DebugUI::windowEventInterceptor);
+            {
+                if (frame_state.window_state->getKeyDown(SDL_SCANCODE_ESCAPE)) {
+                    m_window->pushQuitEvent();
+                }
+                if (frame_state.window_state->getKeyPress(SDL_SCANCODE_F11)) {
+                    if (m_window->getIsResizable()) {
+                        m_window->setSize(0, 0, !frame_state.window_state->getIsFullscreen());
+                    }
+                }
+                if (frame_state.window_state->getKeyPress(SDL_SCANCODE_F10)) {
+                    m_debug_ui->active = !m_debug_ui->active;
+                    m_window->setMouseCaptured(!m_debug_ui->active);
                 }
             }
-            if (frame_state.window_state->getKeyPress(SDL_SCANCODE_F10)) {
-                m_debug_ui->active = !m_debug_ui->active;
-                m_window->setMouseCaptured(!m_debug_ui->active);
-            }
+        }
+        else {
+            frame_state.window_state = nullptr;
         }
 
         NetEvent net_ev{};
@@ -231,19 +245,30 @@ void App::run()
             }
         }
 
-        m_debug_ui->newFrame();
+        if (m_debug_ui) {
+            m_debug_ui->newFrame();
+        }
 
         m_world->update(frame_state);
 
-        m_debug_ui->update(frame_state);
+        if (m_debug_ui) {
+            m_debug_ui->update(frame_state);
+            renderNetUI(*m_net);
+            m_debug_ui->render();
+        }
 
-        renderNetUI(*m_net);
-
-        m_debug_ui->render();
-
-        m_render_backend->submitFrame(frame_state.window_state->getResizedFlag(), frame_state.draw_data, DebugUI::postRenderCallback);
+        if (m_render_backend) {
+            bool resized = false;
+            if (frame_state.window_state) {
+                resized = frame_state.window_state->getResizedFlag();
+            }
+            m_render_backend->submitFrame(resized, frame_state.draw_data, DebugUI::postRenderCallback);
+        }
         frame_state.draw_data.reset();
-        m_render_backend->cleanupGPUResources();
+
+        if (m_render_backend) {
+            m_render_backend->cleanupGPUResources();
+        }
 
         ++frame_state.frame_count;
         FrameMark;

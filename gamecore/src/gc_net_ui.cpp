@@ -32,7 +32,7 @@ void renderNetUI(Net& net)
         switch (mode) {
         case NetMode::DISCONNECTED: {
             static std::array<char, 64> buf{};
-            static int port{};
+            static int port{NET_DEFAULT_SERVER_PORT};
             ImGui::InputTextWithHint("Server IP", "127.0.0.1", buf.data(), buf.size());
             ImGui::InputInt("Server Port", &port);
 

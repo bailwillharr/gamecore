@@ -12,6 +12,8 @@
 
 namespace gc {
 
+constexpr uint16_t NET_DEFAULT_SERVER_PORT{6969};
+
 enum class NetMode { DISCONNECTED, SERVER, CLIENT };
 
 class Net {

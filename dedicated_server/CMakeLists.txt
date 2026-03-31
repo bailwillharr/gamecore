@@ -1,0 +1,54 @@
+cmake_minimum_required(VERSION 3.25)
+
+project(dedicated_server LANGUAGES CXX VERSION 0.1.0)
+
+set(SRC_FILES
+  "src/main.cpp"
+  "src/server.h"
+  "src/server.cpp"
+)
+
+if(WIN32)
+    add_executable(${PROJECT_NAME} WIN32
+        ${SRC_FILES}
+    )
+else()
+    add_executable(${PROJECT_NAME} ${SRC_FILES})
+endif()
+
+configure_file(dedicated_server.h.in dedicated_server.h @ONLY)
+
+# compiling options:
+
+target_include_directories(${PROJECT_NAME} PRIVATE ${PROJECT_BINARY_DIR})
+
+if(MSVC)
+    target_compile_options(${PROJECT_NAME} PRIVATE /W4 /WX)
+endif()
+
+if(WIN32)
+    # stop windows.h conflicting with 'std::max'
+    target_compile_definitions(${PROJECT_NAME} PRIVATE NOMINMAX)
+endif()
+
+# This project uses C++20
+target_compile_features(${PROJECT_NAME} PRIVATE cxx_std_20)
+
+target_link_libraries(${PROJECT_NAME} PRIVATE gamecore)
+
+if(WIN32)
+    add_custom_command(
+        TARGET ${PROJECT_NAME} POST_BUILD
+        COMMAND "${CMAKE_COMMAND}" -E copy
+        $<TARGET_FILE:SDL3::SDL3-shared> $<TARGET_FILE_DIR:${PROJECT_NAME}>
+        VERBATIM
+    )
+endif()
+
+# link game content directory to output directory
+add_custom_command(
+  TARGET ${PROJECT_NAME} POST_BUILD
+  COMMAND ${CMAKE_COMMAND} -E create_symlink
+  ${PROJECT_SOURCE_DIR}/../content $<TARGET_FILE_DIR:${PROJECT_NAME}>/content
+  VERBATIM
+)

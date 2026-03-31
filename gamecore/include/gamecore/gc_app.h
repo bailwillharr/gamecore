@@ -30,6 +30,7 @@ struct AppInitOptions {
     std::string author;
     std::string version;
     std::vector<std::string> pak_files_override;
+    bool headless = false;
 };
 
 class App {
