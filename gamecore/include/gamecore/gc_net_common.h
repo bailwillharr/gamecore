@@ -6,6 +6,7 @@
 #include <cstdint>
 #include <span>
 #include <bit>
+#include <bitset>
 #include <type_traits>
 #include <mutex>
 #include <optional>
@@ -68,7 +69,15 @@ using NetSessionToken = std::array<uint8_t, 16>;
 constexpr NetPacketMagic NET_PACKET_MAGIC{'G', 'C', 'N', 'E', 'T'};
 constexpr uint16_t NET_PACKET_VERSION = 1;
 
-enum class NetPacketType : uint8_t { CONNECT_REQUEST = 0, CONNECT_CHALLENGE = 1, CONNECT_CHALLENGE_RESPONSE = 2, PING = 3, PONG = 4, INVALID };
+enum class NetPacketType : uint8_t {
+    CONNECT_REQUEST = 0,
+    CONNECT_CHALLENGE = 1,
+    CONNECT_CHALLENGE_RESPONSE = 2,
+    PING = 3,
+    PONG = 4,
+    GAME_RELIABLE_HEADER = 5,
+    GAME_UNRELIABLE_HEADER = 6
+};
 
 struct NetPacketHeader {
     NetPacketMagic magic;
@@ -179,14 +188,14 @@ struct NetPacketConnectChallengeResponse {
 struct NetPacketPing {
     static constexpr NetPacketType TYPE = NetPacketType::PING;
 
-    uint32_t seq_num;
+    uint16_t seq_num;
 
-    void serialise(NetByteWriter& writer) const { writer.writeU32(seq_num); }
+    void serialise(NetByteWriter& writer) const { writer.writeU16(seq_num); }
 
     static NetPacketPing deserialise(NetByteReader& reader)
     {
         NetPacketPing obj{};
-        obj.seq_num = reader.readU32();
+        obj.seq_num = reader.readU16();
         return obj;
     }
 
@@ -197,18 +206,76 @@ struct NetPacketPing {
 struct NetPacketPong {
     static constexpr NetPacketType TYPE = NetPacketType::PONG;
 
-    uint32_t seq_num;
+    uint16_t seq_num;
 
-    void serialise(NetByteWriter& writer) const { writer.writeU32(seq_num); }
+    void serialise(NetByteWriter& writer) const { writer.writeU16(seq_num); }
 
     static NetPacketPong deserialise(NetByteReader& reader)
     {
         NetPacketPong obj{};
-        obj.seq_num = reader.readU32();
+        obj.seq_num = reader.readU16();
         return obj;
     }
 
     static consteval size_t getSerialisedSize() { return sizeof(seq_num); }
+};
+
+struct NetPacketGameReliableHeader {
+    static constexpr NetPacketType TYPE = NetPacketType::GAME_RELIABLE_HEADER;
+
+    uint16_t seq_num;
+    uint16_t ack_num;
+    std::bitset<32> ack_bits;
+    uint16_t payload_type; // application defined
+    uint16_t payload_size;
+
+    void serialise(NetByteWriter& writer) const
+    {
+        writer.writeU16(seq_num);
+        writer.writeU16(ack_num);
+        writer.writeU32(static_cast<uint32_t>(ack_bits.to_ulong()));
+        writer.writeU16(payload_type);
+        writer.writeU16(payload_size);
+    }
+
+    static NetPacketGameReliableHeader deserialise(NetByteReader& reader)
+    {
+        NetPacketGameReliableHeader obj{};
+        obj.seq_num = reader.readU16();
+        obj.ack_num = reader.readU16();
+        obj.ack_bits = reader.readU32();
+        obj.payload_type = reader.readU16();
+        obj.payload_size = reader.readU16();
+        return obj;
+    }
+
+    static consteval size_t getSerialisedSize() { return sizeof(seq_num) + sizeof(ack_num) + sizeof(ack_bits) + sizeof(payload_type) + sizeof(payload_size); }
+};
+
+struct NetPacketGameUnreliableHeader {
+    static constexpr NetPacketType TYPE = NetPacketType::GAME_UNRELIABLE_HEADER;
+
+    uint16_t seq_num;
+    uint16_t payload_type;
+    uint16_t payload_size;
+
+    void serialise(NetByteWriter& writer) const
+    {
+        writer.writeU16(seq_num);
+        writer.writeU16(payload_type);
+        writer.writeU16(payload_size);
+    }
+
+    static NetPacketGameUnreliableHeader deserialise(NetByteReader& reader)
+    {
+        NetPacketGameUnreliableHeader obj{};
+        obj.seq_num = reader.readU16();
+        obj.payload_type = reader.readU16();
+        obj.payload_size = reader.readU16();
+        return obj;
+    }
+
+    static consteval size_t getSerialisedSize() { return sizeof(seq_num) + sizeof(payload_type) + sizeof(payload_size); }
 };
 
 template <typename T>

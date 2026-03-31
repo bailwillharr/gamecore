@@ -122,7 +122,23 @@ bool verifyPacketHeader(const NetPacketHeader& header)
     if (header.version != NET_PACKET_VERSION) {
         return false;
     }
-    if (header.type >= NetPacketType::INVALID) {
+    switch (header.type) {
+    case NetPacketType::CONNECT_REQUEST:
+        if (header.token != NetSessionToken{}) {
+            return false;
+        }
+        break;
+    case NetPacketType::CONNECT_CHALLENGE:
+    case NetPacketType::CONNECT_CHALLENGE_RESPONSE:
+    case NetPacketType::PING:
+    case NetPacketType::PONG:
+    case NetPacketType::GAME_RELIABLE_HEADER:
+    case NetPacketType::GAME_UNRELIABLE_HEADER:
+        if (header.token == NetSessionToken{}) {
+            return false;
+        }
+        break;
+    default:
         return false;
     }
     return true;

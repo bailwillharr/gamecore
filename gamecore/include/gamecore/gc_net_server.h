@@ -46,6 +46,7 @@ public:
     asio::ip::udp::endpoint getLocalEndpoint() const;
 
 private:
+    // Can be called on the main thread
     void pushToOutboundQueue(OutboundPacket packet);
 
     asio::awaitable<void> receiveLoop();

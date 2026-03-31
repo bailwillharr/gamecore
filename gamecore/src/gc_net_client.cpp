@@ -151,7 +151,7 @@ asio::awaitable<void> NetClient::clientLoop(asio::ip::udp::endpoint server_endpo
 
     m_state.store(NetClientState::CONNECTED);
 
-    uint32_t seq_num = 0;
+    uint16_t seq_num = 0;
     for (;;) {
         {
             asio::steady_timer timer(executor, std::chrono::seconds(1));

@@ -39,20 +39,38 @@ static NetSessionToken computeSessionToken(uint64_t server_secret, const asio::i
     // TODO
     // THIS IS NOT SECURE AT ALL!
     // USE SOMETHING LIKE BLAKE3 INSTEAD
-    //
-    // it also allocates on the heap, which the server code SHOULD NOT DO prior to client authentication
-    std::stringstream data;
-    data << server_secret;
-    data << '|';
-    data << client_endpoint.address().to_string();
-    data << '|';
-    data << client_endpoint.port();
-    data << '|';
-    data << client_nonce;
-    data << '|';
-    data << time_bucket;
 
-    uint32_t hash = crc32_impl(data.str().c_str());
+    struct Data {
+        uint64_t server_secret;
+        std::array<uint8_t, 16> address;
+        uint64_t client_nonce;
+        uint32_t time_bucket;
+        uint16_t port;
+        uint16_t padding; // must be zero
+    };
+    static_assert(sizeof(Data) == 40);
+    static_assert(std::endian::native == std::endian::little);
+    static_assert(std::is_same_v<asio::ip::port_type, uint16_t>);
+
+    Data data{};
+    data.server_secret = server_secret;
+    if (client_endpoint.address().is_v4()) {
+        const auto bytes = client_endpoint.address().to_v4().to_bytes();
+        std::copy(bytes.begin(), bytes.end(), data.address.begin());
+    }
+    else if (client_endpoint.address().is_v6()) {
+        const auto bytes = client_endpoint.address().to_v6().to_bytes();
+        std::copy(bytes.begin(), bytes.end(), data.address.begin());
+    }
+    else {
+        GC_ASSERT(false);
+    }
+    data.client_nonce = client_nonce;
+    data.time_bucket = time_bucket;
+    data.port = client_endpoint.port();
+    data.padding = 0;
+
+    uint32_t hash = crc32_impl(reinterpret_cast<const char*>(&data));
 
     NetSessionToken token{};
 
@@ -227,6 +245,7 @@ void NetServer::pushToOutboundQueue(OutboundPacket packet)
     });
 }
 
+// Just a dumb loop that sends anything in the outbound queue to the corresponding endpoint
 asio::awaitable<void> NetServer::sendLoop()
 {
     constexpr auto TOKEN = asio::as_tuple(asio::use_awaitable);
@@ -240,7 +259,7 @@ asio::awaitable<void> NetServer::sendLoop()
         std::tie(ec, packet) = co_await m_outbound_queue.async_receive(TOKEN);
         if (ec) {
             GC_ERROR("Outbound channel receive error: {}", ec.message());
-            continue; // context stopped
+            continue;
         }
 
         size_t bytes_written{};
@@ -301,6 +320,7 @@ asio::awaitable<void> NetServer::receiveLoop()
             handleAuthenticated(ctx, sessions);
         }
 
+        // Put new packet on the outbound queue
         if (writer.pos() > 0) {
             OutboundPacket outbound{};
             outbound.endpoint = client_endpoint;
