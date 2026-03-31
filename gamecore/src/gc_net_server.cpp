@@ -34,6 +34,20 @@ static uint32_t getTimeBucket()
     return static_cast<uint32_t>(bucket); // truncates uint64_t to uint32_t
 }
 
+template <typename T>
+static std::size_t simpleHash(const T& obj)
+{
+    const std::uint8_t* data = reinterpret_cast<const std::uint8_t*>(&obj);
+    std::size_t hash = 1469598103934665603ull; // FNV offset basis
+
+    for (std::size_t i = 0; i < sizeof(T); ++i) {
+        hash ^= data[i];
+        hash *= 1099511628211ull; // FNV prime
+    }
+
+    return hash;
+}
+
 static NetSessionToken computeSessionToken(uint64_t server_secret, const asio::ip::udp::endpoint& client_endpoint, uint64_t client_nonce, uint32_t time_bucket)
 {
     // TODO
@@ -70,12 +84,12 @@ static NetSessionToken computeSessionToken(uint64_t server_secret, const asio::i
     data.port = client_endpoint.port();
     data.padding = 0;
 
-    uint32_t hash = crc32_impl(reinterpret_cast<const char*>(&data));
+    size_t hash = simpleHash(data);
 
     NetSessionToken token{};
 
     for (int i = 0; i < token.size(); ++i) {
-        token[i] = (hash >> ((i % 4) * 8)) & 0xFF;
+        token[i] = (hash >> ((i % 8) * 8)) & 0xFF;
     }
 
     return token;
