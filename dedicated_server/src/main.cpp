@@ -16,7 +16,7 @@ Options parseCmdLine(std::span<const char* const> args)
     Options result{};
     result.bind_port = gc::NET_DEFAULT_SERVER_PORT;
     if (args.size() >= 1) {
-        std::string_view port_string(args[1]);
+        std::string_view port_string(args[0]);
         uint16_t port{};
         auto [ptr, ec] = std::from_chars(port_string.data(), port_string.data() + port_string.size(), port);
         if (ptr != port_string.data() + port_string.size()) {
@@ -27,7 +27,7 @@ Options parseCmdLine(std::span<const char* const> args)
         }
     }
     if (args.size() >= 2) {
-        result.bind_address = args[0];
+        result.bind_address = args[1];
     }
     return result;
 }
