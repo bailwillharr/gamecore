@@ -20,7 +20,7 @@ static uint32_t generateClientNonce()
 }
 
 // based on https://www.rfc-editor.org/rfc/rfc6298
-class TimeoutCalculator {
+class RetransmitTimeoutCalculator {
 public:
     using timer_duration = std::chrono::steady_clock::duration;
 
@@ -209,7 +209,7 @@ asio::awaitable<void> NetClient::clientLoop(asio::ip::udp::endpoint server_endpo
 
     m_state.store(NetClientState::CONNECTED);
 
-    TimeoutCalculator timeout_calc{};
+    RetransmitTimeoutCalculator timeout_calc{};
 
     uint16_t seq_num = 0;
     for (;;) {
@@ -256,7 +256,6 @@ asio::awaitable<void> NetClient::clientLoop(asio::ip::udp::endpoint server_endpo
                     co_return;
                 }
                 GC_WARN("Timeout pinging {}:{}", server_endpoint.address().to_string(), server_endpoint.port());
-                continue;
             }
             else {
                 std::tie(ec, bytes_received) = std::get<0>(results);
