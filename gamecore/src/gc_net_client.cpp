@@ -19,6 +19,55 @@ static uint32_t generateClientNonce()
     return rand32();
 }
 
+// based on https://www.rfc-editor.org/rfc/rfc6298
+class TimeoutCalculator {
+public:
+    using timer_duration = std::chrono::steady_clock::duration;
+
+private:
+    using calc_duration = std::chrono::duration<double>;
+
+    static constexpr calc_duration RTO_INITIAL = std::chrono::seconds(1);
+    static constexpr calc_duration RTO_MIN = std::chrono::seconds(1);
+    static constexpr calc_duration RTO_MAX = std::chrono::seconds(60);
+
+    static constexpr double K = 4.0;
+    static constexpr double ALPHA = 1.0 / 8.0;
+    static constexpr double BETA = 1.0 / 4.0;
+
+    bool m_first_rtt_recorded = false;
+    calc_duration m_srtt{};
+    calc_duration m_rttvar{};
+    calc_duration m_rto{RTO_INITIAL};
+
+public:
+    timer_duration getRTO() const { return std::chrono::duration_cast<timer_duration>(m_rto); }
+
+    void recordRTT(timer_duration rtt)
+    {
+        calc_duration rtt_d = std::chrono::duration_cast<calc_duration>(rtt);
+
+        if (!m_first_rtt_recorded) {
+            m_srtt = rtt_d;
+            m_rttvar = rtt_d / 2.0;
+            m_first_rtt_recorded = true;
+        }
+        else {
+            auto err = m_srtt - rtt_d;
+            if (err < calc_duration::zero()) {
+                err = -err;
+            }
+
+            m_rttvar = (1.0 - BETA) * m_rttvar + BETA * err;
+            m_srtt = (1.0 - ALPHA) * m_srtt + ALPHA * rtt_d;
+        }
+
+        m_rto = m_srtt + K * m_rttvar;
+
+        m_rto = std::clamp(m_rto, RTO_MIN, RTO_MAX);
+    }
+};
+
 NetClient::~NetClient() { disconnect(); }
 
 bool NetClient::connect(const asio::ip::udp::endpoint& endpoint)
@@ -56,8 +105,7 @@ asio::awaitable<void> NetClient::clientLoop(asio::ip::udp::endpoint server_endpo
 
     constexpr auto TOKEN = asio::as_tuple(asio::use_awaitable);
 
-    constexpr auto TIMEOUT = std::chrono::milliseconds(500);
-    constexpr int MAX_RETRIES = 3;
+    constexpr int MAX_ATTEMPTS = 4;
 
     asio::error_code ec{};
     auto executor = co_await asio::this_coro::executor;
@@ -85,7 +133,8 @@ asio::awaitable<void> NetClient::clientLoop(asio::ip::udp::endpoint server_endpo
     size_t bytes_received = 0;
     NetByteReader reader(receive_buf);
 
-    for (int i = 0; i < MAX_RETRIES; ++i) {
+    auto current_timeout = std::chrono::milliseconds(1000);
+    for (int i = 0; i < MAX_ATTEMPTS; ++i) {
         {
             auto header = NetPacketHeader::createValid(NetPacketType::CONNECT_REQUEST);
             auto connect_request = NetPacketConnectRequest{};
@@ -101,7 +150,7 @@ asio::awaitable<void> NetClient::clientLoop(asio::ip::udp::endpoint server_endpo
             }
         }
         {
-            asio::steady_timer timer(executor, TIMEOUT);
+            asio::steady_timer timer(executor, current_timeout);
 
             auto results = co_await (socket.async_receive(asio::buffer(receive_buf), TOKEN) || timer.async_wait(TOKEN));
             if (results.index() == 1) {
@@ -111,6 +160,7 @@ asio::awaitable<void> NetClient::clientLoop(asio::ip::udp::endpoint server_endpo
                     co_return;
                 }
                 GC_WARN("Timeout connecting to {}:{}", server_endpoint.address().to_string(), server_endpoint.port());
+                current_timeout *= 2; // exponential backoff
                 continue;
             }
             else {
@@ -159,6 +209,8 @@ asio::awaitable<void> NetClient::clientLoop(asio::ip::udp::endpoint server_endpo
 
     m_state.store(NetClientState::CONNECTED);
 
+    TimeoutCalculator timeout_calc{};
+
     uint16_t seq_num = 0;
     for (;;) {
         {
@@ -171,7 +223,7 @@ asio::awaitable<void> NetClient::clientLoop(asio::ip::udp::endpoint server_endpo
         }
 
         std::chrono::steady_clock::duration rtt{};
-        for (int i = 0; i < MAX_RETRIES; ++i) {
+        for (int i = 0; i < MAX_ATTEMPTS; ++i) {
             ++seq_num;
 
             auto header = NetPacketHeader::createValid(NetPacketType::PING, session_token);
@@ -190,7 +242,7 @@ asio::awaitable<void> NetClient::clientLoop(asio::ip::udp::endpoint server_endpo
                 co_return;
             }
 
-            asio::steady_timer timer(executor, TIMEOUT);
+            asio::steady_timer timer(executor, timeout_calc.getRTO());
             auto results = co_await (socket.async_receive(asio::buffer(receive_buf), TOKEN) || timer.async_wait(TOKEN));
 
             const auto pong_recv_time = std::chrono::steady_clock::now();
@@ -218,6 +270,8 @@ asio::awaitable<void> NetClient::clientLoop(asio::ip::udp::endpoint server_endpo
             }
         }
 
+        timeout_calc.recordRTT(rtt);
+
         reader.reset();
         if (bytes_received >= NetPacketHeader::getSerialisedSize() + NetPacketPong::getSerialisedSize()) {
             if (const auto header = NetPacketHeader::deserialise(reader); header.type == NetPacketType::PONG && header.token == session_token) {
@@ -225,7 +279,7 @@ asio::awaitable<void> NetClient::clientLoop(asio::ip::udp::endpoint server_endpo
                 if (seq_num == pong.seq_num) {
                     // received pong
                     // determine RTT here.
-                    GC_INFO("RTT: {}", std::chrono::duration_cast<std::chrono::milliseconds>(rtt));
+                    GC_INFO("RTT: {}, RTO: {}", std::chrono::duration_cast<std::chrono::milliseconds>(rtt), std::chrono::duration_cast<std::chrono::milliseconds>(timeout_calc.getRTO()));
                     continue;
                 }
             }
