@@ -200,21 +200,21 @@ void App::run()
     FrameState frame_state{};
 
     std::array<double, 20> delta_times{};
-    uint64_t frame_begin_stamp = SDL_GetTicksNS() - 16'666'667LL; // set first delta time to something reasonable
+    constexpr uint64_t MIN_FRAME_TIME_NS = 2'000'000LL; // 2 ms = 500 Hz
 
-    constexpr auto MIN_FRAME_TIME_NS = std::chrono::microseconds(2000); // 500 fps
-    auto begin_frame = std::chrono::steady_clock::now();
-    auto end_frame = begin_frame + MIN_FRAME_TIME_NS;
+    uint64_t last_frame_start_stamp_ns = SDL_GetTicksNS() - MIN_FRAME_TIME_NS; // ensure first delta time is something reasonable
     while (true) {
+        const uint64_t frame_start_stamp_ns = SDL_GetTicksNS();
+        const uint64_t last_frame_time_ns = frame_start_stamp_ns - last_frame_start_stamp_ns;
+        last_frame_start_stamp_ns = frame_start_stamp_ns;
+
         if (m_window && m_window->shouldQuit()) {
             break;
         }
 
         Logger::instance().incrementFrameNumber();
 
-        const uint64_t last_frame_begin_stamp = frame_begin_stamp;
-        frame_begin_stamp = SDL_GetTicksNS();
-        frame_state.delta_time = static_cast<double>(frame_begin_stamp - last_frame_begin_stamp) * 1e-9;
+        frame_state.delta_time = static_cast<double>(last_frame_time_ns) * 1e-9;
         delta_times[frame_state.frame_count % delta_times.size()] = frame_state.delta_time;
         frame_state.average_frame_time = std::accumulate(delta_times.cbegin(), delta_times.cend(), 0.0) / static_cast<double>(delta_times.size());
 
@@ -273,12 +273,12 @@ void App::run()
             m_render_backend->cleanupGPUResources();
         }
 
-        std::this_thread::sleep_until(end_frame);
-        begin_frame = end_frame;
-        end_frame = begin_frame + MIN_FRAME_TIME_NS;
-
         ++frame_state.frame_count;
         FrameMark;
+
+        if (const uint64_t frame_time_ns = SDL_GetTicksNS() - frame_start_stamp_ns; frame_time_ns < MIN_FRAME_TIME_NS) {
+            SDL_DelayPrecise(MIN_FRAME_TIME_NS - frame_time_ns);
+        }
     }
 
     GC_TRACE("Quitting...");

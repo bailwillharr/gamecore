@@ -120,6 +120,22 @@ asio::ip::udp::endpoint Net::getServerEndpoint() const { return getServer().getL
 
 bool Net::isServerRunning() const { return getServer().isRunning(); }
 
+std::optional<asio::ip::udp::endpoint> Net::resolve(std::string_view host, std::string_view service)
+{
+    asio::error_code ec{};
+    asio::io_context ctx{};
+    asio::ip::udp::resolver resolver(ctx);
+    const auto result = resolver.resolve(host, service, ec);
+    if (ec) {
+        GC_ERROR("resolve error: {}", ec.message());
+        return std::nullopt;
+    }
+    if (result.empty()) {
+        return std::nullopt;
+    }
+    return result.begin()->endpoint();
+}
+
 NetServer& Net::getServer()
 {
     GC_ASSERT(std::holds_alternative<NetServer>(m_server_client));

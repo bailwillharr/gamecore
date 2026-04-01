@@ -1,6 +1,7 @@
 #pragma once
 
 #include <variant>
+#include <optional>
 
 #include <asio/ip/udp.hpp>
 #include <asio/io_context.hpp>
@@ -41,6 +42,9 @@ public:
 
     asio::ip::udp::endpoint getServerEndpoint() const;
     bool isServerRunning() const;
+
+    // executes synchronously
+    std::optional<asio::ip::udp::endpoint> resolve(std::string_view host, std::string_view service);
 
 private:
     NetServer& getServer();

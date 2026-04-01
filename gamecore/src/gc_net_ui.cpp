@@ -4,6 +4,7 @@
 
 #include <imgui.h>
 
+#include "gamecore/gc_assert.h"
 #include "gamecore/gc_net.h"
 #include "gamecore/gc_net_client.h"
 
@@ -33,31 +34,47 @@ void renderNetUI(Net& net)
         case NetMode::DISCONNECTED: {
             static std::array<char, 64> buf{};
             static int port{NET_DEFAULT_SERVER_PORT};
-            ImGui::InputTextWithHint("Server IP", "127.0.0.1", buf.data(), buf.size());
+            ImGui::InputTextWithHint("Server Address", "127.0.0.1", buf.data(), buf.size());
             ImGui::InputInt("Server Port", &port);
-
-            asio::ip::address address{};
-            asio::error_code ec{};
-            if (buf[0]) {
-                address = asio::ip::make_address(buf.data(), ec);
-            }
-            else {
-                address = asio::ip::make_address("127.0.0.1", ec);
-            }
-            if (ec) {
-                break;
-            }
 
             if (port < 0 || port > 65535) {
                 break;
             }
 
+            asio::ip::address address{};
+            bool use_resolver = false;
+            asio::error_code ec{};
+            if (buf[0]) {
+                address = asio::ip::make_address(buf.data(), ec);
+                if (ec == asio::error::invalid_argument) {
+                    // try to resolve as a domain name instead
+                    use_resolver = true;
+                }
+                else if (ec) {
+                    break;
+                }
+            }
+            else {
+                address = asio::ip::make_address("127.0.0.1", ec);
+                GC_ASSERT(!ec);
+            }
+
             asio::ip::udp::endpoint endpoint(address, asio::ip::port_type(port));
 
-            if (ImGui::Button("Start Server")) {
-                net.startServer(endpoint);
+            if (!use_resolver) {
+                if (ImGui::Button("Start Server")) {
+                    net.startServer(endpoint);
+                }
             }
             if (ImGui::Button("Conncet To Server")) {
+                if (use_resolver) {
+                    const auto endpoint_opt = net.resolve(std::string_view(buf.data()), std::to_string(port));
+                    if (!endpoint_opt) {
+                        GC_ERROR("Failed to resolve: {}", buf.data());
+                        break;
+                    }
+                    endpoint = *endpoint_opt;
+                }
                 net.connectToServer(endpoint);
             }
         } break;
