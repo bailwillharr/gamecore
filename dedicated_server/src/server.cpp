@@ -27,7 +27,7 @@ void buildAndStartServer(gc::App& app, Options options)
     gc::World& world = app.world();
     world.registerSystem<WorldLoadSystem>();
 
-    asio::ip::address addr = asio::ip::address_v4(); // default 0.0.0.0
+    asio::ip::address addr = asio::ip::address_v6(); // default :: (can accept ipv4 connections too)
     if (!options.bind_address.empty()) {
         asio::error_code ec{};
         addr = asio::ip::make_address(options.bind_address, ec);
