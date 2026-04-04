@@ -39,7 +39,7 @@ int main(int argc, char* argv[])
     auto options = parseCmdLine(std::span(argv + 1, argc - 1));
 
     gc::AppInitOptions init_options{};
-    init_options.name = "gamecore_template";
+    init_options.name = "dedicated_server";
     init_options.author = "bailwillharr";
     init_options.version = "v0.0.0";
     init_options.headless = true;
