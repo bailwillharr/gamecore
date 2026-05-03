@@ -17,3 +17,4 @@ runme
 *.lnk
 /content/*.gcpak
 /content/*.txt
+.zed/

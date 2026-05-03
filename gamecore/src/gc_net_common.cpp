@@ -47,7 +47,7 @@ void NetByteWriter::writeBytes(std::span<const uint8_t> bytes)
 
 void NetByteWriter::skip(size_t n)
 {
-    GC_ASSERT(m_pos + n < m_buffer.size());
+    GC_ASSERT(m_pos + n <= m_buffer.size());
     m_pos += n;
 }
 
@@ -104,7 +104,7 @@ void NetByteReader::readBytes(std::span<uint8_t> out)
 
 void NetByteReader::skip(size_t n)
 {
-    GC_ASSERT(m_pos + n < m_buffer.size());
+    GC_ASSERT(m_pos + n <= m_buffer.size());
     m_pos += n;
 }
 

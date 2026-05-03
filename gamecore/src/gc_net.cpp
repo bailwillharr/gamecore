@@ -21,6 +21,7 @@
 #include "gamecore/gc_asio_throw_exception.h"
 #include "gamecore/gc_assert.h"
 #include "gamecore/gc_logger.h"
+#include "gamecore/gc_net_client.h"
 
 namespace gc {
 
@@ -45,7 +46,7 @@ bool NetEventQueue::pop(NetEvent& ev)
 
 bool Net::startServer(asio::ip::udp::endpoint endpoint)
 {
-    if (m_local_mode != NetMode::DISCONNECTED) {
+    if (!std::holds_alternative<std::monostate>(m_server_client)) {
         GC_ERROR("Cannot start server if already running as a client or server");
         return false;
     }
@@ -56,21 +57,18 @@ bool Net::startServer(asio::ip::udp::endpoint endpoint)
         return false;
     }
 
-    m_local_mode = NetMode::SERVER;
     return true;
 }
 
 void Net::stopServer()
 {
     getServer().stop();
-    if (m_local_mode == NetMode::SERVER) {
-        m_local_mode = NetMode::DISCONNECTED;
-    }
+    m_server_client.emplace<std::monostate>();
 }
 
 bool Net::connectToServer(const asio::ip::udp::endpoint& endpoint)
 {
-    if (m_local_mode != NetMode::DISCONNECTED) {
+    if (!std::holds_alternative<std::monostate>(m_server_client)) {
         GC_ERROR("Cannot connect to a server if already running as a client or server");
         return false;
     }
@@ -81,38 +79,37 @@ bool Net::connectToServer(const asio::ip::udp::endpoint& endpoint)
         return false;
     }
 
-    m_local_mode = NetMode::CLIENT;
     return true;
 }
 
 void Net::disconnectFromServer()
 {
-    if (m_local_mode == NetMode::CLIENT) {
-        m_local_mode = NetMode::DISCONNECTED;
-    }
-
     getClient().disconnect();
+    m_server_client.emplace<std::monostate>();
 }
 
 bool Net::pollEvents(NetEvent& ev)
 {
-    switch (m_local_mode) {
-    case NetMode::CLIENT:
-        if (getClient().getState() == NetClientState::DISCONNECTED) {
-            m_local_mode = NetMode::DISCONNECTED;
-        }
-        return getClient().poll(ev);
-    case NetMode::SERVER:
-        if (getServer().isRunning() == false) {
-            m_local_mode = NetMode::DISCONNECTED;
+    return std::visit([&](auto&& arg) -> bool{
+        using T = std::decay_t<decltype(arg)>;
+        if constexpr (std::is_same_v<T, NetServer>) {
+            return false;
+        } else if constexpr (std::is_same_v<T, NetClient>) {
+            return arg.poll(ev);
         }
         return false;
-    default:
-        return false;
-    }
+    }, m_server_client);
 }
 
-NetMode Net::getMode() const { return m_local_mode; }
+NetMode Net::getMode() const {
+    if (std::holds_alternative<NetServer>(m_server_client)) {
+        return NetMode::SERVER;
+    } else if (std::holds_alternative<NetClient>(m_server_client)) {
+        return NetMode::CLIENT;
+    } else {
+        return NetMode::DISCONNECTED;
+    }
+}
 
 NetClientState Net::getClientState() const { return getClient().getState(); }
 

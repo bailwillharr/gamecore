@@ -18,9 +18,7 @@ constexpr uint16_t NET_DEFAULT_SERVER_PORT{6969};
 enum class NetMode { DISCONNECTED, SERVER, CLIENT };
 
 class Net {
-    std::variant<NetServer, NetClient> m_server_client;
-
-    NetMode m_local_mode{NetMode::DISCONNECTED};
+    std::variant<std::monostate, NetServer, NetClient> m_server_client;
 
 public:
     // returns false on failure
