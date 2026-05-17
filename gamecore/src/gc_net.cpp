@@ -117,6 +117,14 @@ asio::ip::udp::endpoint Net::getServerEndpoint() const { return getServer().getL
 
 bool Net::isServerRunning() const { return getServer().isRunning(); }
 
+size_t Net::getConnectedClientCount() const
+{
+    if (!std::holds_alternative<NetServer>(m_server_client)) {
+        return 0;
+    }
+    return getServer().getConnectedClientCount();
+}
+
 std::optional<asio::ip::udp::endpoint> Net::resolve(std::string_view host, std::string_view service)
 {
     asio::error_code ec{};
