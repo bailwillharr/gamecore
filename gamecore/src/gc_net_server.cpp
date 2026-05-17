@@ -250,6 +250,12 @@ asio::ip::udp::endpoint NetServer::getLocalEndpoint() const
     return m_server_status.local_endpoint;
 }
 
+size_t NetServer::getConnectedClientCount() const
+{
+    std::scoped_lock lock(m_server_status.mutex);
+    return m_server_status.connected_client_count;
+}
+
 void NetServer::pushToOutboundQueue(OutboundPacket packet)
 {
     asio::post(m_context, [this, packet = std::move(packet)] {
@@ -302,6 +308,7 @@ asio::awaitable<void> NetServer::receiveLoop()
     std::optional<uint32_t> last_cleanup_bucket{};
     std::array<uint8_t, NET_MAX_PACKET_SIZE> recv_buf{};
     std::array<uint8_t, NET_MAX_PACKET_SIZE> send_buf{};
+    size_t last_session_count = 0;
     for (;;) {
         size_t bytes_read{};
         asio::ip::udp::endpoint client_endpoint{};
@@ -332,6 +339,12 @@ asio::awaitable<void> NetServer::receiveLoop()
         }
         else {
             handleAuthenticated(ctx, sessions);
+        }
+
+        if (sessions.size() != last_session_count) {
+            last_session_count = sessions.size();
+            std::scoped_lock lock(m_server_status.mutex);
+            m_server_status.connected_client_count = last_session_count;
         }
 
         // Put new packet on the outbound queue

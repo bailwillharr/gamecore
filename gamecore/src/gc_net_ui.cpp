@@ -82,6 +82,7 @@ void renderNetUI(Net& net)
             ImGui::Text("Running: %d", net.isServerRunning());
             const auto server_addr = net.getServerEndpoint();
             ImGui::Text("Address: %s:%d", server_addr.address().to_string().c_str(), server_addr.port());
+            ImGui::Text("Connected Clients: %zu", net.getConnectedClientCount());
             if (ImGui::Button("Stop Server")) {
                 net.stopServer();
             }

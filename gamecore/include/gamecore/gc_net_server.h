@@ -15,6 +15,7 @@ namespace gc {
 struct NetServerStatus {
     mutable std::mutex mutex{};
     asio::ip::udp::endpoint local_endpoint{};
+    size_t connected_client_count{};
 };
 
 class NetServer {
@@ -44,6 +45,7 @@ public:
 
     bool isRunning() const;
     asio::ip::udp::endpoint getLocalEndpoint() const;
+    size_t getConnectedClientCount() const;
 
 private:
     // Can be called on the main thread
