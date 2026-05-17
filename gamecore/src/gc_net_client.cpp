@@ -27,6 +27,12 @@ bool NetClient::connect(const asio::ip::udp::endpoint& endpoint)
     disconnect();
     m_context.restart();
     m_state.store(NetClientState::CONNECTING);
+    {
+        std::scoped_lock lock(m_debug_mutex);
+        m_debug_info = {};
+        m_debug_info.state = NetClientState::CONNECTING;
+        m_ping_send_times.clear();
+    }
     m_client_thread = std::jthread(
         [](NetClient& self, asio::ip::udp::endpoint endpoint) {
             asio::co_spawn(self.m_context, self.clientLoop(endpoint), asio::detached);
@@ -45,11 +51,22 @@ void NetClient::disconnect()
     m_session_token.reset();
     m_recv_watchdog.reset();
     m_state.store(NetClientState::DISCONNECTED);
+    {
+        std::scoped_lock lock(m_debug_mutex);
+        m_debug_info.state = NetClientState::DISCONNECTED;
+        m_ping_send_times.clear();
+    }
 }
 
 bool NetClient::poll(NetEvent& ev) { return m_event_queue.pop(ev); }
 
 NetClientState NetClient::getState() const { return m_state.load(); }
+
+NetClientDebugInfo NetClient::getDebugInfo() const
+{
+    std::scoped_lock lock(m_debug_mutex);
+    return m_debug_info;
+}
 
 asio::awaitable<bool> NetClient::handshake(asio::ip::udp::endpoint server_endpoint)
 {
@@ -167,6 +184,10 @@ asio::awaitable<void> NetClient::sendLoop()
             GC_ERROR("Failed to send full packet: {}/{}", bytes_written, packet.data.size());
             co_return;
         }
+        {
+            std::scoped_lock lock(m_debug_mutex);
+            m_debug_info.packets_sent += 1;
+        }
     }
 }
 
@@ -189,7 +210,8 @@ asio::awaitable<void> NetClient::heartbeatLoop()
         std::array<uint8_t, NET_MAX_PACKET_SIZE> send_buf{};
         NetByteWriter writer(send_buf);
         NetPacketHeader::createValid(NetPacketType::PING, *m_session_token).serialise(writer);
-        NetPacketPing{.seq_num = static_cast<uint16_t>(++seq_num)}.serialise(writer);
+        const auto seq_num_u16 = static_cast<uint16_t>(++seq_num);
+        NetPacketPing{.seq_num = seq_num_u16}.serialise(writer);
 
         OutboundPacket packet{};
         packet.data.assign(send_buf.data(), send_buf.data() + writer.pos());
@@ -197,6 +219,11 @@ asio::awaitable<void> NetClient::heartbeatLoop()
         if (ec) {
             GC_ERROR("Failed queueing heartbeat packet: {}", ec.message());
             co_return;
+        }
+        {
+            std::scoped_lock lock(m_debug_mutex);
+            m_debug_info.ping_sent += 1;
+            m_ping_send_times[seq_num_u16] = std::chrono::steady_clock::now();
         }
     }
 }
@@ -232,6 +259,10 @@ asio::awaitable<void> NetClient::receiveLoop()
             co_return;
         }
 
+        {
+            std::scoped_lock lock(m_debug_mutex);
+            m_debug_info.packets_received += 1;
+        }
         NetByteReader reader(std::span(recv_buf.data(), bytes_received));
         const auto header = tryDeserialise<NetPacketHeader>(reader);
         if (!header || !verifyPacketHeader(*header) || header->token != *m_session_token) {
@@ -243,6 +274,22 @@ asio::awaitable<void> NetClient::receiveLoop()
             const auto pong = tryDeserialiseExact<NetPacketPong>(reader);
             if (!pong) {
                 GC_WARN("Received invalid PONG packet");
+            }
+            else {
+                std::scoped_lock lock(m_debug_mutex);
+                m_debug_info.pong_received += 1;
+                const auto it = m_ping_send_times.find(pong->seq_num);
+                if (it != m_ping_send_times.end()) {
+                    const double rtt_ms = std::chrono::duration<double, std::milli>(std::chrono::steady_clock::now() - it->second).count();
+                    m_debug_info.last_rtt_ms = rtt_ms;
+                    if (m_debug_info.avg_rtt_ms == 0.0) {
+                        m_debug_info.avg_rtt_ms = rtt_ms;
+                    }
+                    else {
+                        m_debug_info.avg_rtt_ms = m_debug_info.avg_rtt_ms * 0.9 + rtt_ms * 0.1;
+                    }
+                    m_ping_send_times.erase(it);
+                }
             }
             break;
         }
@@ -265,6 +312,10 @@ asio::awaitable<void> NetClient::clientLoop(asio::ip::udp::endpoint server_endpo
     }
 
     m_state.store(NetClientState::CONNECTED);
+    {
+        std::scoped_lock lock(m_debug_mutex);
+        m_debug_info.state = NetClientState::CONNECTED;
+    }
     m_event_queue.push(NetEvent{.type = Name::createConstexpr("net_connected")});
 
     auto executor = co_await asio::this_coro::executor;

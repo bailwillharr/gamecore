@@ -3,6 +3,9 @@
 #include <thread>
 #include <optional>
 #include <vector>
+#include <mutex>
+#include <unordered_map>
+#include <chrono>
 
 #include <asio/ip/udp.hpp>
 #include <asio/awaitable.hpp>
@@ -14,6 +17,16 @@
 namespace gc {
 
 enum class NetClientState { DISCONNECTED, CONNECTING, CONNECTED };
+
+struct NetClientDebugInfo {
+    NetClientState state{NetClientState::DISCONNECTED};
+    double last_rtt_ms{};
+    double avg_rtt_ms{};
+    uint64_t ping_sent{};
+    uint64_t pong_received{};
+    uint64_t packets_sent{};
+    uint64_t packets_received{};
+};
 
 class NetClient {
     struct OutboundPacket {
@@ -29,6 +42,9 @@ class NetClient {
     OutboundChannel m_outbound_queue{m_context.get_executor(), 1024};
     std::optional<NetSessionToken> m_session_token{};
     std::optional<asio::steady_timer> m_recv_watchdog{};
+    mutable std::mutex m_debug_mutex{};
+    NetClientDebugInfo m_debug_info{};
+    std::unordered_map<uint16_t, std::chrono::steady_clock::time_point> m_ping_send_times{};
 
 public:
     ~NetClient();
@@ -37,6 +53,7 @@ public:
     void disconnect();
     bool poll(NetEvent& ev);
     NetClientState getState() const;
+    NetClientDebugInfo getDebugInfo() const;
 
 private:
     asio::awaitable<bool> handshake(asio::ip::udp::endpoint server_endpoint);

@@ -125,6 +125,22 @@ size_t Net::getConnectedClientCount() const
     return getServer().getConnectedClientCount();
 }
 
+NetServerDebugInfo Net::getServerDebugInfo() const
+{
+    if (!std::holds_alternative<NetServer>(m_server_client)) {
+        return {};
+    }
+    return getServer().getDebugInfo();
+}
+
+NetClientDebugInfo Net::getClientDebugInfo() const
+{
+    if (!std::holds_alternative<NetClient>(m_server_client)) {
+        return {};
+    }
+    return getClient().getDebugInfo();
+}
+
 std::optional<asio::ip::udp::endpoint> Net::resolve(std::string_view host, std::string_view service)
 {
     asio::error_code ec{};

@@ -83,6 +83,15 @@ void renderNetUI(Net& net)
             const auto server_addr = net.getServerEndpoint();
             ImGui::Text("Address: %s:%d", server_addr.address().to_string().c_str(), server_addr.port());
             ImGui::Text("Connected Clients: %zu", net.getConnectedClientCount());
+            ImGui::SeparatorText("Debug");
+            const auto debug = net.getServerDebugInfo();
+            ImGui::Text("Connected Clients: %zu", debug.connected_client_count);
+            ImGui::Text("Avg RTT: %.2f ms", debug.avg_client_rtt_ms);
+            ImGui::Text("Worst RTT: %.2f ms", debug.worst_client_rtt_ms);
+            ImGui::Text("Ping Sent: %llu", static_cast<unsigned long long>(debug.ping_sent));
+            ImGui::Text("Pong Received: %llu", static_cast<unsigned long long>(debug.pong_received));
+            ImGui::Text("Packets Sent: %llu", static_cast<unsigned long long>(debug.packets_sent));
+            ImGui::Text("Packets Received: %llu", static_cast<unsigned long long>(debug.packets_received));
             if (ImGui::Button("Stop Server")) {
                 net.stopServer();
             }
@@ -103,6 +112,15 @@ void renderNetUI(Net& net)
                 status_str = "(invalid)";
             }
             ImGui::Text("Status: %s", status_str);
+            ImGui::SeparatorText("Debug");
+            const auto debug = net.getClientDebugInfo();
+            ImGui::Text("State: %s", status_str);
+            ImGui::Text("Last RTT: %.2f ms", debug.last_rtt_ms);
+            ImGui::Text("Avg RTT: %.2f ms", debug.avg_rtt_ms);
+            ImGui::Text("Ping Sent: %llu", static_cast<unsigned long long>(debug.ping_sent));
+            ImGui::Text("Pong Received: %llu", static_cast<unsigned long long>(debug.pong_received));
+            ImGui::Text("Packets Sent: %llu", static_cast<unsigned long long>(debug.packets_sent));
+            ImGui::Text("Packets Received: %llu", static_cast<unsigned long long>(debug.packets_received));
             if (ImGui::Button("Disconnect")) {
                 net.disconnectFromServer();
             }

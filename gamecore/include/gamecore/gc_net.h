@@ -41,6 +41,8 @@ public:
     asio::ip::udp::endpoint getServerEndpoint() const;
     bool isServerRunning() const;
     size_t getConnectedClientCount() const;
+    NetServerDebugInfo getServerDebugInfo() const;
+    NetClientDebugInfo getClientDebugInfo() const;
 
     // executes synchronously
     std::optional<asio::ip::udp::endpoint> resolve(std::string_view host, std::string_view service);
