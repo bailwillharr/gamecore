@@ -45,6 +45,7 @@ set(SRC_FILES
   "src/gc_net_client.cpp"
   "src/gc_net_common.cpp"
   "src/gc_net_ui.cpp"
+  "src/gc_ui.cpp"
 )
 
 # Public API includes
@@ -106,6 +107,7 @@ set(INCLUDE_FILES
   "include/gamecore/gc_net_client.h"
   "include/gamecore/gc_net_common.h"
   "include/gamecore/gc_net_ui.h"
+  "include/gamecore/gc_ui.h"
 )
 
 # gamecore is a static library
@@ -163,6 +165,7 @@ target_link_libraries(${PROJECT_NAME} PUBLIC mio::mio)
 target_link_libraries(${PROJECT_NAME} PUBLIC stb)
 target_link_libraries(${PROJECT_NAME} PUBLIC mikktspace)
 target_link_libraries(${PROJECT_NAME} PUBLIC weldmesh)
+target_link_libraries(${PROJECT_NAME} PUBLIC rmlui)
 
 #if(WIN32)
 #    target_link_libraries(${PROJECT_NAME} PUBLIC Vulkan::shaderc_combined)

@@ -46,7 +46,6 @@ cpmaddpackage(
     "SPDLOG_USE_STD_FORMAT ON" # uses builtin fmt and C++20
     "SPDLOG_NO_ATOMIC_LEVELS ON" # log levels aren't modified concurrently
   EXCLUDE_FROM_ALL YES
-  SYSTEM YES
 )
 
 # SDL3
@@ -55,7 +54,6 @@ cpmaddpackage(
   VERSION 3.4.2
   URL https://github.com/libsdl-org/SDL/archive/refs/tags/release-3.4.2.zip
   EXCLUDE_FROM_ALL YES
-  SYSTEM YES
 )
 
 # Volk
@@ -66,7 +64,6 @@ cpmaddpackage(
   OPTIONS
     "VOLK_PULL_IN_VULKAN ON"
   EXCLUDE_FROM_ALL YES
-  SYSTEM YES
 )
 
 # VulkanMemoryAllocator
@@ -75,7 +72,6 @@ cpmaddpackage(
   VERSION 3.3.0
   URL https://github.com/GPUOpen-LibrariesAndSDKs/VulkanMemoryAllocator/archive/refs/tags/v3.3.0.zip
   EXCLUDE_FROM_ALL YES
-  SYSTEM YES
 )
 
 # Tracy
@@ -93,7 +89,6 @@ cpmaddpackage(
     "TRACY_ON_DEMAND OFF"
     "TRACY_NO_FRAME_IMAGE ON"
   EXCLUDE_FROM_ALL YES
-  SYSTEM YES
 )
 
 # asio (What a mess...)
@@ -144,7 +139,6 @@ cpmaddpackage(
   OPTIONS
     "JSON_SystemInclude ON"
   EXCLUDE_FROM_ALL YES
-  SYSTEM YES
 )
 
 # glm
@@ -198,7 +192,6 @@ cpmaddpackage(
     "TINYGLTF_INSTALL OFF"
     "TINYGLTF_INSTALL_VENDOR OFF"
   EXCLUDE_FROM_ALL YES
-  SYSTEM YES
 )
 # tinygltf has its own json.hpp and stb_image_ libraries
 target_compile_definitions(tinygltf PUBLIC TINYGLTF_NO_EXTERNAL_IMAGE)
@@ -208,7 +201,6 @@ cpmaddpackage(
     NAME mio
     URL https://github.com/vimpunk/mio/archive/8b6b7d878c89e81614d05edca7936de41ccdd2da.zip
     EXCLUDE_FROM_ALL YES
-    SYSTEM YES
 )
 
 # stb
@@ -247,6 +239,17 @@ add_library(weldmesh STATIC
     "${weldmesh_SOURCE_DIR}/weldmesh.h"
 )
 target_include_directories(weldmesh PUBLIC ${weldmesh_SOURCE_DIR})
+
+# RmlUi
+cpmaddpackage(
+    NAME rmlui
+    VERSION 6.2
+    URL https://github.com/mikke89/RmlUi/archive/refs/tags/6.2.zip
+    OPTIONS
+      "RMLUI_FONT_ENGINE none"
+    EXCLUDE_FROM_ALL YES
+)
+#target_include_directories(rmlui INTERFACE "${RmlUi_SOURCE_DIR}/Include") # cmakelists doesn't export include dirs
 
 # shaderc_combined (from Vulkan SDK)
 find_package(Vulkan REQUIRED COMPONENTS shaderc_combined REQUIRED)
