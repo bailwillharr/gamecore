@@ -204,6 +204,8 @@ asio::awaitable<void> NetClient::heartbeatLoop()
 asio::awaitable<void> NetClient::receiveLoop()
 {
     constexpr auto TOKEN = asio::as_tuple(asio::use_awaitable);
+    using namespace asio::experimental::awaitable_operators;
+
     asio::error_code ec{};
 
     GC_ASSERT(m_socket);
