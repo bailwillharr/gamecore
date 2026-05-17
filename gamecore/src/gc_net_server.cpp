@@ -157,7 +157,7 @@ static void handleAuthenticated(PacketContext& ctx, std::unordered_map<NetSessio
             if (ctx.received_header.token != session_token1 && ctx.received_header.token != session_token2) {
                 return;
             }
-            Session session{};
+	    NetServer::Session session{};
             session.session_token = ctx.received_header.token;
             session.endpoint = ctx.endpoint;
             session.time_bucket_last_received = ctx.time_bucket;
@@ -167,7 +167,7 @@ static void handleAuthenticated(PacketContext& ctx, std::unordered_map<NetSessio
         return;
     }
 
-    Session& session = it->second;
+    auto& session = it->second;
 
     // Verify session has same endpoint
     if (session.endpoint != ctx.endpoint) {
