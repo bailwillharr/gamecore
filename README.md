@@ -1,5 +1,7 @@
 # GameCore, another game engine
 
+Licensed under GNU General Public License v3.0 or later.
+
 ## Build instructions
 
 It's strongly recommended to set the `CPM_CACHE` environment variable to avoid re-downloading dependencies when switching presets or regenerating the build directory.
