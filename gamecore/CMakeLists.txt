@@ -116,6 +116,11 @@ add_library(${PROJECT_NAME} STATIC
 
 # This project uses C++20
 target_compile_features(${PROJECT_NAME} PUBLIC cxx_std_20)
+set_target_properties(${PROJECT_NAME} PROPERTIES
+  CXX_STANDARD 20
+  CXX_STANDARD_REQUIRED YES
+  CXX_EXTENSIONS NO
+)
 
 if(MSVC)
     # Lots of warnings, treat warnings as errors
