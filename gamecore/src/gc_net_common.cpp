@@ -130,10 +130,7 @@ bool verifyPacketHeader(const NetPacketHeader& header)
         break;
     case NetPacketType::CONNECT_CHALLENGE:
     case NetPacketType::CONNECT_CHALLENGE_RESPONSE:
-    case NetPacketType::PING:
-    case NetPacketType::PONG:
-    case NetPacketType::GAME_RELIABLE_HEADER:
-    case NetPacketType::GAME_UNRELIABLE_HEADER:
+    case NetPacketType::MESSAGE:
         if (header.token == NetSessionToken{}) {
             return false;
         }

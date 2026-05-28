@@ -26,7 +26,6 @@ public:
     NetClientState getState() const;
 
 private:
-    asio::awaitable<void> clientLoop(asio::ip::udp::endpoint server_endpoint);
 };
 
 } // namespace gc

@@ -73,10 +73,7 @@ enum class NetPacketType : uint8_t {
     CONNECT_REQUEST = 0,
     CONNECT_CHALLENGE = 1,
     CONNECT_CHALLENGE_RESPONSE = 2,
-    PING = 3,
-    PONG = 4,
-    GAME_RELIABLE_HEADER = 5,
-    GAME_UNRELIABLE_HEADER = 6
+    MESSAGE = 3,
 };
 
 struct NetPacketHeader {
@@ -184,49 +181,15 @@ struct NetPacketConnectChallengeResponse {
     static consteval size_t getSerialisedSize() { return sizeof(client_nonce); }
 };
 
-// client -> server
-struct NetPacketPing {
-    static constexpr NetPacketType TYPE = NetPacketType::PING;
-
-    uint16_t seq_num;
-
-    void serialise(NetByteWriter& writer) const { writer.writeU16(seq_num); }
-
-    static NetPacketPing deserialise(NetByteReader& reader)
-    {
-        NetPacketPing obj{};
-        obj.seq_num = reader.readU16();
-        return obj;
-    }
-
-    static consteval size_t getSerialisedSize() { return sizeof(seq_num); }
-};
-
-// server -> client
-struct NetPacketPong {
-    static constexpr NetPacketType TYPE = NetPacketType::PONG;
-
-    uint16_t seq_num;
-
-    void serialise(NetByteWriter& writer) const { writer.writeU16(seq_num); }
-
-    static NetPacketPong deserialise(NetByteReader& reader)
-    {
-        NetPacketPong obj{};
-        obj.seq_num = reader.readU16();
-        return obj;
-    }
-
-    static consteval size_t getSerialisedSize() { return sizeof(seq_num); }
-};
-
-struct NetPacketGameReliableHeader {
-    static constexpr NetPacketType TYPE = NetPacketType::GAME_RELIABLE_HEADER;
+// type = 0 and size = 0 is reserved by the net backend for empty keepalive packets.
+// Other types are application defined.
+struct NetPacketMessage {
+    static constexpr NetPacketType TYPE = NetPacketType::MESSAGE;
 
     uint16_t seq_num;
     uint16_t ack_num;
     std::bitset<32> ack_bits;
-    uint16_t payload_type; // application defined
+    uint16_t payload_type;
     uint16_t payload_size;
 
     void serialise(NetByteWriter& writer) const
@@ -238,9 +201,9 @@ struct NetPacketGameReliableHeader {
         writer.writeU16(payload_size);
     }
 
-    static NetPacketGameReliableHeader deserialise(NetByteReader& reader)
+    static NetPacketMessage deserialise(NetByteReader& reader)
     {
-        NetPacketGameReliableHeader obj{};
+        NetPacketMessage obj{};
         obj.seq_num = reader.readU16();
         obj.ack_num = reader.readU16();
         obj.ack_bits = reader.readU32();
@@ -250,32 +213,6 @@ struct NetPacketGameReliableHeader {
     }
 
     static consteval size_t getSerialisedSize() { return sizeof(seq_num) + sizeof(ack_num) + sizeof(ack_bits) + sizeof(payload_type) + sizeof(payload_size); }
-};
-
-struct NetPacketGameUnreliableHeader {
-    static constexpr NetPacketType TYPE = NetPacketType::GAME_UNRELIABLE_HEADER;
-
-    uint16_t seq_num;
-    uint16_t payload_type;
-    uint16_t payload_size;
-
-    void serialise(NetByteWriter& writer) const
-    {
-        writer.writeU16(seq_num);
-        writer.writeU16(payload_type);
-        writer.writeU16(payload_size);
-    }
-
-    static NetPacketGameUnreliableHeader deserialise(NetByteReader& reader)
-    {
-        NetPacketGameUnreliableHeader obj{};
-        obj.seq_num = reader.readU16();
-        obj.payload_type = reader.readU16();
-        obj.payload_size = reader.readU16();
-        return obj;
-    }
-
-    static consteval size_t getSerialisedSize() { return sizeof(seq_num) + sizeof(payload_type) + sizeof(payload_size); }
 };
 
 template <typename T>
