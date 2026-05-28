@@ -1,7 +1,8 @@
 #include "gamecore/gc_net_server.h"
 
-#include <chrono>
 #include <random>
+
+#include <SDL3/SDL_timer.h>
 
 #include <asio/awaitable.hpp>
 #include <asio/ip/address_v4.hpp>
@@ -28,9 +29,7 @@ namespace gc {
 
 static uint32_t getTimeBucket()
 {
-    using namespace std::chrono_literals;
-    constexpr auto BUCKET_SIZE = 10s;
-    auto bucket = std::chrono::steady_clock::now().time_since_epoch() / BUCKET_SIZE;
+    const uint64_t bucket = SDL_GetTicksNS() / 10'000'000'000LL;
     return static_cast<uint32_t>(bucket); // truncates uint64_t to uint32_t
 }
 
@@ -110,12 +109,6 @@ struct PacketContext {
     const uint32_t time_bucket;
 };
 
-struct Session {
-    NetSessionToken session_token;
-    asio::ip::udp::endpoint endpoint;
-    uint32_t time_bucket_last_received;
-};
-
 // returns true on success.
 // func has signature: void(T packet);
 template <typename T, typename Func>
@@ -146,9 +139,12 @@ static void handlePing(PacketContext& ctx)
                                 [&](const auto ping) { writePacketWithHeader(ctx.writer, ctx.received_header.token, NetPacketPong{.seq_num = ping.seq_num}); });
 }
 
-static void handleAuthenticated(PacketContext& ctx, std::unordered_map<NetSessionToken, Session>& sessions)
+static void handleAuthenticated(PacketContext& ctx, std::unordered_map<NetSessionToken, NetSession>& sessions)
 {
     // verify token
+
+    const uint64_t now = SDL_GetTicksNS();
+
     const auto it = sessions.find(ctx.received_header.token);
     if (it == sessions.end()) {
         // token not found, might be a new valid session...
@@ -162,17 +158,17 @@ static void handleAuthenticated(PacketContext& ctx, std::unordered_map<NetSessio
             if (ctx.received_header.token != session_token1 && ctx.received_header.token != session_token2) {
                 return;
             }
-            Session session{};
+            NetSession session{};
             session.session_token = ctx.received_header.token;
             session.endpoint = ctx.endpoint;
-            session.time_bucket_last_received = ctx.time_bucket;
+            session.last_received_timestamp = now;
             sessions.emplace(ctx.received_header.token, std::move(session));
             GC_DEBUG("Created new session");
         });
         return;
     }
 
-    Session& session = it->second;
+    NetSession& session = it->second;
 
     // Verify session has same endpoint
     if (session.endpoint != ctx.endpoint) {
@@ -183,7 +179,7 @@ static void handleAuthenticated(PacketContext& ctx, std::unordered_map<NetSessio
     }
 
     // Authenticated session
-    session.time_bucket_last_received = ctx.time_bucket;
+    session.last_received_timestamp = now;
 
     switch (ctx.received_header.type) {
     case NetPacketType::PING:
@@ -192,12 +188,6 @@ static void handleAuthenticated(PacketContext& ctx, std::unordered_map<NetSessio
     default:
         break;
     }
-}
-
-static bool isSessionExpired(const Session& session, uint32_t current_time_bucket)
-{
-    // a time bucket is 10 seconds, so a session is expired if its been at least 10-20 seconds.
-    return static_cast<uint32_t>(current_time_bucket - session.time_bucket_last_received) >= 2; // handles wrap around
 }
 
 NetServer::~NetServer() { stop(); }
@@ -229,6 +219,7 @@ bool NetServer::start(const asio::ip::udp::endpoint& endpoint)
         [](NetServer& self) {
             asio::co_spawn(self.m_context, self.receiveLoop(), asio::detached);
             asio::co_spawn(self.m_context, self.sendLoop(), asio::detached);
+            asio::co_spawn(self.m_context, self.keepAliveLoop(), asio::detached);
             self.m_context.run();
         },
         std::ref(*this));
@@ -297,8 +288,6 @@ asio::awaitable<void> NetServer::receiveLoop()
 
     const uint64_t server_secret = generateServerSecret();
 
-    std::unordered_map<NetSessionToken, Session> sessions{};
-
     std::optional<uint32_t> last_cleanup_bucket{};
     std::array<uint8_t, NET_MAX_PACKET_SIZE> recv_buf{};
     std::array<uint8_t, NET_MAX_PACKET_SIZE> send_buf{};
@@ -331,7 +320,7 @@ asio::awaitable<void> NetServer::receiveLoop()
             handleUnauthenticated(ctx);
         }
         else {
-            handleAuthenticated(ctx, sessions);
+            handleAuthenticated(ctx, m_sessions);
         }
 
         // Put new packet on the outbound queue
@@ -345,13 +334,56 @@ asio::awaitable<void> NetServer::receiveLoop()
                 continue;
             }
         }
+    }
+}
 
-        // remove expired sessions
-        if (!last_cleanup_bucket || *last_cleanup_bucket != time_bucket) {
-            last_cleanup_bucket = time_bucket;
-            if (size_t num_erased = std::erase_if(sessions, [&](const auto& entry) { return isSessionExpired(entry.second, time_bucket); }); num_erased > 0) {
-                GC_DEBUG("removed {} sessions", num_erased);
+// periodically checks all active sessions to see if they have timed out and removes them if so.
+// Also pings clients that are currently idle (no data received recently).
+asio::awaitable<void> NetServer::keepAliveLoop()
+{
+    constexpr auto TOKEN = asio::as_tuple(asio::use_awaitable);
+    const auto executor = co_await asio::this_coro::executor;
+    asio::error_code ec{};
+
+    constexpr auto TIME_PERIOD = std::chrono::seconds(1);
+    constexpr int64_t TIMEOUT_TIME_NS = 5'000'000'000LL;
+    constexpr int64_t IDLE_TIME_NS = 500'000'000LL;
+
+    for (;;) {
+        // maybe timer can be reset every iteration instead of reconstructing?
+        asio::steady_timer timer(executor, TIME_PERIOD);
+
+        const int64_t now = SDL_GetTicksNS();
+
+        for (auto it = m_sessions.begin(); it != m_sessions.end();) {
+            const auto& session = it->second;
+            const int64_t difference = now - static_cast<int64_t>(session.last_received_timestamp);
+            if (difference > TIMEOUT_TIME_NS) {
+                GC_INFO("Removing timed out session: {}", session.endpoint);
+                it = m_sessions.erase(it);
             }
+            else {
+                if (difference > IDLE_TIME_NS) {
+                    // send ping packet
+                    OutboundPacket packet{};
+                    packet.endpoint = session.endpoint;
+                    packet.data.resize(NetPacketHeader::getSerialisedSize() + NetPacketPing::getSerialisedSize());
+                    NetByteWriter writer(packet.data);
+                    writePacketWithHeader(writer, session.session_token, NetPacketPing{.seq_num = 0});
+                    std::tie(ec) = co_await m_outbound_queue.async_send(asio::error_code{}, std::move(packet), TOKEN);
+                    if (ec) {
+                        GC_ERROR("Outbound channel send error: {}", ec.message());
+                        continue;
+                    }
+                }
+                ++it;
+            }
+        }
+
+        std::tie(ec) = co_await timer.async_wait(TOKEN);
+        if (ec) {
+            GC_ERROR("Timer error: {}", ec.message());
+            co_return;
         }
     }
 }

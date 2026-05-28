@@ -18,7 +18,7 @@
 
 namespace gc {
 
-// All fields in packets are little endian 😎
+// All fields in packets are little endian
 static_assert(std::endian::native == std::endian::little);
 
 class NetByteWriter {

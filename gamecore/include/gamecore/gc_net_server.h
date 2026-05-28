@@ -10,11 +10,19 @@
 #include <thread>
 #include <queue>
 
+#include "gamecore/gc_net_common.h"
+
 namespace gc {
 
 struct NetServerStatus {
     mutable std::mutex mutex{};
     asio::ip::udp::endpoint local_endpoint{};
+};
+
+struct NetSession {
+    NetSessionToken session_token;
+    asio::ip::udp::endpoint endpoint;
+    uint64_t last_received_timestamp;
 };
 
 class NetServer {
@@ -35,6 +43,7 @@ class NetServer {
     asio::io_context m_context{};
     std::optional<asio::ip::udp::socket> m_socket;
     OutboundChannel m_outbound_queue{m_context.get_executor(), OUTBOUND_QUEUE_MAX_SIZE};
+    std::unordered_map<NetSessionToken, NetSession> m_sessions{};
 
 public:
     ~NetServer();
@@ -51,6 +60,7 @@ private:
 
     asio::awaitable<void> receiveLoop();
     asio::awaitable<void> sendLoop();
+    asio::awaitable<void> keepAliveLoop();
 };
 
 } // namespace gc

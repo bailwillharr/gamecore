@@ -90,23 +90,31 @@ void Net::disconnectFromServer()
 
 bool Net::pollEvents(NetEvent& ev)
 {
-    return std::visit([&](auto&& arg) -> bool{
-        using T = std::decay_t<decltype(arg)>;
-        if constexpr (std::is_same_v<T, NetServer>) {
-            return false;
-        } else if constexpr (std::is_same_v<T, NetClient>) {
-            return arg.poll(ev);
-        }
-        return false;
-    }, m_server_client);
+    return std::visit(
+        [&](auto&& arg) -> bool {
+            using T = std::decay_t<decltype(arg)>;
+            if constexpr (std::is_same_v<T, NetServer>) {
+                return false;
+            }
+            else if constexpr (std::is_same_v<T, NetClient>) {
+                return arg.poll(ev);
+            }
+            else {
+                return false;
+            }
+        },
+        m_server_client);
 }
 
-NetMode Net::getMode() const {
+NetMode Net::getMode() const
+{
     if (std::holds_alternative<NetServer>(m_server_client)) {
         return NetMode::SERVER;
-    } else if (std::holds_alternative<NetClient>(m_server_client)) {
+    }
+    else if (std::holds_alternative<NetClient>(m_server_client)) {
         return NetMode::CLIENT;
-    } else {
+    }
+    else {
         return NetMode::DISCONNECTED;
     }
 }
