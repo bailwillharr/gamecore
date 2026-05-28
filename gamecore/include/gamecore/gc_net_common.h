@@ -273,6 +273,19 @@ struct std::hash<gc::NetSessionToken> {
 };
 
 template <>
+struct std::formatter<gc::NetSessionToken> {
+    constexpr auto parse(std::format_parse_context& ctx) const { return ctx.begin(); }
+    auto format(const gc::NetSessionToken& session_token, std::format_context& ctx) const
+    {
+        std::stringstream out{};
+        for (uint8_t c : session_token) {
+            out << std::hex << c;
+        }
+        return std::format_to(ctx.out(), "{}", out.view());
+    }
+};
+
+template <>
 struct std::formatter<asio::ip::udp::endpoint> {
     constexpr auto parse(std::format_parse_context& ctx) const { return ctx.begin(); }
     auto format(const asio::ip::udp::endpoint& endpoint, std::format_context& ctx) const

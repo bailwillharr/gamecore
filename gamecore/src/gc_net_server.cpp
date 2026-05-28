@@ -34,7 +34,7 @@ struct overloaded : Ts... {
 };
 
 template <class... Ts>
-static overloaded(Ts...) -> overloaded<Ts...>;
+overloaded(Ts...) -> overloaded<Ts...>;
 
 static uint32_t getTimeBucket()
 {
@@ -135,14 +135,7 @@ static void handleParsed(PacketContext& ctx, Func&& func)
 
 static void handleUnauthenticated(PacketContext& ctx)
 {
-    // Unauthenticated packets are handled statelessly
-    if (ctx.received_header.type != NetPacketType::CONNECT_REQUEST) {
-        return;
-    }
-    handleParsed<NetPacketConnectRequest>(ctx, [&](NetPacketConnectRequest request) {
-        const auto session_token = computeSessionToken(ctx.server_secret, ctx.endpoint, request.client_nonce, ctx.time_bucket);
-        writePacketWithHeader(ctx.writer, session_token, NetPacketConnectChallenge{.client_nonce = request.client_nonce});
-    });
+
 }
 
 static void handleMessage(PacketContext& ctx, NetSession& session)
@@ -313,6 +306,7 @@ asio::awaitable<void> NetServer::sendLoop()
 
     OutboundCommand command{};
     std::array<uint8_t, NET_MAX_PACKET_SIZE> buffer{};
+    NetByteWriter writer(buffer);
     for (;;) {
         std::tie(ec, command) = co_await m_outbound_queue.async_receive(TOKEN);
         if (ec) {
@@ -320,9 +314,9 @@ asio::awaitable<void> NetServer::sendLoop()
             continue;
         }
 
-        NetByteWriter writer(buffer);
-        asio::ip::udp::endpoint endpoint{};
+	writer.reset();
 
+        asio::ip::udp::endpoint endpoint{};
         std::visit(
             overloaded{
                 [&](const OutboundCommand::OutboundConnectChallenge& challenge) {
@@ -339,7 +333,6 @@ asio::awaitable<void> NetServer::sendLoop()
                         message.ack_num = session.last_ack_num;
                         message.ack_bits = session.ack_bits;
                         message.payload_type = unicast.payload_type;
-                        GC_ASSERT(unicast.payload.size() <= NET_MAX_PACKET_SIZE - NetPacketHeader::getSerialisedSize() - NetPacketMessage::getSerialisedSize());
                         message.payload_size = static_cast<uint16_t>(unicast.payload.size());
                         writePacketWithHeader(writer, session.session_token, message);
                         GC_ASSERT(writer.remaining() >= message.payload_size);
@@ -401,27 +394,28 @@ asio::awaitable<void> NetServer::receiveLoop()
         PacketContext ctx{.endpoint = client_endpoint, //
                           .received_header = *header,
                           .reader = reader,
-                          .writer = writer,
                           .server_secret = server_secret,
                           .time_bucket = time_bucket};
 
-        if (header->token == NetSessionToken{}) {
-            handleUnauthenticated(ctx);
+        if (header->token == NetSessionToken{} && ctx.received_header.type == NetPacketType::CONNECT_REQUEST) {
+            // Unauthenticated packets are handled statelessly
+            const auto request = tryDeserialiseExact<NetPacketConnectRequest>(ctx.reader);
+            if (request) {
+                const auto session_token = computeSessionToken(ctx.server_secret, ctx.endpoint, request->client_nonce, ctx.time_bucket);
+                OutboundCommand outbound{};
+		auto& challenge = outbound.command.emplace<OutboundCommand::OutboundConnectChallenge>();
+		challenge.client_endpoint = client_endpoint;
+		challenge.client_nonce = request->client_nonce;
+		challenge.session_token = session_token;
+                std::tie(ec) = co_await m_outbound_queue.async_send(asio::error_code{}, std::move(outbound), TOKEN);
+                if (ec) {
+                    GC_ERROR("Outbound channel send error: {}", ec.message());
+                    continue;
+                }
+            }
         }
         else {
             handleAuthenticated(ctx, m_sessions);
-        }
-
-        // Put new packet on the outbound queue
-        if (writer.pos() > 0) {
-            OutboundPacket outbound{};
-            outbound.endpoint = client_endpoint;
-            outbound.data = std::vector<uint8_t>(send_buf.data(), send_buf.data() + writer.pos());
-            std::tie(ec) = co_await m_outbound_queue.async_send(asio::error_code{}, std::move(outbound), TOKEN);
-            if (ec) {
-                GC_ERROR("Outbound channel send error: {}", ec.message());
-                continue;
-            }
         }
     }
 }
@@ -454,22 +448,13 @@ asio::awaitable<void> NetServer::keepAliveLoop()
             else {
                 if (difference > IDLE_TIME_NS) {
                     // send keepalive packet with no data
-                    OutboundPacket packet{};
-                    packet.endpoint = session.endpoint;
-                    packet.data.resize(NetPacketHeader::getSerialisedSize() + NetPacketMessage::getSerialisedSize());
-                    NetByteWriter writer(packet.data);
+                    OutboundCommand command{};
+		    auto& message = command.command.emplace<OutboundCommand::OutboundUnicast>();
+                    message.session_token = session.session_token;
+		    message.payload_type = 0;
+		    message.payload = {};
 
-                    NetPacketMessage message{};
-                    message.seq_num = session.next_seq_num;
-                    message.ack_num = session.last_ack_num;
-                    message.ack_bits = session.ack_bits;
-                    message.payload_type = 0;
-                    message.payload_size = 0;
-                    writePacketWithHeader(writer, session.session_token, message);
-
-                    session.next_seq_num += 1;
-
-                    std::tie(ec) = co_await m_outbound_queue.async_send(asio::error_code{}, std::move(packet), TOKEN);
+                    std::tie(ec) = co_await m_outbound_queue.async_send(asio::error_code{}, std::move(command), TOKEN);
                     if (ec) {
                         GC_ERROR("Outbound channel send error: {}", ec.message());
                         continue;
