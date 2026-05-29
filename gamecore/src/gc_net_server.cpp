@@ -133,11 +133,6 @@ static void handleParsed(PacketContext& ctx, Func&& func)
     func(std::move(*pkt));
 }
 
-static void handleUnauthenticated(PacketContext& ctx)
-{
-
-}
-
 static void handleMessage(PacketContext& ctx, NetSession& session)
 {
     const auto message = tryDeserialise<NetPacketMessage>(ctx.reader);
@@ -169,6 +164,12 @@ static void handleMessage(PacketContext& ctx, NetSession& session)
             uint16_t seq = message->ack_num - i;
             auto it = session.retransmit_queue.find(seq);
             if (it != session.retransmit_queue.end()) {
+                if (it->second.attempts == 0) {
+                    const uint64_t rtt_ns = session.last_receive_timestamp - it->second.original_timestamp;
+                    session.rto_calc.recordRTT(std::chrono::nanoseconds(rtt_ns));
+                    GC_DEBUG("New RTT: {} ms, RTO: {} ms", static_cast<double>(rtt_ns) / 1.0e6,
+                             static_cast<double>(session.rto_calc.getRTONanoseconds()) / 1.0e6);
+                }
                 session.retransmit_queue.erase(it);
             }
         }
@@ -181,7 +182,7 @@ static void handleMessage(PacketContext& ctx, NetSession& session)
     }
 
     // TODO: actually return data
-    GC_TRACE("Session: {}, Recieved {} bytes", session.session_token, message->payload_size);
+    GC_DEBUG("Session: {}, Recieved {} bytes", session.session_token, message->payload_size);
 }
 
 static void handleAuthenticated(PacketContext& ctx, std::unordered_map<NetSessionToken, NetSession>& sessions)
@@ -206,7 +207,7 @@ static void handleAuthenticated(PacketContext& ctx, std::unordered_map<NetSessio
             NetSession session{};
             session.session_token = ctx.received_header.token;
             session.endpoint = ctx.endpoint;
-            session.last_received_timestamp = now;
+            session.last_receive_timestamp = now;
             sessions.emplace(ctx.received_header.token, std::move(session));
             GC_DEBUG("Created new session");
         });
@@ -224,7 +225,7 @@ static void handleAuthenticated(PacketContext& ctx, std::unordered_map<NetSessio
     }
 
     // Authenticated session
-    session.last_received_timestamp = now;
+    session.last_receive_timestamp = now;
 
     switch (ctx.received_header.type) {
     case NetPacketType::MESSAGE:
@@ -287,6 +288,16 @@ asio::ip::udp::endpoint NetServer::getLocalEndpoint() const
     return m_server_status.local_endpoint;
 }
 
+void NetServer::sendMessage(std::optional<NetSessionToken> session_token, uint16_t payload_type, std::vector<uint8_t> payload)
+{
+    if (session_token.has_value()) {
+        pushToOutboundQueue(OutboundUnicast{.session_token = *session_token, .payload_type = payload_type, .payload = std::move(payload)});
+    }
+    else {
+        pushToOutboundQueue(OutboundMulticast{.payload_type = payload_type, .payload = std::move(payload)});
+    }
+}
+
 void NetServer::pushToOutboundQueue(OutboundCommand command)
 {
     asio::post(m_context, [this, command = std::move(command)] {
@@ -299,7 +310,6 @@ void NetServer::pushToOutboundQueue(OutboundCommand command)
 asio::awaitable<void> NetServer::sendLoop()
 {
     constexpr auto TOKEN = asio::as_tuple(asio::use_awaitable);
-    const auto executor = co_await asio::this_coro::executor;
     asio::error_code ec{};
 
     GC_ASSERT(m_socket);
@@ -314,36 +324,54 @@ asio::awaitable<void> NetServer::sendLoop()
             continue;
         }
 
-	writer.reset();
-
+        writer.reset();
+        const uint64_t now = SDL_GetTicksNS();
         asio::ip::udp::endpoint endpoint{};
-        std::visit(
-            overloaded{
-                [&](const OutboundCommand::OutboundConnectChallenge& challenge) {
-                    endpoint = challenge.client_endpoint;
-                    writePacketWithHeader(writer, challenge.session_token, NetPacketConnectChallenge{.client_nonce = challenge.client_nonce});
-                },
-                [&](const OutboundCommand::OutboundUnicast& unicast) {
-                    auto it = m_sessions.find(unicast.session_token);
-                    if (it != m_sessions.end()) {
-                        NetSession& session = it->second;
-                        endpoint = session.endpoint;
-                        NetPacketMessage message{};
-                        message.seq_num = session.next_seq_num;
-                        message.ack_num = session.last_ack_num;
-                        message.ack_bits = session.ack_bits;
-                        message.payload_type = unicast.payload_type;
-                        message.payload_size = static_cast<uint16_t>(unicast.payload.size());
-                        writePacketWithHeader(writer, session.session_token, message);
-                        GC_ASSERT(writer.remaining() >= message.payload_size);
-                        writer.writeBytes(unicast.payload);
+        std::visit(overloaded{[&](const OutboundConnectChallenge& challenge) {
+                                  endpoint = challenge.client_endpoint;
+                                  writePacketWithHeader(writer, challenge.session_token, NetPacketConnectChallenge{.client_nonce = challenge.client_nonce});
+                              },
+                              [&](const OutboundUnicast& unicast) {
+                                  auto it = m_sessions.find(unicast.session_token);
+                                  if (it != m_sessions.end()) {
+                                      NetSession& session = it->second;
+                                      endpoint = session.endpoint;
+                                      NetPacketMessage message{};
+                                      message.seq_num = session.next_seq_num;
+                                      message.ack_num = session.last_ack_num;
+                                      message.ack_bits = session.ack_bits;
+                                      message.payload_type = unicast.payload_type;
+                                      message.payload_size = static_cast<uint16_t>(unicast.payload.size());
+                                      writePacketWithHeader(writer, session.session_token, message);
+                                      GC_ASSERT(writer.remaining() >= message.payload_size);
+                                      writer.writeBytes(unicast.payload);
 
-                        session.next_seq_num += 1;
-                    }
-                },
-                [&](const OutboundCommand::OutboundMulticast& multicast) { abortGame("haven't implemented this yet"); },
-            },
-            command.command);
+                                      NetSession::QueuedPacket retransmit_packet{};
+                                      retransmit_packet.original_timestamp = now;
+                                      retransmit_packet.last_send_timestamp = now;
+                                      retransmit_packet.attempts = 0;
+                                      retransmit_packet.packet_data = std::vector<uint8_t>(buffer.cbegin(), buffer.cbegin() + writer.pos());
+                                      session.retransmit_queue.emplace(message.seq_num, std::move(retransmit_packet));
+
+                                      session.last_send_timestamp = now;
+                                      session.next_seq_num += 1;
+                                  }
+                              },
+                              [&](const OutboundMulticast& multicast) {
+                                  (void)multicast;
+                                  abortGame("haven't implemented this yet");
+                              },
+                              [&](const OutboundRaw& raw) {
+                                  GC_DEBUG("sendLoop() OutboundRaw");
+                                  auto it = m_sessions.find(raw.session_token);
+                                  if (it != m_sessions.end()) {
+                                      NetSession& session = it->second;
+                                      endpoint = session.endpoint;
+                                      session.last_send_timestamp = now;
+                                      writer.writeBytes(raw.packet_data);
+                                  }
+                              }},
+                   command);
 
         if (writer.pos() == 0) {
             continue;
@@ -403,10 +431,10 @@ asio::awaitable<void> NetServer::receiveLoop()
             if (request) {
                 const auto session_token = computeSessionToken(ctx.server_secret, ctx.endpoint, request->client_nonce, ctx.time_bucket);
                 OutboundCommand outbound{};
-		auto& challenge = outbound.command.emplace<OutboundCommand::OutboundConnectChallenge>();
-		challenge.client_endpoint = client_endpoint;
-		challenge.client_nonce = request->client_nonce;
-		challenge.session_token = session_token;
+                auto& challenge = outbound.emplace<OutboundConnectChallenge>();
+                challenge.client_endpoint = client_endpoint;
+                challenge.client_nonce = request->client_nonce;
+                challenge.session_token = session_token;
                 std::tie(ec) = co_await m_outbound_queue.async_send(asio::error_code{}, std::move(outbound), TOKEN);
                 if (ec) {
                     GC_ERROR("Outbound channel send error: {}", ec.message());
@@ -422,15 +450,16 @@ asio::awaitable<void> NetServer::receiveLoop()
 
 // periodically checks all active sessions to see if they have timed out and removes them if so.
 // Also pings clients that are currently idle (no data received recently).
+// Also retransmits packets that have not been acked.
 asio::awaitable<void> NetServer::keepAliveLoop()
 {
     constexpr auto TOKEN = asio::as_tuple(asio::use_awaitable);
     const auto executor = co_await asio::this_coro::executor;
     asio::error_code ec{};
 
-    constexpr auto TIME_PERIOD = std::chrono::seconds(1);
-    constexpr int64_t TIMEOUT_TIME_NS = 5'000'000'000LL;
-    constexpr int64_t IDLE_TIME_NS = 500'000'000LL;
+    constexpr auto TIME_PERIOD = std::chrono::milliseconds(100); // 10 hz
+    constexpr int64_t TIMEOUT_TIME_NS = 5'000'000'000LL;         // 5 s
+    constexpr int64_t KEEPALIVE_IDLE_TIME_NS = 500'000'000LL;    // 500 ms
 
     for (;;) {
         // maybe timer can be reset every iteration instead of reconstructing?
@@ -438,21 +467,55 @@ asio::awaitable<void> NetServer::keepAliveLoop()
 
         const int64_t now = SDL_GetTicksNS();
 
+        for (auto& [_, session] : m_sessions) {
+            for (auto it = session.retransmit_queue.begin(); it != session.retransmit_queue.end();) {
+                auto& [seq_num, packet] = *it;
+                if (packet.attempts >= packet.MAX_ATTEMPTS || now - packet.original_timestamp > packet.MAX_AGE_NS) {
+                    GC_WARN("Queued packet was never acknowledged and is getting dropped: attempts: {}, age: {} ms", packet.attempts, static_cast<double>(now - packet.original_timestamp) / 1e6);
+                    it = session.retransmit_queue.erase(it);
+                }
+                else {
+                    GC_DEBUG("RTO: {}", std::chrono::duration_cast<std::chrono::milliseconds>(session.rto_calc.getRTO()));
+                    if (now - packet.last_send_timestamp > static_cast<uint64_t>(session.rto_calc.getRTONanoseconds())) {
+                        // retransmit
+                        packet.last_send_timestamp = now;
+                        packet.attempts += 1;
+
+                        OutboundCommand command{};
+                        auto& message = command.emplace<OutboundRaw>();
+                        message.session_token = session.session_token;
+                        message.packet_data = packet.packet_data; // Copying a vector
+
+                        GC_DEBUG("Retransmitting packet with seq_num: {}, attempt: {}", seq_num, packet.attempts);
+
+                        std::tie(ec) = co_await m_outbound_queue.async_send(asio::error_code{}, std::move(command), TOKEN);
+                        if (ec) {
+                            GC_ERROR("Outbound channel send error: {}", ec.message());
+                            continue;
+                        }
+                    }
+
+                    ++it;
+                }
+            }
+        }
+
         for (auto it = m_sessions.begin(); it != m_sessions.end();) {
             auto& session = it->second;
-            const int64_t difference = now - static_cast<int64_t>(session.last_received_timestamp);
-            if (difference > TIMEOUT_TIME_NS) {
+            const int64_t time_since_receive = now - static_cast<int64_t>(session.last_receive_timestamp);
+            const int64_t time_since_send = now - static_cast<int64_t>(session.last_send_timestamp);
+            if (time_since_receive > TIMEOUT_TIME_NS) {
                 GC_INFO("Removing timed out session: {}", session.endpoint);
                 it = m_sessions.erase(it);
             }
             else {
-                if (difference > IDLE_TIME_NS) {
+                if (time_since_receive > KEEPALIVE_IDLE_TIME_NS && time_since_send > KEEPALIVE_IDLE_TIME_NS) {
                     // send keepalive packet with no data
                     OutboundCommand command{};
-		    auto& message = command.command.emplace<OutboundCommand::OutboundUnicast>();
+                    auto& message = command.emplace<OutboundUnicast>();
                     message.session_token = session.session_token;
-		    message.payload_type = 0;
-		    message.payload = {};
+                    message.payload_type = 0;
+                    message.payload = {};
 
                     std::tie(ec) = co_await m_outbound_queue.async_send(asio::error_code{}, std::move(command), TOKEN);
                     if (ec) {

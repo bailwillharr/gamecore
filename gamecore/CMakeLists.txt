@@ -106,6 +106,7 @@ set(INCLUDE_FILES
   "include/gamecore/gc_net_client.h"
   "include/gamecore/gc_net_common.h"
   "include/gamecore/gc_net_ui.h"
+  "include/gamecore/gc_net_rto.h"
 )
 
 # gamecore is a static library
