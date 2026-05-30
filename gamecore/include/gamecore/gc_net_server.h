@@ -1,14 +1,15 @@
 #pragma once
 
-#include <asio/io_context.hpp>
-#include <asio/ip/udp.hpp>
 #include <asio/awaitable.hpp>
 #include <asio/experimental/channel.hpp>
+#include <asio/io_context.hpp>
+#include <asio/ip/udp.hpp>
 
 #include <mutex>
-#include <unordered_map>
-#include <thread>
 #include <queue>
+#include <thread>
+#include <unordered_map>
+#include <unordered_set>
 #include <variant>
 
 #include <gctemplates/gct_static_vector.h>
@@ -21,9 +22,10 @@ namespace gc {
 struct NetServerStatus {
     mutable std::mutex mutex{};
     asio::ip::udp::endpoint local_endpoint{};
+    bool running = false;
 };
 
-struct NetSession {
+struct NetServerSession {
     NetSessionToken session_token;
     asio::ip::udp::endpoint endpoint;
     uint64_t last_receive_timestamp;
@@ -45,39 +47,45 @@ struct NetSession {
 };
 
 class NetServer {
-        struct OutboundConnectChallenge {
-            asio::ip::udp::endpoint client_endpoint;
-            NetSessionToken session_token; // no session exists yet
-            uint64_t client_nonce;
-        };
-        struct OutboundUnicast {
-            NetSessionToken session_token;
-            uint16_t payload_type;
-            std::vector<uint8_t> payload;
-        };
-        struct OutboundMulticast {
-            uint16_t payload_type;
-            std::vector<uint8_t> payload;
-        };
-        struct OutboundRaw {
-            NetSessionToken session_token;
-            std::vector<uint8_t> packet_data;
-        };
-        using OutboundCommand = std::variant<OutboundConnectChallenge, OutboundUnicast, OutboundMulticast, OutboundRaw>;
-
+    struct OutboundConnectChallenge {
+        asio::ip::udp::endpoint client_endpoint;
+        NetSessionToken session_token; // no session exists yet
+        uint64_t client_nonce;
+    };
+    struct OutboundUnicast {
+        NetSessionToken session_token;
+        uint16_t payload_type;
+        std::vector<uint8_t> payload;
+    };
+    struct OutboundMulticast {
+        uint16_t payload_type;
+        std::vector<uint8_t> payload;
+    };
+    struct OutboundRaw {
+        NetSessionToken session_token;
+        std::vector<uint8_t> packet_data;
+    };
+    using OutboundCommand = std::variant<OutboundConnectChallenge, OutboundUnicast, OutboundMulticast, OutboundRaw>;
     using OutboundChannel = asio::experimental::channel<asio::io_context::executor_type, void(asio::error_code, OutboundCommand)>;
 
     static constexpr size_t OUTBOUND_QUEUE_MAX_SIZE = 1024;
 
     NetServerStatus m_server_status{};
+    NetEventQueue m_event_queue{};
 
     std::jthread m_server_thread{};
 
+    // Used to avoid having to lock m_sessions just to get the list of active sessions
+    struct ActiveSessionsList {
+        mutable std::mutex mut{};
+        std::unordered_set<NetSessionToken> list{};
+    } m_active_sessions_list{};
+
     // All these members are only accessed by the server thread
     asio::io_context m_context{};
-    std::optional<asio::ip::udp::socket> m_socket;
+    asio::ip::udp::socket m_socket{m_context};
     OutboundChannel m_outbound_queue{m_context.get_executor(), OUTBOUND_QUEUE_MAX_SIZE};
-    std::unordered_map<NetSessionToken, NetSession> m_sessions{};
+    std::unordered_map<NetSessionToken, NetServerSession> m_sessions{};
 
 public:
     ~NetServer();
@@ -86,7 +94,13 @@ public:
     void stop();
 
     bool isRunning() const;
+
     asio::ip::udp::endpoint getLocalEndpoint() const;
+
+    uint32_t getActiveSessionsCount() const;
+    std::vector<NetSessionToken> getActiveSessionsList() const;
+
+    bool poll(NetEvent& ev);
 
     // don't specify a session token for broadcast
     void sendMessage(std::optional<NetSessionToken> session_token, uint16_t payload_type, std::vector<uint8_t> payload);

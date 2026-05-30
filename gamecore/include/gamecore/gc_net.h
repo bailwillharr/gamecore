@@ -23,23 +23,29 @@ class Net {
 public:
     // returns false on failure
     bool startServer(asio::ip::udp::endpoint endpoint);
-
+    
+    // only use in server mode
     void stopServer();
+    asio::ip::udp::endpoint getServerEndpoint() const;
 
     // returns false on failure
     bool connectToServer(const asio::ip::udp::endpoint& endpoint);
 
+    // only use in client mode
     void disconnectFromServer();
+    NetClientConnectionStatus getClientConnectionStatus() const;
+
+    // The remaining functions can be used in all modes:
+    NetMode getMode() const;
+
+    // Returns the number of remote hosts (1 in client mode, number of clients in server mode)
+    uint32_t getRemoteCount() const;
 
     // returns true if an event is available
     bool pollEvents(NetEvent& ev);
 
-    NetMode getMode() const;
-
-    NetClientState getClientState() const;
-
-    asio::ip::udp::endpoint getServerEndpoint() const;
-    bool isServerRunning() const;
+    // use nullptr in client mode or for server broadcast
+    void postEvent(NetEvent ev, std::optional<NetSessionToken>);
 
     // executes synchronously
     std::optional<asio::ip::udp::endpoint> resolve(std::string_view host, std::string_view service);

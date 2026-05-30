@@ -90,20 +90,46 @@ void Net::disconnectFromServer()
 
 bool Net::pollEvents(NetEvent& ev)
 {
-    return std::visit(
-        [&](auto&& arg) -> bool {
-            using T = std::decay_t<decltype(arg)>;
-            if constexpr (std::is_same_v<T, NetServer>) {
-                return false;
-            }
-            else if constexpr (std::is_same_v<T, NetClient>) {
-                return arg.poll(ev);
-            }
-            else {
-                return false;
-            }
-        },
-        m_server_client);
+    if (std::holds_alternative<NetServer>(m_server_client)) {
+        auto& server = getServer();
+        if (server.isRunning()) {
+            return server.poll(ev);
+        }
+        else {
+            m_server_client.emplace<std::monostate>();
+            return false;
+        }
+    }
+    else if (std::holds_alternative<NetClient>(m_server_client)) {
+        auto& client = getClient();
+        NetClientConnectionStatus status = client.getConnectionStatus();
+        if (status == NetClientConnectionStatus::CONNECTED) {
+            return client.poll(ev);
+        }
+        else if (status == NetClientConnectionStatus::CONNECTING) {
+            return false;
+        }
+        else { // DISCONNECTED
+            m_server_client.emplace<std::monostate>();
+            return false;
+        }
+    }
+    else {
+        return false;
+    }
+}
+
+void Net::postEvent(NetEvent ev, std::optional<NetSessionToken> token)
+{
+    if (std::holds_alternative<NetServer>(m_server_client)) {
+        auto& server = getServer();
+        std::vector<uint8_t> buf(4);
+        NetByteWriter writer(buf);
+        writer.writeU32(ev.type.getHash());
+        server.sendMessage(std::move(token), 1, std::move(buf));
+    }
+    else if (std::holds_alternative<NetClient>(m_server_client)) {
+    }
 }
 
 NetMode Net::getMode() const
@@ -119,11 +145,22 @@ NetMode Net::getMode() const
     }
 }
 
-NetClientState Net::getClientState() const { return getClient().getState(); }
+uint32_t Net::getRemoteCount() const
+{
+    if (std::holds_alternative<NetServer>(m_server_client)) {
+        return getServer().getActiveSessionsCount();
+    }
+    else if (std::holds_alternative<NetClient>(m_server_client)) {
+        return 1;
+    }
+    else {
+        return 0;
+    }
+}
+
+NetClientConnectionStatus Net::getClientConnectionStatus() const { return getClient().getConnectionStatus(); }
 
 asio::ip::udp::endpoint Net::getServerEndpoint() const { return getServer().getLocalEndpoint(); }
-
-bool Net::isServerRunning() const { return getServer().isRunning(); }
 
 std::optional<asio::ip::udp::endpoint> Net::resolve(std::string_view host, std::string_view service)
 {

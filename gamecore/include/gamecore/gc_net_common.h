@@ -245,6 +245,7 @@ struct NetEvent {
     Name type;
 };
 
+// thread-safe event queue
 class NetEventQueue {
     std::mutex m_mutex{};
     std::queue<NetEvent> m_queue{};

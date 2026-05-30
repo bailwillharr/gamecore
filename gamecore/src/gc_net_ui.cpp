@@ -79,7 +79,6 @@ void renderNetUI(Net& net)
             }
         } break;
         case NetMode::SERVER: {
-            ImGui::Text("Running: %d", net.isServerRunning());
             const auto server_addr = net.getServerEndpoint();
             ImGui::Text("Address: %s:%d", server_addr.address().to_string().c_str(), server_addr.port());
             if (ImGui::Button("Stop Server")) {
@@ -88,14 +87,14 @@ void renderNetUI(Net& net)
         } break;
         case NetMode::CLIENT: {
             const char* status_str{};
-            switch (net.getClientState()) {
-            case NetClientState::DISCONNECTED:
+            switch (net.getClientConnectionStatus()) {
+            case NetClientConnectionStatus::DISCONNECTED:
                 status_str = "disconnected";
                 break;
-            case NetClientState::CONNECTING:
+            case NetClientConnectionStatus::CONNECTING:
                 status_str = "connecting";
                 break;
-            case NetClientState::CONNECTED:
+            case NetClientConnectionStatus::CONNECTED:
                 status_str = "connected";
                 break;
             default:

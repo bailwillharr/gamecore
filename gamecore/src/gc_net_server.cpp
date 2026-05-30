@@ -133,11 +133,11 @@ static void handleParsed(PacketContext& ctx, Func&& func)
     func(std::move(*pkt));
 }
 
-static void handleMessage(PacketContext& ctx, NetSession& session)
+[[nodiscard]] static std::optional<NetEvent> handleMessage(PacketContext& ctx, NetServerSession& session)
 {
     const auto message = tryDeserialise<NetPacketMessage>(ctx.reader);
     if (!message) {
-        return;
+        return std::nullopt;
     }
 
     // read seq and ack information
@@ -178,14 +178,22 @@ static void handleMessage(PacketContext& ctx, NetSession& session)
     // read the data...
     if (ctx.reader.remaining() != message->payload_size) {
         GC_ERROR("Remaining packet size not equal to payload size");
-        return; // malformed packet
+        return std::nullopt; // malformed packet
     }
 
-    // TODO: actually return data
     GC_DEBUG("Session: {}, Recieved {} bytes", session.session_token, message->payload_size);
+    if (ctx.reader.remaining() >= sizeof(uint32_t) && message->payload_type == 1) {
+        const uint32_t hash = ctx.reader.readU32();
+        NetEvent ev{};
+        ev.type = Name(hash);
+        return ev;
+    }
+    else {
+        return std::nullopt;
+    }
 }
 
-static void handleAuthenticated(PacketContext& ctx, std::unordered_map<NetSessionToken, NetSession>& sessions)
+[[nodiscard]] static std::optional<NetEvent> handleAuthenticated(PacketContext& ctx, std::unordered_map<NetSessionToken, NetServerSession>& sessions)
 {
     // verify token
 
@@ -195,7 +203,7 @@ static void handleAuthenticated(PacketContext& ctx, std::unordered_map<NetSessio
     if (it == sessions.end()) {
         // token not found, might be a new valid session...
         if (ctx.received_header.type != NetPacketType::CONNECT_CHALLENGE_RESPONSE) {
-            return;
+            return std::nullopt;
         }
         handleParsed<NetPacketConnectChallengeResponse>(ctx, [&](NetPacketConnectChallengeResponse challenge_response) {
             // Also compare against what the session token would have been during the previous time bucket.
@@ -204,24 +212,24 @@ static void handleAuthenticated(PacketContext& ctx, std::unordered_map<NetSessio
             if (ctx.received_header.token != session_token1 && ctx.received_header.token != session_token2) {
                 return;
             }
-            NetSession session{};
+            NetServerSession session{};
             session.session_token = ctx.received_header.token;
             session.endpoint = ctx.endpoint;
             session.last_receive_timestamp = now;
             sessions.emplace(ctx.received_header.token, std::move(session));
             GC_DEBUG("Created new session");
         });
-        return;
+        return std::nullopt;
     }
 
-    NetSession& session = it->second;
+    NetServerSession& session = it->second;
 
     // Verify session has same endpoint
     if (session.endpoint != ctx.endpoint) {
         // Might just be a NAT rebind or carrier handoff.
         // TODO: Handle endpoint migration
         GC_ERROR("Packet from {} has session token corresponding to existing session with {}", ctx.endpoint, session.endpoint);
-        return;
+        return std::nullopt;
     }
 
     // Authenticated session
@@ -229,37 +237,44 @@ static void handleAuthenticated(PacketContext& ctx, std::unordered_map<NetSessio
 
     switch (ctx.received_header.type) {
     case NetPacketType::MESSAGE:
-        handleMessage(ctx, session);
-        break;
+        return handleMessage(ctx, session);
     default:
         // message is the only authenticated packet type
         break;
     }
+
+    return std::nullopt;
 }
 
-NetServer::~NetServer() { stop(); }
+NetServer::~NetServer()
+{
+    stop();
+    std::scoped_lock lock(m_server_status.mutex);
+    m_server_status.running = false;
+}
+
+bool NetServer::isRunning() const
+{
+    std::scoped_lock lock(m_server_status.mutex);
+    return m_server_status.running;
+}
 
 bool NetServer::start(const asio::ip::udp::endpoint& endpoint)
 {
     stop(); // just in case
 
     asio::error_code ec{};
-    m_socket = asio::ip::udp::socket(m_context);
-    m_socket->open(endpoint.protocol(), ec);
+    m_socket.open(endpoint.protocol(), ec);
     if (ec) {
         GC_ERROR("Failed to open socket: {}", ec.message());
         return false;
     }
-    m_socket->bind(endpoint, ec);
+    m_socket.bind(endpoint, ec);
     if (ec) {
         GC_ERROR("Failed to bind socket: {}", ec.message());
         return false;
     }
-    {
-        std::scoped_lock lock(m_server_status.mutex);
-        m_server_status.local_endpoint = m_socket->local_endpoint();
-        GC_INFO("Starting server on {}", m_server_status.local_endpoint);
-    }
+    GC_INFO("Starting server on {}", m_socket.local_endpoint());
 
     m_context.restart();
     m_server_thread = std::jthread(
@@ -267,7 +282,16 @@ bool NetServer::start(const asio::ip::udp::endpoint& endpoint)
             asio::co_spawn(self.m_context, self.receiveLoop(), asio::detached);
             asio::co_spawn(self.m_context, self.sendLoop(), asio::detached);
             asio::co_spawn(self.m_context, self.keepAliveLoop(), asio::detached);
+            {
+                std::scoped_lock lock(self.m_server_status.mutex);
+                self.m_server_status.running = true;
+                self.m_server_status.local_endpoint = self.m_socket.local_endpoint();
+            }
             self.m_context.run();
+            {
+                std::scoped_lock lock(self.m_server_status.mutex);
+                self.m_server_status.running = false;
+            }
         },
         std::ref(*this));
 
@@ -276,17 +300,33 @@ bool NetServer::start(const asio::ip::udp::endpoint& endpoint)
 
 void NetServer::stop()
 {
+    asio::error_code ec{};
     m_context.stop();
     m_server_thread = {};
+    m_socket.shutdown(asio::ip::udp::socket::shutdown_both, ec);
+    (void)ec; // it errors if the socket hasn't been used at all yet
+    m_socket.close();
 }
-
-bool NetServer::isRunning() const { return !m_context.stopped(); }
 
 asio::ip::udp::endpoint NetServer::getLocalEndpoint() const
 {
     std::scoped_lock lock(m_server_status.mutex);
     return m_server_status.local_endpoint;
 }
+
+uint32_t NetServer::getActiveSessionsCount() const
+{
+    std::scoped_lock lock(m_active_sessions_list.mut);
+    return static_cast<uint32_t>(m_active_sessions_list.list.size());
+}
+
+std::vector<NetSessionToken> NetServer::getActiveSessionsList() const
+{
+    std::scoped_lock lock(m_active_sessions_list.mut);
+    return std::vector<NetSessionToken>(m_active_sessions_list.list.begin(), m_active_sessions_list.list.end());
+}
+
+bool NetServer::poll(NetEvent& ev) { return m_event_queue.pop(ev); }
 
 void NetServer::sendMessage(std::optional<NetSessionToken> session_token, uint16_t payload_type, std::vector<uint8_t> payload)
 {
@@ -312,7 +352,7 @@ asio::awaitable<void> NetServer::sendLoop()
     constexpr auto TOKEN = asio::as_tuple(asio::use_awaitable);
     asio::error_code ec{};
 
-    GC_ASSERT(m_socket);
+    GC_ASSERT(m_socket.is_open());
 
     OutboundCommand command{};
     std::array<uint8_t, NET_MAX_PACKET_SIZE> buffer{};
@@ -334,7 +374,7 @@ asio::awaitable<void> NetServer::sendLoop()
                               [&](const OutboundUnicast& unicast) {
                                   auto it = m_sessions.find(unicast.session_token);
                                   if (it != m_sessions.end()) {
-                                      NetSession& session = it->second;
+                                      NetServerSession& session = it->second;
                                       endpoint = session.endpoint;
                                       NetPacketMessage message{};
                                       message.seq_num = session.next_seq_num;
@@ -346,7 +386,7 @@ asio::awaitable<void> NetServer::sendLoop()
                                       GC_ASSERT(writer.remaining() >= message.payload_size);
                                       writer.writeBytes(unicast.payload);
 
-                                      NetSession::QueuedPacket retransmit_packet{};
+                                      NetServerSession::QueuedPacket retransmit_packet{};
                                       retransmit_packet.original_timestamp = now;
                                       retransmit_packet.last_send_timestamp = now;
                                       retransmit_packet.attempts = 0;
@@ -365,7 +405,7 @@ asio::awaitable<void> NetServer::sendLoop()
                                   GC_DEBUG("sendLoop() OutboundRaw");
                                   auto it = m_sessions.find(raw.session_token);
                                   if (it != m_sessions.end()) {
-                                      NetSession& session = it->second;
+                                      NetServerSession& session = it->second;
                                       endpoint = session.endpoint;
                                       session.last_send_timestamp = now;
                                       writer.writeBytes(raw.packet_data);
@@ -378,7 +418,7 @@ asio::awaitable<void> NetServer::sendLoop()
         }
 
         size_t bytes_written{};
-        std::tie(ec, bytes_written) = co_await m_socket->async_send_to(asio::buffer(buffer.data(), writer.pos()), endpoint, TOKEN);
+        std::tie(ec, bytes_written) = co_await m_socket.async_send_to(asio::buffer(buffer.data(), writer.pos()), endpoint, TOKEN);
         if (ec) {
             GC_ERROR("Failed to send from socket: {}", ec.message());
         }
@@ -394,17 +434,15 @@ asio::awaitable<void> NetServer::receiveLoop()
     const auto executor = co_await asio::this_coro::executor;
     asio::error_code ec{};
 
-    GC_ASSERT(m_socket);
+    GC_ASSERT(m_socket.is_open());
 
     const uint64_t server_secret = generateServerSecret();
 
-    std::optional<uint32_t> last_cleanup_bucket{};
     std::array<uint8_t, NET_MAX_PACKET_SIZE> recv_buf{};
-    std::array<uint8_t, NET_MAX_PACKET_SIZE> send_buf{};
     for (;;) {
         size_t bytes_read{};
         asio::ip::udp::endpoint client_endpoint{};
-        std::tie(ec, bytes_read) = co_await m_socket->async_receive_from(asio::buffer(recv_buf), client_endpoint, TOKEN);
+        std::tie(ec, bytes_read) = co_await m_socket.async_receive_from(asio::buffer(recv_buf), client_endpoint, TOKEN);
         if (ec) {
             GC_ERROR("Failed to receive on socket: {}", ec.message());
             continue;
@@ -412,7 +450,6 @@ asio::awaitable<void> NetServer::receiveLoop()
 
         const uint32_t time_bucket = getTimeBucket();
         NetByteReader reader(std::span(recv_buf.data(), bytes_read));
-        NetByteWriter writer(send_buf);
 
         const auto header = tryDeserialise<NetPacketHeader>(reader);
         if (!header || !verifyPacketHeader(*header)) {
@@ -443,7 +480,9 @@ asio::awaitable<void> NetServer::receiveLoop()
             }
         }
         else {
-            handleAuthenticated(ctx, m_sessions);
+            if (auto ev = handleAuthenticated(ctx, m_sessions); ev) {
+                m_event_queue.push(*ev);
+            }
         }
     }
 }
@@ -471,7 +510,8 @@ asio::awaitable<void> NetServer::keepAliveLoop()
             for (auto it = session.retransmit_queue.begin(); it != session.retransmit_queue.end();) {
                 auto& [seq_num, packet] = *it;
                 if (packet.attempts >= packet.MAX_ATTEMPTS || now - packet.original_timestamp > packet.MAX_AGE_NS) {
-                    GC_WARN("Queued packet was never acknowledged and is getting dropped: attempts: {}, age: {} ms", packet.attempts, static_cast<double>(now - packet.original_timestamp) / 1e6);
+                    GC_WARN("Queued packet was never acknowledged and is getting dropped: attempts: {}, age: {} ms", packet.attempts,
+                            static_cast<double>(now - packet.original_timestamp) / 1e6);
                     it = session.retransmit_queue.erase(it);
                 }
                 else {
