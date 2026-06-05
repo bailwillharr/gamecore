@@ -37,7 +37,6 @@ struct NetServerSession {
 
     struct QueuedPacket {
         static constexpr uint32_t MAX_ATTEMPTS = 4;
-        static constexpr uint64_t MAX_AGE_NS = 500'000'000; // 500 ms
         uint64_t original_timestamp{};
         uint64_t last_send_timestamp{};
         uint32_t attempts{};

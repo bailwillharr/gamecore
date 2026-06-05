@@ -1,5 +1,6 @@
 #include "gamecore/gc_net_client.h"
 
+#include <atomic>
 #include <random>
 #include <chrono>
 
@@ -190,7 +191,7 @@ static asio::awaitable<void> initiateConnection(asio::ip::udp::socket& socket, N
         return std::nullopt; // malformed packet
     }
 
-    GC_DEBUG("Session: {}, Received {:016X} bytes", session.session_token, message->payload_size);
+    GC_DEBUG("Received {} bytes:", message->payload_size);
     GC_DEBUG("  Message: seq_num: {}, ack_num: {}", message->seq_num, message->ack_num);
 
     if (reader.remaining() >= sizeof(uint32_t) && message->payload_type == 1) {
@@ -399,8 +400,8 @@ asio::awaitable<void> NetClient::keepAliveLoop()
 
         for (auto it = m_session.retransmit_queue.begin(); it != m_session.retransmit_queue.end();) {
             auto& [seq_num, packet] = *it;
-            if (packet.attempts >= packet.MAX_ATTEMPTS || now - packet.original_timestamp > packet.MAX_AGE_NS) {
-                GC_WARN("Queued packet was never acknowledged and is getting dropped: attempts: {}, age: {} ms", packet.attempts,
+            if (packet.attempts >= packet.MAX_ATTEMPTS || seq_diff(seq_num, m_session.next_seq_num) < -static_cast<int16_t>(m_session.ack_bits.size() * 2)) {
+                GC_WARN("Queued packet {} was never acknowledged and is getting dropped: attempts: {}, age: {} ms", seq_num, packet.attempts,
                         static_cast<double>(now - packet.original_timestamp) / 1e6);
                 it = m_session.retransmit_queue.erase(it);
             }

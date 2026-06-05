@@ -25,12 +25,11 @@ struct NetClientSession {
     uint64_t last_send_timestamp{0ULL};
     uint16_t next_seq_num{0};    // post-incremented when sending
     uint16_t last_ack_num{UINT16_MAX};    // the highest received sequence number. init to 65535
-    std::bitset<32> ack_bits{~0U}; // which of the last 32 client-side sequence numbers have been received. init to all 1s
+    std::bitset<32> ack_bits{~0U}; // which of the last 32 server-side sequence numbers have been received. init to all 1s
     RetransmitTimeoutCalculator rto_calc{};
 
     struct QueuedPacket {
         static constexpr uint32_t MAX_ATTEMPTS = 4;
-        static constexpr uint64_t MAX_AGE_NS = 500'000'000; // 500 ms
         uint64_t original_timestamp{};
         uint64_t last_send_timestamp{};
         uint32_t attempts{};

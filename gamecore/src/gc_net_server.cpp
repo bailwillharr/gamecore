@@ -140,20 +140,21 @@ static void handleParsed(PacketContext& ctx, Func&& func)
         read_message = true;
     }
     else if (diff > -static_cast<int16_t>(session.ack_bits.size())) {
-	GC_ASSERT(diff <= 0);
-	if (session.ack_bits.test(-diff)) {
-		GC_DEBUG("received packet {} already acknowledged", message->seq_num);
-	} else {
+        GC_ASSERT(diff <= 0);
+        if (session.ack_bits.test(-diff)) {
+            GC_DEBUG("received packet {} already acknowledged", message->seq_num);
+        }
+        else {
             // previously missing sequence number, acknowledge it.
             GC_DEBUG("Received previously missing client message: {}", message->seq_num);
             session.ack_bits.set(-diff, true);
             read_message = true;
-	}
+        }
     }
     // outdated packets (old sequence numbers) are ignored
     if (!read_message) {
-	    // since retransmissions are just copies, there's no need to look at the message's ack info
-	    return std::nullopt;
+        // since retransmissions are just copies, there's no need to look at the message's ack info
+        return std::nullopt;
     }
 
     // Remove newly acked outbound packets from queue...
@@ -194,7 +195,8 @@ static void handleParsed(PacketContext& ctx, Func&& func)
     }
 }
 
-[[nodiscard]] static std::optional<NetEvent> handleAuthenticated(PacketContext& ctx, std::unordered_map<NetSessionToken, NetServerSession>& sessions, NetServerActiveSessionsList& active_sessions_list)
+[[nodiscard]] static std::optional<NetEvent> handleAuthenticated(PacketContext& ctx, std::unordered_map<NetSessionToken, NetServerSession>& sessions,
+                                                                 NetServerActiveSessionsList& active_sessions_list)
 {
     // verify token
 
@@ -220,7 +222,7 @@ static void handleParsed(PacketContext& ctx, Func&& func)
             sessions.emplace(ctx.received_header.token, std::move(session));
             {
                 std::scoped_lock lock(active_sessions_list.mut);
-		active_sessions_list.list.emplace(session.session_token);
+                active_sessions_list.list.emplace(session.session_token);
             }
             GC_DEBUG("Created new session: {:016X}", session.session_token);
         });
@@ -342,8 +344,8 @@ void NetServer::sendMessage(uint16_t payload_type, std::vector<uint8_t> payload,
         const auto sessions_list = getActiveSessionsList(); // locks and unlocks mutex on m_active_sessions_list
         for (const auto& token : sessions_list) {
             pushToOutboundQueue(OutboundUnicast{.session_token = token, .payload_type = payload_type, .payload = payload});
-	    // TODO: possible optimisation, move the payload in the final iteration.
-	    // Though it would probably be better to just use multicast types like before
+            // TODO: possible optimisation, move the payload in the final iteration.
+            // Though it would probably be better to just use multicast types like before
         }
     }
 }
@@ -406,10 +408,11 @@ asio::awaitable<void> NetServer::sendLoop()
                                       session.last_send_timestamp = now;
                                       session.next_seq_num += 1;
 
-                                      GC_DEBUG("Sending message: seq_num: {}, ack_num: {}, msg size: {}", message.seq_num, message.ack_num, message.payload_size);
+                                      GC_DEBUG("Sending message: seq_num: {}, ack_num: {}, msg size: {}", message.seq_num, message.ack_num,
+                                               message.payload_size);
                                   }
                               },
-                             [&](const OutboundRaw& raw) {
+                              [&](const OutboundRaw& raw) {
                                   GC_DEBUG("sendLoop() OutboundRaw");
                                   auto it = m_sessions.find(raw.session_token);
                                   if (it != m_sessions.end()) {
@@ -520,9 +523,9 @@ asio::awaitable<void> NetServer::keepAliveLoop()
         for (auto& [_, session] : m_sessions) {
             for (auto it = session.retransmit_queue.begin(); it != session.retransmit_queue.end();) {
                 auto& [seq_num, packet] = *it;
-                if (packet.attempts >= packet.MAX_ATTEMPTS || now - packet.original_timestamp > packet.MAX_AGE_NS) {
-                    GC_WARN("Queued packet was never acknowledged and is getting dropped: attempts: {}, age: {} ms", packet.attempts,
-                            static_cast<double>(now - packet.original_timestamp) / 1e6);
+                if (packet.attempts >= packet.MAX_ATTEMPTS || seq_diff(seq_num, session.next_seq_num) < -static_cast<int16_t>(session.ack_bits.size() * 2)) {
+                    GC_WARN("Queued packet with seq_num {} was never acknowledged and is getting dropped: attempts: {}, age: {} ms, current seq: {}", seq_num,
+                            packet.attempts, static_cast<double>(now - packet.original_timestamp) / 1e6, session.next_seq_num);
                     it = session.retransmit_queue.erase(it);
                 }
                 else {
@@ -536,7 +539,8 @@ asio::awaitable<void> NetServer::keepAliveLoop()
                         message.session_token = session.session_token;
                         message.packet_data = packet.packet_data; // Copying a vector
 
-                        GC_DEBUG("Retransmitting packet with seq_num: {}, attempt: {}, rto: {} ms", seq_num, packet.attempts, session.rto_calc.getRTONanoseconds() * 1.0e-6);
+                        GC_DEBUG("Retransmitting packet with seq_num: {}, attempt: {}, rto: {} ms", seq_num, packet.attempts,
+                                 session.rto_calc.getRTONanoseconds() * 1.0e-6);
 
                         std::tie(ec) = co_await m_outbound_queue.async_send(asio::error_code{}, std::move(command), TOKEN);
                         if (ec) {
