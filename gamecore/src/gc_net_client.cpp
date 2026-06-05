@@ -30,38 +30,45 @@ static uint32_t generateClientNonce()
     return rand32();
 }
 
-static bool checkSend(asio::ip::udp::socket& socket, std::span<const uint8_t> buffer)
+static asio::awaitable<bool> checkSend(asio::ip::udp::socket& socket, std::span<const uint8_t> buffer)
 {
+    constexpr auto TOKEN = asio::as_tuple(asio::use_awaitable);
     asio::error_code ec{};
     size_t bytes_transferred{};
-    bytes_transferred = socket.send(asio::buffer(buffer), 0, ec);
+    std::tie(ec, bytes_transferred) = co_await socket.async_send(asio::buffer(buffer), 0, TOKEN);
     if (ec || bytes_transferred < buffer.size()) {
         GC_ERROR("Failed to send: {}, sent {}/{}", ec.message(), bytes_transferred, buffer.size());
-        return false;
+	co_return false;
     }
     else {
-        return true;
+        co_return true;
     }
 }
 
-static size_t checkReceive(asio::ip::udp::socket& socket, std::span<uint8_t> buffer)
+static asio::awaitable<size_t> checkReceive(asio::ip::udp::socket& socket, std::span<uint8_t> buffer)
 {
+    constexpr auto TOKEN = asio::as_tuple(asio::use_awaitable);
     asio::error_code ec{};
     size_t bytes_transferred{};
-    bytes_transferred = socket.receive(asio::buffer(buffer), 0, ec);
+    std::tie(ec, bytes_transferred) = co_await socket.async_receive(asio::buffer(buffer), 0, TOKEN);
     if (ec) {
         GC_ERROR("Failed to receive: {}", ec.message());
-        return 0;
+        co_return 0;
     }
     else {
-        return bytes_transferred;
+        co_return bytes_transferred;
     }
 }
 
-static std::optional<NetClientSession> initiateConnection(asio::ip::udp::socket& socket)
+static asio::awaitable<void> initiateConnection(asio::ip::udp::socket& socket, NetClientSession& out_session)
 {
+    constexpr auto TOKEN = asio::as_tuple(asio::use_awaitable);
     constexpr int NUM_CONNECT_ATTEMPTS = 6;
     constexpr auto CONNECT_ATTEMPT_COOLDOWN = std::chrono::milliseconds(40);
+
+    const auto executor = co_await asio::this_coro::executor;
+
+    asio::error_code ec{};
 
     std::vector<uint8_t> buf(NET_MAX_PACKET_SIZE);
 
@@ -76,13 +83,13 @@ static std::optional<NetClientSession> initiateConnection(asio::ip::udp::socket&
         connect_request.client_nonce = client_nonce;
         NetByteWriter writer(buf);
         writePacketWithHeader(writer, NetSessionToken{0}, connect_request);
-        if (!checkSend(socket, std::span(buf.begin(), writer.pos()))) {
-            return {};
+        last_send_timestamp = SDL_GetTicksNS();
+        bool send_success = co_await checkSend(socket, std::span(buf.begin(), writer.pos()));
+        if (!send_success) {
+            co_return;
         }
 
-        last_send_timestamp = SDL_GetTicksNS();
-
-        const size_t bytes_received = checkReceive(socket, buf);
+        const size_t bytes_received = co_await checkReceive(socket, buf);
         NetByteReader reader(std::span(buf.begin(), bytes_received));
         const auto received_header = tryDeserialise<NetPacketHeader>(reader);
         if (received_header && verifyPacketHeader(*received_header) && received_header->type == NetPacketType::CONNECT_CHALLENGE) {
@@ -94,10 +101,15 @@ static std::optional<NetClientSession> initiateConnection(asio::ip::udp::socket&
             }
         }
 
-        std::this_thread::sleep_for(CONNECT_ATTEMPT_COOLDOWN);
+        asio::steady_timer timer(executor, CONNECT_ATTEMPT_COOLDOWN);
+        std::tie(ec) = co_await timer.async_wait(TOKEN);
+        if (ec) {
+            GC_ERROR("Timer error: {}", ec.message());
+            co_return;
+        }
     }
     if (session_token == 0) {
-        return {};
+        co_return;
     }
 
     {
@@ -106,8 +118,9 @@ static std::optional<NetClientSession> initiateConnection(asio::ip::udp::socket&
         NetByteWriter writer(buf);
         writePacketWithHeader(writer, session_token, challenge_response);
         for (int i = 0; i < NUM_CONNECT_ATTEMPTS; ++i) {
-            if (!checkSend(socket, std::span(buf.begin(), writer.pos()))) {
-                return {};
+            bool send_success = co_await checkSend(socket, std::span(buf.begin(), writer.pos()));
+            if (!send_success) {
+                co_return;
             }
         }
     }
@@ -118,8 +131,6 @@ static std::optional<NetClientSession> initiateConnection(asio::ip::udp::socket&
     session.last_receive_timestamp = last_receive_timestamp;
     GC_ASSERT(last_send_timestamp != 0);
     session.last_send_timestamp = last_send_timestamp;
-
-    return session;
 }
 
 [[nodiscard]] static std::optional<NetEvent> handleMessage(NetByteReader& reader, NetClientSession& session)
@@ -213,17 +224,19 @@ bool NetClient::connect(const asio::ip::udp::endpoint& endpoint)
     }
     GC_INFO("Connecting to server: {}", endpoint);
 
-    m_context.restart();
     m_client_thread = std::jthread(
         [](NetClient& self) {
             self.m_state.store(NetClientConnectionStatus::CONNECTING);
-	    auto session = initiateConnection(self.m_socket);
-            if (session) {
-	    	self.m_session = std::move(*session);
+	    self.m_session.session_token = 0;
+	    asio::co_spawn(self.m_context, initiateConnection(self.m_socket, self.m_session), asio::detached);
+	    self.m_context.restart();
+	    self.m_context.run(); // returns when initiateConnection completes
+            if (self.m_session.session_token == 0) {
                 self.m_state.store(NetClientConnectionStatus::CONNECTED);
                 asio::co_spawn(self.m_context, self.sendLoop(), asio::detached);
                 asio::co_spawn(self.m_context, self.receiveLoop(), asio::detached);
                 asio::co_spawn(self.m_context, self.keepAliveLoop(), asio::detached);
+                self.m_context.restart();
                 self.m_context.run();
             }
             self.m_state.store(NetClientConnectionStatus::DISCONNECTED);
