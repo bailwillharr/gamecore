@@ -231,7 +231,7 @@ bool NetClient::connect(const asio::ip::udp::endpoint& endpoint)
 	    asio::co_spawn(self.m_context, initiateConnection(self.m_socket, self.m_session), asio::detached);
 	    self.m_context.restart();
 	    self.m_context.run(); // returns when initiateConnection completes
-            if (self.m_session.session_token == 0) {
+            if (self.m_session.session_token != 0) {
                 self.m_state.store(NetClientConnectionStatus::CONNECTED);
                 asio::co_spawn(self.m_context, self.sendLoop(), asio::detached);
                 asio::co_spawn(self.m_context, self.receiveLoop(), asio::detached);
