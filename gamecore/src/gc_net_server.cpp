@@ -94,13 +94,7 @@ static NetSessionToken computeSessionToken(uint64_t server_secret, const asio::i
 
     size_t hash = simpleHash(data);
 
-    NetSessionToken token{};
-
-    for (int i = 0; i < token.size(); ++i) {
-        token[i] = (hash >> ((i % 8) * 8)) & 0xFF;
-    }
-
-    return token;
+    return NetSessionToken{hash};
 }
 
 static uint64_t generateServerSecret()
@@ -186,7 +180,7 @@ static void handleParsed(PacketContext& ctx, Func&& func)
         return std::nullopt; // malformed packet
     }
 
-    GC_DEBUG("Session: {}, Received {} bytes", session.session_token, message->payload_size);
+    GC_DEBUG("Session: {:016X}, Received {} bytes", session.session_token, message->payload_size);
     GC_DEBUG("  Message: seq_num: {}, ack_num: {}", message->seq_num, message->ack_num);
 
     if (ctx.reader.remaining() >= sizeof(uint32_t) && message->payload_type == 1) {
@@ -228,7 +222,7 @@ static void handleParsed(PacketContext& ctx, Func&& func)
                 std::scoped_lock lock(active_sessions_list.mut);
 		active_sessions_list.list.emplace(session.session_token);
             }
-            GC_DEBUG("Created new session: {}", session.session_token);
+            GC_DEBUG("Created new session: {:016X}", session.session_token);
         });
         return std::nullopt;
     }
@@ -339,10 +333,10 @@ std::vector<NetSessionToken> NetServer::getActiveSessionsList() const
 
 bool NetServer::poll(NetEvent& ev) { return m_event_queue.pop(ev); }
 
-void NetServer::sendMessage(std::optional<NetSessionToken> session_token, uint16_t payload_type, std::vector<uint8_t> payload)
+void NetServer::sendMessage(uint16_t payload_type, std::vector<uint8_t> payload, NetSessionToken session_token)
 {
-    if (session_token.has_value()) {
-        pushToOutboundQueue(OutboundUnicast{.session_token = *session_token, .payload_type = payload_type, .payload = std::move(payload)});
+    if (session_token != 0) {
+        pushToOutboundQueue(OutboundUnicast{.session_token = session_token, .payload_type = payload_type, .payload = std::move(payload)});
     }
     else {
         const auto sessions_list = getActiveSessionsList(); // locks and unlocks mutex on m_active_sessions_list
@@ -478,7 +472,7 @@ asio::awaitable<void> NetServer::receiveLoop()
                           .server_secret = server_secret,
                           .time_bucket = time_bucket};
 
-        if (header->token == NetSessionToken{} && ctx.received_header.type == NetPacketType::CONNECT_REQUEST) {
+        if (header->token == 0 && ctx.received_header.type == NetPacketType::CONNECT_REQUEST) {
             // Unauthenticated packets are handled statelessly
             const auto request = tryDeserialiseExact<NetPacketConnectRequest>(ctx.reader);
             if (request) {

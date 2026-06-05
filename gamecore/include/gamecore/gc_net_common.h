@@ -64,7 +64,8 @@ public:
 constexpr size_t NET_MAX_PACKET_SIZE = 1200;
 
 using NetPacketMagic = std::array<uint8_t, 5>;
-using NetSessionToken = std::array<uint8_t, 16>;
+
+using NetSessionToken = uint64_t;
 
 constexpr NetPacketMagic NET_PACKET_MAGIC{'G', 'C', 'N', 'E', 'T'};
 constexpr uint16_t NET_PACKET_VERSION = 1;
@@ -82,12 +83,16 @@ struct NetPacketHeader {
     NetSessionToken token; // 0 if type==CONNECT_REQUEST, since there is no session
     NetPacketType type;
 
+    static_assert(sizeof(magic) == 5);
+    static_assert(sizeof(version) == 2);
+    static_assert(sizeof(token) == 8);
+    static_assert(sizeof(type) == 1);
+
     void serialise(NetByteWriter& writer) const
     {
         writer.writeBytes(magic);
         writer.writeU16(version);
-        writer.writeBytes(token);
-        static_assert(std::is_same_v<std::underlying_type_t<NetPacketType>, uint8_t>);
+        writer.writeU64(token);
         writer.writeU8(static_cast<uint8_t>(type));
     }
 
@@ -96,20 +101,26 @@ struct NetPacketHeader {
         NetPacketHeader obj{};
         reader.readBytes(obj.magic);
         obj.version = reader.readU16();
-        reader.readBytes(obj.token);
+        obj.token = reader.readU64();
         static_assert(std::is_same_v<std::underlying_type_t<NetPacketType>, uint8_t>);
         obj.type = static_cast<NetPacketType>(reader.readU8());
         return obj;
     }
 
-    static consteval size_t getSerialisedSize() { return sizeof(magic) + sizeof(version) + sizeof(token) + sizeof(type); }
+    static consteval size_t getSerialisedSize()
+    {
+        return 5    // magic
+               + 2  // version
+               + 8  // token
+               + 1; // type
+    }
 
-    static NetPacketHeader createValid(NetPacketType type, NetSessionToken token = {})
+    static NetPacketHeader createValid(NetPacketType type, NetSessionToken token = 0)
     {
         NetPacketHeader header{};
         header.magic = NET_PACKET_MAGIC;
         header.version = NET_PACKET_VERSION;
-        header.token = std::move(token);
+        header.token = token;
         header.type = type;
         return header;
     }
@@ -269,31 +280,6 @@ bool verifyPacketHeader(const NetPacketHeader& header);
 int16_t seq_diff(uint16_t a, uint16_t b);
 
 } // namespace gc
-
-template <>
-struct std::hash<gc::NetSessionToken> {
-    size_t operator()(const gc::NetSessionToken& token) const noexcept
-    {
-        // truncating works as a hash function since NetSessionToken is already high entropy
-        static_assert(sizeof(token) >= sizeof(size_t));
-        size_t value;
-        std::memcpy(&value, token.data(), sizeof(value));
-        return value;
-    }
-};
-
-template <>
-struct std::formatter<gc::NetSessionToken> {
-    constexpr auto parse(std::format_parse_context& ctx) const { return ctx.begin(); }
-    auto format(const gc::NetSessionToken& session_token, std::format_context& ctx) const
-    {
-        std::stringstream out{};
-        for (uint8_t c : session_token) {
-            out << std::format("{:X}", c);
-        }
-        return std::format_to(ctx.out(), "{}", out.view());
-    }
-};
 
 template <>
 struct std::formatter<asio::ip::udp::endpoint> {

@@ -86,7 +86,7 @@ void renderNetUI(Net& net)
                 net.stopServer();
             }
             if (ImGui::Button("Send shutdown command to clients")) {
-                net.postEvent(NetEvent{Name("shutdown")}, {});
+                net.postEvent(NetEvent{Name("shutdown")});
             }
         } break;
         case NetMode::CLIENT: {
@@ -109,7 +109,7 @@ void renderNetUI(Net& net)
                 net.disconnectFromServer();
             }
             if (ImGui::Button("Send shutdown command to server")) {
-                net.postEvent(NetEvent{Name("shutdown")}, std::nullopt);
+                net.postEvent(NetEvent{Name("shutdown")});
             }
         } break;
         }

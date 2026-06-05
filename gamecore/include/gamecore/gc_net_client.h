@@ -20,7 +20,7 @@ namespace gc {
 enum class NetClientConnectionStatus { DISCONNECTED, CONNECTING, CONNECTED };
 
 struct NetClientSession {
-    NetSessionToken session_token{};
+    NetSessionToken session_token{0};
     uint64_t last_receive_timestamp{0ULL};
     uint64_t last_send_timestamp{0ULL};
     uint16_t next_seq_num{0};    // post-incremented when sending

@@ -44,8 +44,9 @@ public:
     // returns true if an event is available
     bool pollEvents(NetEvent& ev);
 
-    // use nullptr in client mode or for server broadcast
-    void postEvent(NetEvent ev, std::optional<NetSessionToken>);
+    // session_token is ignored in client mode.
+    // In server mode, don't set session_token for broadcast to all clients
+    void postEvent(NetEvent ev, NetSessionToken session_token = 0);
 
     // executes synchronously
     std::optional<asio::ip::udp::endpoint> resolve(std::string_view host, std::string_view service);

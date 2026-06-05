@@ -70,12 +70,12 @@ static std::optional<NetClientSession> initiateConnection(asio::ip::udp::socket&
     uint64_t last_receive_timestamp{};
     uint64_t last_send_timestamp{};
 
-    NetSessionToken session_token{};
+    NetSessionToken session_token = 0;
     for (int i = 0; i < NUM_CONNECT_ATTEMPTS; ++i) {
         NetPacketConnectRequest connect_request{};
         connect_request.client_nonce = client_nonce;
         NetByteWriter writer(buf);
-        writePacketWithHeader(writer, NetSessionToken{}, connect_request);
+        writePacketWithHeader(writer, NetSessionToken{0}, connect_request);
         if (!checkSend(socket, std::span(buf.begin(), writer.pos()))) {
             return {};
         }
@@ -96,7 +96,7 @@ static std::optional<NetClientSession> initiateConnection(asio::ip::udp::socket&
 
         std::this_thread::sleep_for(CONNECT_ATTEMPT_COOLDOWN);
     }
-    if (session_token == NetSessionToken{}) {
+    if (session_token == 0) {
         return {};
     }
 
@@ -180,7 +180,7 @@ static std::optional<NetClientSession> initiateConnection(asio::ip::udp::socket&
         return std::nullopt; // malformed packet
     }
 
-    GC_DEBUG("Session: {}, Received {} bytes", session.session_token, message->payload_size);
+    GC_DEBUG("Session: {}, Received {:016X} bytes", session.session_token, message->payload_size);
     GC_DEBUG("  Message: seq_num: {}, ack_num: {}", message->seq_num, message->ack_num);
 
     if (reader.remaining() >= sizeof(uint32_t) && message->payload_type == 1) {

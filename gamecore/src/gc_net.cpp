@@ -119,18 +119,14 @@ bool Net::pollEvents(NetEvent& ev)
     }
 }
 
-void Net::postEvent(NetEvent ev, std::optional<NetSessionToken> token)
+void Net::postEvent(NetEvent ev, NetSessionToken session_token)
 {
     if (std::holds_alternative<NetServer>(m_server_client)) {
         auto& server = getServer();
         std::vector<uint8_t> buf(4);
         NetByteWriter writer(buf);
         writer.writeU32(ev.type.getHash());
-	if (token) {
-            server.sendMessage(std::move(token), 1, std::move(buf));
-	} else {
-            server.sendMessage(std::nullopt, 1, std::move(buf));
-	}
+        server.sendMessage(1, std::move(buf), session_token);
     }
     else if (std::holds_alternative<NetClient>(m_server_client)) {
         auto& client = getClient();

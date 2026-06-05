@@ -101,7 +101,7 @@ public:
     bool poll(NetEvent& ev);
 
     // don't specify a session token for broadcast
-    void sendMessage(std::optional<NetSessionToken> session_token, uint16_t payload_type, std::vector<uint8_t> payload);
+    void sendMessage(uint16_t payload_type, std::vector<uint8_t> payload, NetSessionToken token = 0);
 
 private:
     // Can be called on the main thread

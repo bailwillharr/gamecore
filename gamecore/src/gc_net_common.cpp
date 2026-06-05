@@ -125,14 +125,14 @@ bool verifyPacketHeader(const NetPacketHeader& header)
     }
     switch (header.type) {
     case NetPacketType::CONNECT_REQUEST:
-        if (header.token != NetSessionToken{}) {
+        if (header.token != 0) {
             return false;
         }
         break;
     case NetPacketType::CONNECT_CHALLENGE:
     case NetPacketType::CONNECT_CHALLENGE_RESPONSE:
     case NetPacketType::MESSAGE:
-        if (header.token == NetSessionToken{}) {
+        if (header.token == 0) {
             return false;
         }
         break;
