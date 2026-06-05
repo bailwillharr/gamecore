@@ -212,7 +212,14 @@ struct NetPacketMessage {
         return obj;
     }
 
-    static consteval size_t getSerialisedSize() { return sizeof(seq_num) + sizeof(ack_num) + sizeof(ack_bits) + sizeof(payload_type) + sizeof(payload_size); }
+    static consteval size_t getSerialisedSize()
+    {
+        return 2    // seq_num
+               + 2  // ack_num
+               + 4  // ack_bits
+               + 2  // payload_type
+               + 2; // payload_size
+    }
 };
 
 template <typename T>
@@ -259,6 +266,8 @@ public:
 
 bool verifyPacketHeader(const NetPacketHeader& header);
 
+int16_t seq_diff(uint16_t a, uint16_t b);
+
 } // namespace gc
 
 template <>
@@ -280,7 +289,7 @@ struct std::formatter<gc::NetSessionToken> {
     {
         std::stringstream out{};
         for (uint8_t c : session_token) {
-            out << std::hex << c;
+            out << std::format("{:X}", c);
         }
         return std::format_to(ctx.out(), "{}", out.view());
     }

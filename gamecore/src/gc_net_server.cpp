@@ -109,10 +109,6 @@ static uint64_t generateServerSecret()
     return rand64(); // TODO use cryptographically secure PRNG
 }
 
-// returns positive: a is newer than b
-// returns negative: a is older than b
-static int16_t seq_diff(uint16_t a, uint16_t b) { return static_cast<int16_t>(a - b); }
-
 struct PacketContext {
     const asio::ip::udp::endpoint& endpoint;
     const NetPacketHeader& received_header;
@@ -121,7 +117,6 @@ struct PacketContext {
     const uint32_t time_bucket;
 };
 
-// returns true on success.
 // func has signature: void(T packet);
 template <typename T, typename Func>
 static void handleParsed(PacketContext& ctx, Func&& func)
@@ -140,7 +135,7 @@ static void handleParsed(PacketContext& ctx, Func&& func)
         return std::nullopt;
     }
 
-    // read seq and ack information
+    // read seq information
     const int16_t diff = seq_diff(message->seq_num, session.last_ack_num);
     bool read_message = false;
     if (diff > 0) {
@@ -151,16 +146,26 @@ static void handleParsed(PacketContext& ctx, Func&& func)
         read_message = true;
     }
     else if (diff > -static_cast<int16_t>(session.ack_bits.size())) {
-        // previously missing sequence number, acknowledge it.
-        session.ack_bits.set(-diff, true);
-        read_message = true;
+	GC_ASSERT(diff <= 0);
+	if (session.ack_bits.test(-diff)) {
+		GC_DEBUG("received packet {} already acknowledged", message->seq_num);
+	} else {
+            // previously missing sequence number, acknowledge it.
+            GC_DEBUG("Received previously missing client message: {}", message->seq_num);
+            session.ack_bits.set(-diff, true);
+            read_message = true;
+	}
     }
     // outdated packets (old sequence numbers) are ignored
+    if (!read_message) {
+	    // since retransmissions are just copies, there's no need to look at the message's ack info
+	    return std::nullopt;
+    }
 
     // Remove newly acked outbound packets from queue...
     // uint16_t subtraction underflow is well defined.
-    for (uint16_t i = 0; i < static_cast<uint16_t>(session.ack_bits.size()); ++i) {
-        if (session.ack_bits.test(i)) {
+    for (uint16_t i = 0; i < static_cast<uint16_t>(message->ack_bits.size()); ++i) {
+        if (message->ack_bits.test(i)) {
             uint16_t seq = message->ack_num - i;
             auto it = session.retransmit_queue.find(seq);
             if (it != session.retransmit_queue.end()) {
@@ -181,7 +186,9 @@ static void handleParsed(PacketContext& ctx, Func&& func)
         return std::nullopt; // malformed packet
     }
 
-    GC_DEBUG("Session: {}, Recieved {} bytes", session.session_token, message->payload_size);
+    GC_DEBUG("Session: {}, Received {} bytes", session.session_token, message->payload_size);
+    GC_DEBUG("  Message: seq_num: {}, ack_num: {}", message->seq_num, message->ack_num);
+
     if (ctx.reader.remaining() >= sizeof(uint32_t) && message->payload_type == 1) {
         const uint32_t hash = ctx.reader.readU32();
         NetEvent ev{};
@@ -193,7 +200,7 @@ static void handleParsed(PacketContext& ctx, Func&& func)
     }
 }
 
-[[nodiscard]] static std::optional<NetEvent> handleAuthenticated(PacketContext& ctx, std::unordered_map<NetSessionToken, NetServerSession>& sessions)
+[[nodiscard]] static std::optional<NetEvent> handleAuthenticated(PacketContext& ctx, std::unordered_map<NetSessionToken, NetServerSession>& sessions, NetServerActiveSessionsList& active_sessions_list)
 {
     // verify token
 
@@ -217,7 +224,11 @@ static void handleParsed(PacketContext& ctx, Func&& func)
             session.endpoint = ctx.endpoint;
             session.last_receive_timestamp = now;
             sessions.emplace(ctx.received_header.token, std::move(session));
-            GC_DEBUG("Created new session");
+            {
+                std::scoped_lock lock(active_sessions_list.mut);
+		active_sessions_list.list.emplace(session.session_token);
+            }
+            GC_DEBUG("Created new session: {}", session.session_token);
         });
         return std::nullopt;
     }
@@ -334,7 +345,12 @@ void NetServer::sendMessage(std::optional<NetSessionToken> session_token, uint16
         pushToOutboundQueue(OutboundUnicast{.session_token = *session_token, .payload_type = payload_type, .payload = std::move(payload)});
     }
     else {
-        pushToOutboundQueue(OutboundMulticast{.payload_type = payload_type, .payload = std::move(payload)});
+        const auto sessions_list = getActiveSessionsList(); // locks and unlocks mutex on m_active_sessions_list
+        for (const auto& token : sessions_list) {
+            pushToOutboundQueue(OutboundUnicast{.session_token = token, .payload_type = payload_type, .payload = payload});
+	    // TODO: possible optimisation, move the payload in the final iteration.
+	    // Though it would probably be better to just use multicast types like before
+        }
     }
 }
 
@@ -395,13 +411,11 @@ asio::awaitable<void> NetServer::sendLoop()
 
                                       session.last_send_timestamp = now;
                                       session.next_seq_num += 1;
+
+                                      GC_DEBUG("Sending message: seq_num: {}, ack_num: {}, msg size: {}", message.seq_num, message.ack_num, message.payload_size);
                                   }
                               },
-                              [&](const OutboundMulticast& multicast) {
-                                  (void)multicast;
-                                  abortGame("haven't implemented this yet");
-                              },
-                              [&](const OutboundRaw& raw) {
+                             [&](const OutboundRaw& raw) {
                                   GC_DEBUG("sendLoop() OutboundRaw");
                                   auto it = m_sessions.find(raw.session_token);
                                   if (it != m_sessions.end()) {
@@ -437,6 +451,8 @@ asio::awaitable<void> NetServer::receiveLoop()
     GC_ASSERT(m_socket.is_open());
 
     const uint64_t server_secret = generateServerSecret();
+
+    GC_TRACE("Listening..");
 
     std::array<uint8_t, NET_MAX_PACKET_SIZE> recv_buf{};
     for (;;) {
@@ -480,7 +496,7 @@ asio::awaitable<void> NetServer::receiveLoop()
             }
         }
         else {
-            if (auto ev = handleAuthenticated(ctx, m_sessions); ev) {
+            if (auto ev = handleAuthenticated(ctx, m_sessions, m_active_sessions_list); ev) {
                 m_event_queue.push(*ev);
             }
         }
@@ -488,7 +504,8 @@ asio::awaitable<void> NetServer::receiveLoop()
 }
 
 // periodically checks all active sessions to see if they have timed out and removes them if so.
-// Also pings clients that are currently idle (no data received recently).
+// Also pings clients that are currently idle (no data received or sent recently).
+// This lets the server check that the connection is still alive, and tells the client that the server is still active.
 // Also retransmits packets that have not been acked.
 asio::awaitable<void> NetServer::keepAliveLoop()
 {
@@ -515,7 +532,6 @@ asio::awaitable<void> NetServer::keepAliveLoop()
                     it = session.retransmit_queue.erase(it);
                 }
                 else {
-                    GC_DEBUG("RTO: {}", std::chrono::duration_cast<std::chrono::milliseconds>(session.rto_calc.getRTO()));
                     if (now - packet.last_send_timestamp > static_cast<uint64_t>(session.rto_calc.getRTONanoseconds())) {
                         // retransmit
                         packet.last_send_timestamp = now;
@@ -526,7 +542,7 @@ asio::awaitable<void> NetServer::keepAliveLoop()
                         message.session_token = session.session_token;
                         message.packet_data = packet.packet_data; // Copying a vector
 
-                        GC_DEBUG("Retransmitting packet with seq_num: {}, attempt: {}", seq_num, packet.attempts);
+                        GC_DEBUG("Retransmitting packet with seq_num: {}, attempt: {}, rto: {} ms", seq_num, packet.attempts, session.rto_calc.getRTONanoseconds() * 1.0e-6);
 
                         std::tie(ec) = co_await m_outbound_queue.async_send(asio::error_code{}, std::move(command), TOKEN);
                         if (ec) {
@@ -546,10 +562,16 @@ asio::awaitable<void> NetServer::keepAliveLoop()
             const int64_t time_since_send = now - static_cast<int64_t>(session.last_send_timestamp);
             if (time_since_receive > TIMEOUT_TIME_NS) {
                 GC_INFO("Removing timed out session: {}", session.endpoint);
+                {
+                    std::scoped_lock lock(m_active_sessions_list.mut);
+                    m_active_sessions_list.list.erase(session.session_token);
+                }
                 it = m_sessions.erase(it);
             }
             else {
-                if (time_since_receive > KEEPALIVE_IDLE_TIME_NS && time_since_send > KEEPALIVE_IDLE_TIME_NS) {
+                // also sends ping if a packet hasn't been sent since the last receive (to ensure somewhat timely ACKs)
+                if (time_since_receive > KEEPALIVE_IDLE_TIME_NS || time_since_send > KEEPALIVE_IDLE_TIME_NS ||
+                    session.last_receive_timestamp > session.last_send_timestamp) {
                     // send keepalive packet with no data
                     OutboundCommand command{};
                     auto& message = command.emplace<OutboundUnicast>();

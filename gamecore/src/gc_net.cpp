@@ -126,9 +126,18 @@ void Net::postEvent(NetEvent ev, std::optional<NetSessionToken> token)
         std::vector<uint8_t> buf(4);
         NetByteWriter writer(buf);
         writer.writeU32(ev.type.getHash());
-        server.sendMessage(std::move(token), 1, std::move(buf));
+	if (token) {
+            server.sendMessage(std::move(token), 1, std::move(buf));
+	} else {
+            server.sendMessage(std::nullopt, 1, std::move(buf));
+	}
     }
     else if (std::holds_alternative<NetClient>(m_server_client)) {
+        auto& client = getClient();
+        std::vector<uint8_t> buf(4);
+        NetByteWriter writer(buf);
+        writer.writeU32(ev.type.getHash());
+        client.sendMessage(1, std::move(buf));
     }
 }
 

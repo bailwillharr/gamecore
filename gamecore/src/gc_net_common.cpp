@@ -1,6 +1,7 @@
 #include "gamecore/gc_net_common.h"
 
 #include <cstring>
+#include <cstdint>
 
 #include "gamecore/gc_assert.h"
 
@@ -140,5 +141,9 @@ bool verifyPacketHeader(const NetPacketHeader& header)
     }
     return true;
 }
+
+// returns positive: a is newer than b
+// returns negative: a is older than b
+int16_t seq_diff(uint16_t a, uint16_t b) { return static_cast<int16_t>(a - b); }
 
 } // namespace gc

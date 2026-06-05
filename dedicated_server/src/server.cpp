@@ -42,7 +42,11 @@ void buildAndStartServer(gc::App& app, Options options)
         gc::abortGame("Failed to start server");
     }
 
+    GC_INFO("Server started.");
+
     app.run();
+
+    GC_INFO("Server stopping...");
 
     app.net().stopServer();
 }

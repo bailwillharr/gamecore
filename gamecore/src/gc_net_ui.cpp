@@ -34,7 +34,7 @@ void renderNetUI(Net& net)
         case NetMode::DISCONNECTED: {
             static std::array<char, 64> buf{};
             static int port{NET_DEFAULT_SERVER_PORT};
-            ImGui::InputTextWithHint("Server Address", "127.0.0.1", buf.data(), buf.size());
+            ImGui::InputTextWithHint("Server Address", "0.0.0.0", buf.data(), buf.size());
             ImGui::InputInt("Server Port", &port);
 
             if (port < 0 || port > 65535) {
@@ -66,7 +66,7 @@ void renderNetUI(Net& net)
                     net.startServer(endpoint);
                 }
             }
-            if (ImGui::Button("Conncet To Server")) {
+            if (ImGui::Button("Connect To Server")) {
                 if (use_resolver) {
                     const auto endpoint_opt = net.resolve(std::string_view(buf.data()), std::to_string(port));
                     if (!endpoint_opt) {
@@ -81,8 +81,12 @@ void renderNetUI(Net& net)
         case NetMode::SERVER: {
             const auto server_addr = net.getServerEndpoint();
             ImGui::Text("Address: %s:%d", server_addr.address().to_string().c_str(), server_addr.port());
+            ImGui::Text("Number of clients: %u", net.getRemoteCount());
             if (ImGui::Button("Stop Server")) {
                 net.stopServer();
+            }
+            if (ImGui::Button("Send shutdown command to clients")) {
+                net.postEvent(NetEvent{Name("shutdown")}, {});
             }
         } break;
         case NetMode::CLIENT: {
@@ -103,6 +107,9 @@ void renderNetUI(Net& net)
             ImGui::Text("Status: %s", status_str);
             if (ImGui::Button("Disconnect")) {
                 net.disconnectFromServer();
+            }
+            if (ImGui::Button("Send shutdown command to server")) {
+                net.postEvent(NetEvent{Name("shutdown")}, std::nullopt);
             }
         } break;
         }
