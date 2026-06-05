@@ -125,12 +125,11 @@ static asio::awaitable<void> initiateConnection(asio::ip::udp::socket& socket, N
         }
     }
 
-    NetClientSession session{};
-    session.session_token = session_token;
+    out_session.session_token = session_token;
     GC_ASSERT(last_receive_timestamp != 0);
-    session.last_receive_timestamp = last_receive_timestamp;
+    out_session.last_receive_timestamp = last_receive_timestamp;
     GC_ASSERT(last_send_timestamp != 0);
-    session.last_send_timestamp = last_send_timestamp;
+    out_session.last_send_timestamp = last_send_timestamp;
 }
 
 [[nodiscard]] static std::optional<NetEvent> handleMessage(NetByteReader& reader, NetClientSession& session)
@@ -228,8 +227,8 @@ bool NetClient::connect(const asio::ip::udp::endpoint& endpoint)
         [](NetClient& self) {
             self.m_state.store(NetClientConnectionStatus::CONNECTING);
 	    self.m_session.session_token = 0;
-	    asio::co_spawn(self.m_context, initiateConnection(self.m_socket, self.m_session), asio::detached);
 	    self.m_context.restart();
+	    asio::co_spawn(self.m_context, initiateConnection(self.m_socket, self.m_session), asio::detached);
 	    self.m_context.run(); // returns when initiateConnection completes
             if (self.m_session.session_token != 0) {
                 self.m_state.store(NetClientConnectionStatus::CONNECTED);
