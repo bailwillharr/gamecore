@@ -1,12 +1,17 @@
 #include "game.h"
 
+#include <cmath>
 #include <memory>
+#include <random>
+#include <vector>
 
 #include <mio/mmap.hpp>
 
 #include <tracy/Tracy.hpp>
 
 #include <imgui.h>
+
+#include <glm/geometric.hpp>
 
 #include <gamecore/gc_app.h>
 #include <gamecore/gc_camera_component.h>
@@ -23,157 +28,131 @@
 #include <gamecore/gc_renderable_component.h>
 #include <gamecore/gc_resource_manager.h>
 #include <gamecore/gc_transform_component.h>
+#include <gamecore/gc_transform_system.h>
 #include <gamecore/gc_window.h>
 #include <gamecore/gc_world.h>
 #include <gamecore/gc_gen_mesh.h>
 #include <gamecore/gc_net.h>
+#include <gamecore/gc_net_common.h>
 
 #include "mouse_move.h"
 #include "spin.h"
 
-class FollowSystem; // forward-dec
+static gc::Entity createRemotePlayer(gc::World& world, gc::Name name)
+{
+    constexpr float CAMERA_HEIGHT = 67.5f * 25.4e-3f;
+    const auto player = world.createEntity(name, gc::ENTITY_NONE);
+    const auto player_model = world.createEntity(gc::Name("player_model"), player, {0.0f, 0.0f, -CAMERA_HEIGHT});
+    world.getComponent<gc::TransformComponent>(player_model)->setScale(0.360f);
+    world.addComponent<gc::RenderableComponent>(player_model).setMaterial(gc::Name()).setMesh(gc::Name("shrek.obj"));
+    return player;
+}
 
-class FollowComponent {
-    friend class FollowSystem;
+static float extractYaw(const glm::quat& rotation)
+{
+    // Camera local forward = -Z in its own space
+    glm::vec3 localForward = glm::vec3(0.0f, 0.0f, -1.0f);
+    glm::vec3 worldForward = rotation * localForward;
 
-    gc::Entity m_target{gc::ENTITY_NONE};
-    float m_speed = 1.0f;
-    float m_min_distance = 1.0f;
-    float m_cooldown_seconds = 1.0f;
-    gc::Entity m_texture_target{gc::ENTITY_NONE};
+    // In your coordinate system:
+    //   +X = right
+    //   -Y = forward (world)
+    //   +Z = up
+    //
+    // So yaw is the angle in the XY plane.
+    // atan2(x, -y) gives the correct convention matching your yaw accumulation.
+    return std::atan2(worldForward.x, -worldForward.y);
+}
 
-    float m_time_since_contact = std::numeric_limits<float>::max();
+static glm::quat yawToQuaternion(float yaw)
+{
+    // Matches your existing camera yaw convention
+    // Rotates around world +Z (up)
+    // Default forward direction (yaw = 0) will be +Y
+    return glm::angleAxis(yaw, glm::vec3(0.0f, 0.0f, 1.0f));
+}
 
-public:
-    FollowComponent& setTarget(gc::Entity target)
-    {
-        m_target = target;
-        return *this;
-    }
-    FollowComponent& setSpeed(float speed)
-    {
-        m_speed = speed;
-        return *this;
-    }
-    FollowComponent& setMinDistance(float min_distance)
-    {
-        m_min_distance = min_distance;
-        return *this;
-    }
-    FollowComponent& setCooldownSeconds(float cooldown_seconds)
-    {
-        m_cooldown_seconds = cooldown_seconds;
-        return *this;
-    }
-    FollowComponent& setTextureTarget(gc::Entity texture_target)
-    {
-        m_texture_target = texture_target;
-        return *this;
-    }
-};
-
-class FollowSystem : public gc::System {
-    gc::ResourceManager& m_rm;
-
-    int current_texture = 0;
-    const std::array<gc::Name, 7> m_textures{gc::Name("box.jpg"),  gc::Name("bricks.jpg"),  gc::Name("fire.jpg"),    gc::Name("nuke.jpg"),
-                                             gc::Name("moss.png"), gc::Name("uvcheck.png"), gc::Name("8k_earth.jpg")};
+class ReplicatedPlayerSystem : public gc::System {
+    std::unordered_map<gc::Name, uint16_t> m_highest_recv_seq_num{};
 
 public:
-    FollowSystem(gc::World& world, gc::ResourceManager& rm) : gc::System(world), m_rm(rm) {}
+    ReplicatedPlayerSystem(gc::World& world) : gc::System(world) {}
 
-    void onUpdate(gc::FrameState& frame_state) override
+    void onUpdate([[maybe_unused]] gc::FrameState& frame_state) override
     {
-        ZoneScoped;
+        for (const auto& net_ev : frame_state.net_events) {
+            if (net_ev.type == gc::Name("player_snapshot")) {
+                gc::NetByteReader reader(net_ev.data);
+                const gc::Name player_name(reader.readU32());
+                const uint16_t seq_num = reader.readU16();
 
-        constexpr float EPSILON = 0.001f;
-
-        m_world.forEach<gc::TransformComponent, FollowComponent>([&](gc::Entity, gc::TransformComponent& t, FollowComponent& f) {
-            if (f.m_target != gc::ENTITY_NONE) {
-                const gc::TransformComponent* const target_t = m_world.getComponent<gc::TransformComponent>(f.m_target);
-                if (t.getParent() == target_t->getParent()) {
-                    const glm::vec3 follower_to_target = target_t->getPosition() - t.getPosition();
-                    const float distance = glm::length(follower_to_target);
-                    const float planar_distance = glm::length(glm::vec3{follower_to_target.x, follower_to_target.y, 0.0f});
-                    const glm::vec3 follower_to_target_planar_norm = glm::normalize(glm::vec3{follower_to_target.x, follower_to_target.y, 0.0f});
-                    t.setRotation(glm::quatLookAtRH(-follower_to_target_planar_norm, glm::vec3{0.0f, 0.0f, 1.0f}) *
-                                  glm::angleAxis(-glm::half_pi<float>(), glm::vec3{1.0f, 0.0f, 0.0f}));
-
-                    if (planar_distance < f.m_min_distance - EPSILON) {
-                        t.setPosition(t.getPosition() - follower_to_target_planar_norm * (f.m_min_distance - planar_distance));
+                if (gc::seq_diff(m_highest_recv_seq_num[player_name], seq_num) < 0) {
+                    m_highest_recv_seq_num[player_name] = seq_num;
+                    const float pos_x = reader.readF32();
+                    const float pos_y = reader.readF32();
+                    const float pos_z = reader.readF32();
+                    const float yaw = reader.readF32();
+                    gc::Entity player = m_world.findEntity(player_name);
+                    if (player == gc::ENTITY_NONE) {
+                        player = createRemotePlayer(m_world, player_name);
                     }
-                    else if (planar_distance > f.m_min_distance + EPSILON) {
-                        t.setPosition(t.getPosition() + follower_to_target_planar_norm *
-                                                            fminf(f.m_speed * static_cast<float>(frame_state.delta_time), distance - f.m_min_distance));
-                    }
-
-                    if (distance < f.m_min_distance + 1.0f) {
-                        if (f.m_time_since_contact > f.m_cooldown_seconds) {
-                            f.m_time_since_contact = 0.0f;
-                        }
-                    }
-
-                    if (f.m_time_since_contact == 0.0f) {
-                        const auto ren = m_world.getComponent<gc::RenderableComponent>(f.m_texture_target);
-                        if (ren) {
-                            const auto old_material = m_rm.get<gc::ResourceMaterial>(ren->m_material);
-                            gc::ResourceMaterial new_material{};
-                            if (old_material) {
-                                new_material = *old_material;
-                            }
-                            new_material.base_color_texture = m_textures[current_texture % m_textures.size()];
-                            current_texture += 1;
-                            ren->m_material = m_rm.add(std::move(new_material));
-                            GC_TRACE("Material switched to: {}", ren->m_material.getString());
-                        }
-                        else {
-                            const auto texture_target_t = m_world.getComponent<gc::TransformComponent>(f.m_texture_target);
-                            GC_WARN_ONCE("FollowComponent of entity '{}' has texture target '{}' with no RenderableComponent!", t.name.getString(),
-                                         texture_target_t ? texture_target_t->name.getString() : std::string("ENTITY_NONE"));
-                        }
-                    }
-                    f.m_time_since_contact += static_cast<float>(frame_state.delta_time);
-                }
-                else {
-                    GC_WARN_ONCE("FollowComponent of entity '{}' has target '{}' with a different parent!", t.name.getString(), target_t->name.getString());
+                    m_world.getComponent<gc::TransformComponent>(player)->setPosition(pos_x, pos_y, pos_z);
+                    m_world.getComponent<gc::TransformComponent>(player)->setRotation(yawToQuaternion(yaw));
                 }
             }
-        });
+        }
     }
 };
 
-class RenderTestSystem : public gc::System {
-    int m_num_objects{0};
-    std::vector<gc::Entity> m_objects{};
+struct ReplicatablePlayerComponent {
+    uint16_t seq_num = UINT16_MAX;
+    glm::vec3 old_pos{1.0e6f, 1.0e6f, 1.0e6f};
+    float old_yaw{1000.0f};
+};
+
+class ReplicatablePlayerSystem : public gc::System {
+    gc::Net& m_net;
 
 public:
-    RenderTestSystem(gc::World& world) : gc::System(world) {}
+    ReplicatablePlayerSystem(gc::World& world, gc::Net& net) : gc::System(world), m_net(net) {}
 
-    void onUpdate(gc::FrameState&) override
+    void onUpdate([[maybe_unused]] gc::FrameState& frame_state) override
     {
-        using namespace gc::literals;
+        if (m_net.getMode() == gc::NetMode::DISCONNECTED) return;
 
-        if (ImGui::Begin("Render Test Config")) {
-            ImGui::SliderInt("# objects", &m_num_objects, 0, 1'000'000);
-        }
-        ImGui::End();
+        m_world.forEach<gc::TransformComponent, ReplicatablePlayerComponent>(
+            [&](gc::Entity e, const gc::TransformComponent& t, ReplicatablePlayerComponent& p) {
+                const uint32_t name = t.name.getHash();
+                const glm::vec3 pos = t.getPosition();
+                const float yaw = extractYaw(t.getRotation());
 
-        while (m_num_objects < static_cast<int>(m_objects.size())) {
-            m_world.deleteEntity(m_objects.back());
-            m_objects.pop_back();
-        }
+                constexpr float MIN_DISTANCE_CHANGE = 0.05; // meters
+                constexpr float MIN_YAW_CHANGE = 0.01;      // radians
 
-        constexpr int CUBE_SIDE_LENGTH = 100;
+                if (glm::distance(p.old_pos, pos) > MIN_DISTANCE_CHANGE || fabsf(p.old_yaw - yaw) > MIN_YAW_CHANGE) {
+                    gc::NetEvent ev{};
+                    ev.type = gc::Name("player_snapshot");
+                    ev.data.resize(sizeof(uint32_t)   // player_name
+                                   + sizeof(uint16_t) // seq_num
+                                   + sizeof(float)    // pos_x
+                                   + sizeof(float)    // pos_y
+                                   + sizeof(float)    // pos_z
+                                   + sizeof(float));  // yaw
+                    gc::NetByteWriter writer(ev.data);
+                    writer.writeU32(name);
+                    writer.writeU16(p.seq_num);
+                    writer.writeF32(pos.x);
+                    writer.writeF32(pos.y);
+                    writer.writeF32(pos.z);
+                    writer.writeF32(yaw);
 
-        while (m_num_objects > static_cast<int>(m_objects.size())) {
-            const int i = static_cast<int>(m_objects.size());
-            glm::vec3 position{};
-            position.x = static_cast<float>(i % CUBE_SIDE_LENGTH);
-            position.y = static_cast<float>((i / CUBE_SIDE_LENGTH) % CUBE_SIDE_LENGTH);
-            position.z = static_cast<float>(i / (CUBE_SIDE_LENGTH * CUBE_SIDE_LENGTH));
-            m_objects.push_back(m_world.createEntity(gc::Name(std::format("debugobject{}", i)), gc::ENTITY_NONE, position));
-            m_world.addComponent<gc::RenderableComponent>(m_objects.back()).setMaterial("laminate-flooring-brown"_name).setMesh("floor"_name);
-        }
+                    m_net.postEvent(ev);
+                    ++p.seq_num;
+                }
+
+                p.old_pos = pos;
+                p.old_yaw = yaw;
+            });
     }
 };
 
@@ -219,35 +198,38 @@ public:
                 render_backend.createInstancingPipeline(vert.data, frag.data);
             }
 
+            // Register core engine systems and components
             world.registerComponent<gc::RenderableComponent, gc::ComponentArrayType::DENSE>();
             world.registerComponent<gc::CameraComponent, gc::ComponentArrayType::SPARSE>();
             world.registerComponent<gc::LightComponent, gc::ComponentArrayType::SPARSE>();
-
             world.registerSystem<gc::RenderSystem>(resource_manager, render_backend);
             world.registerSystem<gc::CameraSystem>();
             world.registerSystem<gc::LightSystem>();
 
+            // register game systems and components
             world.registerComponent<SpinComponent, gc::ComponentArrayType::SPARSE>();
             world.registerComponent<MouseMoveComponent, gc::ComponentArrayType::SPARSE>();
-            world.registerComponent<FollowComponent, gc::ComponentArrayType::SPARSE>();
-
+            world.registerComponent<ReplicatablePlayerComponent, gc::ComponentArrayType::SPARSE>();
             world.registerSystem<SpinSystem>();
             world.registerSystem<MouseMoveSystem>();
-            world.registerSystem<FollowSystem>(resource_manager);
-            world.registerSystem<RenderTestSystem>();
+            world.registerSystem<ReplicatedPlayerSystem>();
+            world.registerSystem<ReplicatablePlayerSystem>(app.net());
 
-            // camera
-            auto camera = world.createEntity(gc::Name("light"), gc::ENTITY_NONE, {0.0f, 0.0f, 67.5f * 25.4e-3f});
-            world.addComponent<gc::CameraComponent>(camera).setFOV(glm::radians(45.0f)).setNearPlane(0.1f).setActive(true);
-            world.addComponent<MouseMoveComponent>(camera).setMoveSpeed(10.0f).setAcceleration(100.0f).setDeceleration(100.0f).setSensitivity(1e-3f);
+            {
+                // player
+                std::random_device rd{};
+                const gc::Name player_name(std::format("player{}", rd()));
+                constexpr float CAMERA_HEIGHT = 67.5f * 25.4e-3f;
+                auto player = world.createEntity(player_name, gc::ENTITY_NONE, {0.0f, 0.0f, CAMERA_HEIGHT});
+                world.addComponent<gc::CameraComponent>(player).setFOV(glm::radians(45.0f)).setNearPlane(0.1f).setActive(true);
+                world.addComponent<MouseMoveComponent>(player).setMoveSpeed(10.0f).setAcceleration(100.0f).setDeceleration(100.0f).setSensitivity(1e-3f);
+                world.addComponent<ReplicatablePlayerComponent>(player);
+            }
 
-            // shrek
-            const auto shrek = world.createEntity(gc::Name("shrek"), gc::ENTITY_NONE, glm::vec3{0.0f, +10.0f, 0.0f}, {}, {0.5f, 0.5f, 0.5f});
-            world.addComponent<gc::RenderableComponent>(shrek).setMaterial(gc::Name()).setMesh(gc::Name("shrek.obj"));
-            // world.addComponent<FollowComponent>(shrek).setTarget(camera).setMinDistance(2.0f).setSpeed(1.0f);
-            // world.getComponent<FollowComponent>(shrek)->setTextureTarget(shrek);
-            const auto shrek_light = world.createEntity(gc::Name("shrek_light"), shrek, {0.0f, -1.26688, 4.61091});
-            world.addComponent<gc::LightComponent>(shrek_light);
+            {
+                // light
+                world.createEntity(gc::Name("light"), gc::ENTITY_NONE, {0.0f, 0.0f, 3.0f});
+            }
 
             {
                 gc::ResourceMaterial material{};

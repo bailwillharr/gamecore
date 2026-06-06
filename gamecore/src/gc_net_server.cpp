@@ -188,6 +188,8 @@ static void handleParsed(PacketContext& ctx, Func&& func)
         const uint32_t hash = ctx.reader.readU32();
         NetEvent ev{};
         ev.type = Name(hash);
+        ev.data.resize(ctx.reader.remaining());
+        ctx.reader.readBytes(ev.data);
         return ev;
     }
     else {

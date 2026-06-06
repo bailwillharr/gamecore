@@ -239,12 +239,17 @@ void App::run()
             frame_state.window_state = nullptr;
         }
 
-        NetEvent net_ev{};
-        while (m_net->pollEvents(net_ev)) {
-            switch (net_ev.type.getHash()) {
-            case Name::createConstexpr("shutdown").getHash():
-                m_window->pushQuitEvent();
-                break;
+        {
+            NetEvent net_ev{};
+            frame_state.net_events.clear();
+            while (m_net->pollEvents(net_ev)) {
+                switch (net_ev.type.getHash()) {
+                case Name::createConstexpr("shutdown").getHash():
+                    m_window->pushQuitEvent();
+                    break;
+                default:
+                    frame_state.net_events.push_back(net_ev);
+                }
             }
         }
 

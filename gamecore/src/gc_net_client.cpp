@@ -39,7 +39,7 @@ static asio::awaitable<bool> checkSend(asio::ip::udp::socket& socket, std::span<
     std::tie(ec, bytes_transferred) = co_await socket.async_send(asio::buffer(buffer), 0, TOKEN);
     if (ec || bytes_transferred < buffer.size()) {
         GC_ERROR("Failed to send: {}, sent {}/{}", ec.message(), bytes_transferred, buffer.size());
-	co_return false;
+        co_return false;
     }
     else {
         co_return true;
@@ -151,20 +151,21 @@ static asio::awaitable<void> initiateConnection(asio::ip::udp::socket& socket, N
         read_message = true;
     }
     else if (diff > -static_cast<int16_t>(session.ack_bits.size())) {
-	GC_ASSERT(diff <= 0);
-	if (session.ack_bits.test(-diff)) {
-		GC_DEBUG("received packet {} already acknowledged", message->seq_num);
-	} else {
+        GC_ASSERT(diff <= 0);
+        if (session.ack_bits.test(-diff)) {
+            GC_DEBUG("received packet {} already acknowledged", message->seq_num);
+        }
+        else {
             // previously missing sequence number, acknowledge it.
             GC_DEBUG("Received previously missing server message: {}", message->seq_num);
             session.ack_bits.set(-diff, true);
             read_message = true;
-	}
+        }
     }
     // outdated packets (old sequence numbers) are ignored
     if (!read_message) {
-	    // since retransmissions are just copies, there's no need to look at the message's ack info
-	    return std::nullopt;
+        // since retransmissions are just copies, there's no need to look at the message's ack info
+        return std::nullopt;
     }
 
     // Remove newly acked outbound packets from queue...
@@ -198,6 +199,8 @@ static asio::awaitable<void> initiateConnection(asio::ip::udp::socket& socket, N
         const uint32_t hash = reader.readU32();
         NetEvent ev{};
         ev.type = Name(hash);
+        ev.data.resize(reader.remaining());
+        reader.readBytes(ev.data);
         return ev;
     }
     else {
@@ -227,10 +230,10 @@ bool NetClient::connect(const asio::ip::udp::endpoint& endpoint)
     m_client_thread = std::jthread(
         [](NetClient& self) {
             self.m_state.store(NetClientConnectionStatus::CONNECTING);
-	    self.m_session.session_token = 0;
-	    self.m_context.restart();
-	    asio::co_spawn(self.m_context, initiateConnection(self.m_socket, self.m_session), asio::detached);
-	    self.m_context.run(); // returns when initiateConnection completes
+            self.m_session.session_token = 0;
+            self.m_context.restart();
+            asio::co_spawn(self.m_context, initiateConnection(self.m_socket, self.m_session), asio::detached);
+            self.m_context.run(); // returns when initiateConnection completes
             if (self.m_session.session_token != 0) {
                 self.m_state.store(NetClientConnectionStatus::CONNECTED);
                 asio::co_spawn(self.m_context, self.sendLoop(), asio::detached);
@@ -259,12 +262,10 @@ void NetClient::disconnect()
 
 bool NetClient::poll(NetEvent& ev) { return m_event_queue.pop(ev); }
 
-NetClientConnectionStatus NetClient::getConnectionStatus() const
-{
-    return m_state.load();
-}
+NetClientConnectionStatus NetClient::getConnectionStatus() const { return m_state.load(); }
 
-void NetClient::sendMessage(uint16_t payload_type, std::vector<uint8_t> payload) {
+void NetClient::sendMessage(uint16_t payload_type, std::vector<uint8_t> payload)
+{
     pushToOutboundQueue(OutboundMessage{.payload_type = payload_type, .payload = std::move(payload)});
 }
 
@@ -368,9 +369,9 @@ asio::awaitable<void> NetClient::receiveLoop()
             continue;
         }
 
-	const uint64_t now = SDL_GetTicksNS();
+        const uint64_t now = SDL_GetTicksNS();
 
-	m_session.last_receive_timestamp = now;
+        m_session.last_receive_timestamp = now;
 
         if (auto ev = handleMessage(reader, m_session); ev) {
             m_event_queue.push(*ev);
@@ -433,9 +434,9 @@ asio::awaitable<void> NetClient::keepAliveLoop()
             const int64_t time_since_send = now - static_cast<int64_t>(m_session.last_send_timestamp);
             if (time_since_receive > TIMEOUT_TIME_NS) {
                 GC_WARN("Server timed out");
-		m_context.stop();
-		// Stopping the context is safe to do inside a completion handler.
-		// This coroutine will exit via early return of the below timer.async_wait() call
+                m_context.stop();
+                // Stopping the context is safe to do inside a completion handler.
+                // This coroutine will exit via early return of the below timer.async_wait() call
             }
             else {
                 // also sends ping if a packet hasn't been sent since the last receive (to ensure somewhat timely ACKs)

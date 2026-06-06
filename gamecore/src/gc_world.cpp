@@ -75,6 +75,19 @@ void World::deleteEntity(const Entity entity)
     }
 }
 
+Entity World::findEntity(const Name name)
+{
+    // TODO: this is very unoptimised. It doesn't even early-return once found.
+    // Perhaps cache name->entity mappings
+    Entity found_entity{ENTITY_NONE};
+    forEach<TransformComponent>([&](Entity e, const TransformComponent& t) {
+        if (t.name == name) {
+            found_entity = e;
+        }
+    });
+    return found_entity;
+}
+
 void World::update(FrameState& frame_state)
 {
     ZoneScoped;

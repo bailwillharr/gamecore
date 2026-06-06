@@ -32,6 +32,7 @@ public:
     void writeU16(uint16_t v);
     void writeU32(uint32_t v);
     void writeU64(uint64_t v);
+    void writeF32(float v);
     void writeBytes(std::span<const uint8_t> bytes);
 
     void skip(size_t n);
@@ -52,6 +53,7 @@ public:
     uint16_t readU16();
     uint32_t readU32();
     uint64_t readU64();
+    float readF32();
     void readBytes(std::span<uint8_t> out);
 
     void skip(size_t n);
@@ -261,6 +263,7 @@ void writePacketWithHeader(NetByteWriter& writer, NetSessionToken token, const T
 
 struct NetEvent {
     Name type;
+    std::vector<uint8_t> data;
 };
 
 // thread-safe event queue

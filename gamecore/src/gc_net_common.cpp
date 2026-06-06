@@ -7,7 +7,8 @@
 
 namespace gc {
 
-static_assert(std::endian::native == std::endian::little);
+static_assert(std::endian::native == std::endian::little, "only little-endian systems supported");
+static_assert(std::numeric_limits<float>::is_iec559, "floats must be IEEE754");
 
 NetByteWriter::NetByteWriter(std::span<uint8_t> buffer) : m_buffer(buffer) {}
 
@@ -39,8 +40,16 @@ void NetByteWriter::writeU64(uint64_t v)
     m_pos += sizeof(uint64_t);
 }
 
+void NetByteWriter::writeF32(float v)
+{
+    GC_ASSERT(m_pos + sizeof(float) <= m_buffer.size());
+    std::memcpy(m_buffer.data() + m_pos, &v, sizeof(float));
+    m_pos += sizeof(float);
+}
+
 void NetByteWriter::writeBytes(std::span<const uint8_t> bytes)
 {
+    if (bytes.empty()) return;
     GC_ASSERT(m_pos + bytes.size() <= m_buffer.size());
     std::memcpy(m_buffer.data() + m_pos, bytes.data(), bytes.size());
     m_pos += bytes.size();
@@ -96,8 +105,18 @@ uint64_t NetByteReader::readU64()
     return v;
 }
 
+float NetByteReader::readF32()
+{
+    float v{};
+    GC_ASSERT(m_pos + sizeof(float) <= m_buffer.size());
+    std::memcpy(&v, m_buffer.data() + m_pos, sizeof(float));
+    m_pos += sizeof(float);
+    return v;
+}
+
 void NetByteReader::readBytes(std::span<uint8_t> out)
 {
+    if (out.empty()) return;
     GC_ASSERT(m_pos + out.size() <= m_buffer.size());
     std::memcpy(out.data(), m_buffer.data() + m_pos, out.size());
     m_pos += out.size();

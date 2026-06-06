@@ -44,6 +44,9 @@ public:
 
     void deleteEntity(Entity entity);
 
+    // returns ENTITY_NONE on failure
+    Entity findEntity(Name name);
+
     // Create a ComponentArray for the given component
     template <ValidComponent T, ComponentArrayType ArrayType>
     void registerComponent()
