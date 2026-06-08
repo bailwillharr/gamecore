@@ -77,7 +77,7 @@ public:
     // returns values from -1.0 to 1.0, left-to-right, bottom-to-top (GL style)
     const glm::vec2& getMousePositionNorm() const;
     const glm::vec2& getMouseMotion() const;
-    const bool getIsMouseCaptured() const;
+    bool getIsMouseCaptured() const;
 
     const glm::ivec2& getWindowSize() const { return m_window_size; }
 

@@ -181,7 +181,7 @@ RenderBackend::RenderBackend(SDL_Window* window_handle)
     // create main descriptor pool for long-lasting static resources
     {
         std::array<VkDescriptorPoolSize, 1> pool_sizes = {
-            {VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, 100},
+            VkDescriptorPoolSize{VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, 100},
         };
         VkDescriptorPoolCreateInfo pool_info = {};
         pool_info.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_POOL_CREATE_INFO;
@@ -336,9 +336,12 @@ RenderBackend::RenderBackend(SDL_Window* window_handle)
 
     // m_main_timeline_semaphore and the frame in flight command pools will be created when submitFrame() is called for the first time.
 
-    VkPhysicalDeviceDriverProperties driverProps = {.sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_DRIVER_PROPERTIES};
+    VkPhysicalDeviceDriverProperties driverProps{};
+    driverProps.sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_DRIVER_PROPERTIES;
 
-    VkPhysicalDeviceProperties2 props2 = {.sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_PROPERTIES_2, .pNext = &driverProps};
+    VkPhysicalDeviceProperties2 props2{};
+    props2.sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_PROPERTIES_2;
+    props2.pNext = &driverProps;
 
     vkGetPhysicalDeviceProperties2(m_device.getPhysicalDevice(), &props2);
 

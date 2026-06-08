@@ -13,6 +13,8 @@
 #include <SDL3/SDL_timer.h>
 
 #include "gamecore/gc_net_common.h"
+#include "gamecore/gc_assert.h"
+#include "gamecore/gc_abort.h"
 
 namespace gc {
 

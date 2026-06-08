@@ -79,9 +79,9 @@ protected:
     GPUResource(GPUResourceDeleteQueue& delete_queue) : m_delete_queue(delete_queue) {}
     GPUResource(const GPUResource&) = delete;
     GPUResource(GPUResource&& other) noexcept
-        : m_timeline_semaphore(other.m_timeline_semaphore),
-          m_resource_free_signal_value(other.m_resource_free_signal_value),
-          m_delete_queue(other.m_delete_queue)
+        : m_delete_queue(other.m_delete_queue),
+          m_timeline_semaphore(other.m_timeline_semaphore),
+          m_resource_free_signal_value(other.m_resource_free_signal_value)
     {
         // invalidate old object
         other.m_timeline_semaphore = VK_NULL_HANDLE;

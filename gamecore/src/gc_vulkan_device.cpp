@@ -231,6 +231,7 @@ VulkanDevice::VulkanDevice()
         // Create a main queue for graphics operations
         queue_infos.push_back(VkDeviceQueueCreateInfo{.sType = VK_STRUCTURE_TYPE_DEVICE_QUEUE_CREATE_INFO,
                                                       .pNext = nullptr,
+                                                      .flags = 0,
                                                       .queueFamilyIndex = m_main_queue_family_index,
                                                       .queueCount = std::min(2u, main_queue_family_queue_count),
                                                       .pQueuePriorities = queue_priorities.data()});

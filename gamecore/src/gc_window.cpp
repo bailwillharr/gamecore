@@ -99,7 +99,7 @@ const glm::vec2& WindowState::getMousePositionNorm() const { return m_mouse_posi
 
 const glm::vec2& WindowState::getMouseMotion() const { return m_mouse_motion; }
 
-const bool WindowState::getIsMouseCaptured() const { return m_mouse_captured; }
+bool WindowState::getIsMouseCaptured() const { return m_mouse_captured; }
 
 bool WindowState::getIsFullscreen() const { return m_is_fullscreen; }
 
@@ -171,80 +171,80 @@ const WindowState& Window::processEvents(void (*event_interceptor)(SDL_Event&))
         }
 
         switch (ev.type) {
-            case SDL_EVENT_QUIT: {
-                m_should_quit = true;
-            } break;
-            case SDL_EVENT_WINDOW_RESIZED: {
-                m_state.m_window_size.x = static_cast<uint32_t>(ev.window.data1);
-                m_state.m_window_size.y = static_cast<uint32_t>(ev.window.data2);
-                m_state.m_mouse_position_norm.x = (2.0f * static_cast<float>(ev.motion.x) / static_cast<float>(m_state.m_window_size.x)) - 1.0f;
-                m_state.m_mouse_position_norm.y = (-2.0f * static_cast<float>(ev.motion.y) / static_cast<float>(m_state.m_window_size.y)) + 1.0f;
-            } break;
-            case SDL_EVENT_WINDOW_PIXEL_SIZE_CHANGED: {
-                m_state.m_resized_flag = true;
-            } break;
-            case SDL_EVENT_WINDOW_ENTER_FULLSCREEN: {
-                m_state.m_is_fullscreen = true;
-            } break;
-            case SDL_EVENT_WINDOW_LEAVE_FULLSCREEN: {
-                m_state.m_is_fullscreen = false;
-            } break;
-            case SDL_EVENT_KEY_DOWN: {
-                ButtonState& state = m_state.m_keyboard_state[ev.key.scancode];
-                if (state == ButtonState::UP) {
-                    state = ButtonState::JUST_PRESSED;
+        case SDL_EVENT_QUIT: {
+            m_should_quit = true;
+        } break;
+        case SDL_EVENT_WINDOW_RESIZED: {
+            m_state.m_window_size.x = static_cast<uint32_t>(ev.window.data1);
+            m_state.m_window_size.y = static_cast<uint32_t>(ev.window.data2);
+            m_state.m_mouse_position_norm.x = (2.0f * static_cast<float>(ev.motion.x) / static_cast<float>(m_state.m_window_size.x)) - 1.0f;
+            m_state.m_mouse_position_norm.y = (-2.0f * static_cast<float>(ev.motion.y) / static_cast<float>(m_state.m_window_size.y)) + 1.0f;
+        } break;
+        case SDL_EVENT_WINDOW_PIXEL_SIZE_CHANGED: {
+            m_state.m_resized_flag = true;
+        } break;
+        case SDL_EVENT_WINDOW_ENTER_FULLSCREEN: {
+            m_state.m_is_fullscreen = true;
+        } break;
+        case SDL_EVENT_WINDOW_LEAVE_FULLSCREEN: {
+            m_state.m_is_fullscreen = false;
+        } break;
+        case SDL_EVENT_KEY_DOWN: {
+            ButtonState& state = m_state.m_keyboard_state[ev.key.scancode];
+            if (state == ButtonState::UP) {
+                state = ButtonState::JUST_PRESSED;
+            }
+        } break;
+        case SDL_EVENT_KEY_UP: {
+            ButtonState& state = m_state.m_keyboard_state[ev.key.scancode];
+            if (state == ButtonState::DOWN) {
+                state = ButtonState::JUST_RELEASED;
+            }
+        } break;
+        case SDL_EVENT_MOUSE_MOTION: {
+            m_state.m_mouse_position.x = ev.motion.x;
+            m_state.m_mouse_position.y = ev.motion.y;
+            m_state.m_mouse_position_norm.x = (2.0f * static_cast<float>(ev.motion.x) / static_cast<float>(m_state.m_window_size.x)) - 1.0f;
+            m_state.m_mouse_position_norm.y = (-2.0f * static_cast<float>(ev.motion.y) / static_cast<float>(m_state.m_window_size.y)) + 1.0f;
+            if (SDL_GetWindowRelativeMouseMode(m_window_handle)) {
+                // Mouse motion events can occur multiple times per frame when FPS drops, these need to be accumulated.
+                m_state.m_mouse_motion.x += ev.motion.xrel;
+                m_state.m_mouse_motion.y += -ev.motion.yrel;
+            }
+        } break;
+        case SDL_EVENT_MOUSE_BUTTON_DOWN: {
+            ButtonState& state = m_state.m_mouse_button_state[ev.button.button - 1];
+            if (state == ButtonState::UP) {
+                state = ButtonState::JUST_PRESSED;
+            }
+        } break;
+        case SDL_EVENT_MOUSE_BUTTON_UP: {
+            ButtonState& state = m_state.m_mouse_button_state[ev.button.button - 1];
+            if (state == ButtonState::DOWN) {
+                state = ButtonState::JUST_RELEASED;
+            }
+        } break;
+            // handle mouse wheel here
+            // handle gamepad / joystick here
+            // handle clipboard here
+        case SDL_EVENT_DROP_FILE: {
+            m_state.m_drag_drop_path = ev.drop.data;
+        } break;
+            // handle audio device here
+        default: {
+            if (ev.type == m_mouse_capture_event_index) {
+                m_state.m_mouse_captured = true;
+                if (!SDL_SetWindowRelativeMouseMode(m_window_handle, true)) {
+                    GC_ERROR("SDL_SetWindowRelativeMouseMode() error: {}", SDL_GetError());
                 }
-            } break;
-            case SDL_EVENT_KEY_UP: {
-                ButtonState& state = m_state.m_keyboard_state[ev.key.scancode];
-                if (state == ButtonState::DOWN) {
-                    state = ButtonState::JUST_RELEASED;
+            }
+            else if (ev.type == m_mouse_release_event_index) {
+                m_state.m_mouse_captured = false;
+                if (!SDL_SetWindowRelativeMouseMode(m_window_handle, false)) {
+                    GC_ERROR("SDL_SetWindowRelativeMouseMode() error: {}", SDL_GetError());
                 }
-            } break;
-            case SDL_EVENT_MOUSE_MOTION: {
-                m_state.m_mouse_position.x = ev.motion.x;
-                m_state.m_mouse_position.y = ev.motion.y;
-                m_state.m_mouse_position_norm.x = (2.0f * static_cast<float>(ev.motion.x) / static_cast<float>(m_state.m_window_size.x)) - 1.0f;
-                m_state.m_mouse_position_norm.y = (-2.0f * static_cast<float>(ev.motion.y) / static_cast<float>(m_state.m_window_size.y)) + 1.0f;
-                if (SDL_GetWindowRelativeMouseMode(m_window_handle)) {
-                    // Mouse motion events can occur multiple times per frame when FPS drops, these need to be accumulated.
-                    m_state.m_mouse_motion.x += ev.motion.xrel;
-                    m_state.m_mouse_motion.y += -ev.motion.yrel;
-                }
-            } break;
-            case SDL_EVENT_MOUSE_BUTTON_DOWN: {
-                ButtonState& state = m_state.m_mouse_button_state[ev.button.button - 1];
-                if (state == ButtonState::UP) {
-                    state = ButtonState::JUST_PRESSED;
-                }
-            } break;
-            case SDL_EVENT_MOUSE_BUTTON_UP: {
-                ButtonState& state = m_state.m_mouse_button_state[ev.button.button - 1];
-                if (state == ButtonState::DOWN) {
-                    state = ButtonState::JUST_RELEASED;
-                }
-            } break;
-                // handle mouse wheel here
-                // handle gamepad / joystick here
-                // handle clipboard here
-            case SDL_EVENT_DROP_FILE: {
-                m_state.m_drag_drop_path = ev.drop.data;
-            } break;
-                // handle audio device here
-            default: {
-                if (ev.type == m_mouse_capture_event_index) {
-                    m_state.m_mouse_captured = true;
-                    if (!SDL_SetWindowRelativeMouseMode(m_window_handle, true)) {
-                        GC_ERROR("SDL_SetWindowRelativeMouseMode() error: {}", SDL_GetError());
-                    }
-                }
-                else if (ev.type == m_mouse_release_event_index) {
-                    m_state.m_mouse_captured = false;
-                    if (!SDL_SetWindowRelativeMouseMode(m_window_handle, false)) {
-                        GC_ERROR("SDL_SetWindowRelativeMouseMode() error: {}", SDL_GetError());
-                    }
-                }
-            } break;
+            }
+        } break;
         }
     }
     return m_state;
