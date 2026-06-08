@@ -23,7 +23,7 @@ class Net {
 public:
     // returns false on failure
     bool startServer(asio::ip::udp::endpoint endpoint);
-    
+
     // only use in server mode
     void stopServer();
     asio::ip::udp::endpoint getServerEndpoint() const;
@@ -40,6 +40,9 @@ public:
 
     // Returns the number of remote hosts (1 in client mode, number of clients in server mode)
     uint32_t getRemoteCount() const;
+
+    // returns empty vector if not in server mode
+    std::vector<NetSessionToken> getRemoteSessions() const;
 
     // returns true if an event is available
     bool pollEvents(NetEvent& ev);

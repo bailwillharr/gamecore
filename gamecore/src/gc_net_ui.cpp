@@ -1,5 +1,7 @@
 #include "gamecore/gc_net_ui.h"
 
+#include <cinttypes>
+
 #include <array>
 
 #include <imgui.h>
@@ -79,14 +81,18 @@ void renderNetUI(Net& net)
             }
         } break;
         case NetMode::SERVER: {
-            const auto server_addr = net.getServerEndpoint();
-            ImGui::Text("Address: %s:%d", server_addr.address().to_string().c_str(), server_addr.port());
-            ImGui::Text("Number of clients: %u", net.getRemoteCount());
             if (ImGui::Button("Stop Server")) {
                 net.stopServer();
             }
             if (ImGui::Button("Send shutdown command to clients")) {
                 net.postEvent(NetEvent{Name("shutdown")});
+            }
+            const auto server_addr = net.getServerEndpoint();
+            ImGui::Text("Address: %s:%d", server_addr.address().to_string().c_str(), server_addr.port());
+            ImGui::Text("%u clients:", net.getRemoteCount());
+            const auto client_sessions = net.getRemoteSessions();
+            for (const NetSessionToken session : client_sessions) {
+                ImGui::Text("  %16" PRIX64, session);
             }
         } break;
         case NetMode::CLIENT: {

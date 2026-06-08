@@ -165,6 +165,16 @@ uint32_t Net::getRemoteCount() const
     }
 }
 
+std::vector<NetSessionToken> Net::getRemoteSessions() const
+{
+    if (std::holds_alternative<NetServer>(m_server_client)) {
+        return getServer().getActiveSessionsList();
+    }
+    else {
+        return {};
+    }
+}
+
 NetClientConnectionStatus Net::getClientConnectionStatus() const { return getClient().getConnectionStatus(); }
 
 asio::ip::udp::endpoint Net::getServerEndpoint() const { return getServer().getLocalEndpoint(); }
