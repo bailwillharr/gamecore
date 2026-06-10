@@ -216,6 +216,8 @@ bool NetClient::connect(const asio::ip::udp::endpoint& endpoint)
 {
     disconnect(); // just in case
 
+    m_server_endpoint = endpoint;
+
     asio::error_code ec{};
     m_socket.open(endpoint.protocol(), ec);
     if (ec) {
@@ -265,6 +267,8 @@ void NetClient::disconnect()
 bool NetClient::poll(NetEvent& ev) { return m_event_queue.pop(ev); }
 
 NetClientConnectionStatus NetClient::getConnectionStatus() const { return m_state.load(); }
+
+asio::ip::udp::endpoint NetClient::getServerEndpoint() const { return m_server_endpoint; }
 
 void NetClient::sendMessage(uint16_t payload_type, std::vector<uint8_t> payload)
 {

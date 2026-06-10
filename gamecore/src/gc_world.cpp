@@ -96,4 +96,15 @@ void World::update(FrameState& frame_state)
     }
 }
 
+std::vector<Name> World::getComponentList(Entity entity) const
+{
+    std::vector<Name> list{};
+    for (uint32_t i = 0; i < static_cast<uint32_t>(m_component_arrays.size()); ++i) {
+        if (m_entity_signatures[entity].hasComponentIndex(i)) {
+            list.push_back(m_component_names[i]);
+        }
+    }
+    return list;
+}
+
 } // namespace gc

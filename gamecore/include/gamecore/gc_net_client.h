@@ -51,14 +51,16 @@ class NetClient {
 
     static constexpr size_t OUTBOUND_QUEUE_MAX_SIZE = 1024;
 
+    asio::ip::udp::endpoint m_server_endpoint{}; // only accessed by main thread
+
     asio::io_context m_context{};
     NetEventQueue m_event_queue{};
     OutboundChannel m_outbound_queue{m_context.get_executor(), OUTBOUND_QUEUE_MAX_SIZE};
     std::atomic<NetClientConnectionStatus> m_state{};
 
     std::jthread m_client_thread{};
-    asio::ip::udp::socket m_socket{m_context};
-    NetClientSession m_session{};
+    asio::ip::udp::socket m_socket{m_context}; // only accessed by client thread
+    NetClientSession m_session{};              // only accessed by client thread
 
 public:
     ~NetClient();
@@ -67,6 +69,7 @@ public:
     void disconnect();
     bool poll(NetEvent& ev);
     NetClientConnectionStatus getConnectionStatus() const;
+    asio::ip::udp::endpoint getServerEndpoint() const;
 
     void sendMessage(uint16_t payload_type, std::vector<uint8_t> payload);
 

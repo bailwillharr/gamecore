@@ -102,17 +102,18 @@ cpmaddpackage(
   VERSION 1.38.0
   URL https://github.com/chriskohlhoff/asio/archive/asio-1-38-0.zip
 )
-add_library(asio INTERFACE)
+file(WRITE "${asio_SOURCE_DIR}/asio_impl.cpp" "#include <asio/impl/src.hpp>\n")
+add_library(asio STATIC "${asio_SOURCE_DIR}/asio_impl.cpp")
 add_library(asio::asio ALIAS asio)
-target_include_directories(asio INTERFACE
+target_include_directories(asio PUBLIC
   ${asio_SOURCE_DIR}/include
 )
-target_compile_definitions(asio INTERFACE
+target_compile_definitions(asio PUBLIC
   ASIO_STANDALONE
   ASIO_NO_DEPRECATED
-  ASIO_NO_EXCEPTIONS
   ASIO_SEPARATE_COMPILATION
 )
+set_target_properties(asio PROPERTIES SYSTEM TRUE)
 if(WIN32)
     macro(get_win32_winnt version)
         if(CMAKE_SYSTEM_VERSION)
@@ -133,7 +134,7 @@ if(WIN32)
     endmacro()
 
     get_win32_winnt(ver)
-    target_compile_definitions(asio INTERFACE _WIN32_WINNT=${ver})
+    target_compile_definitions(asio PUBLIC _WIN32_WINNT=${ver})
 endif()
 
 # json
@@ -154,6 +155,8 @@ cpmaddpackage(
   URL https://github.com/g-truc/glm/releases/download/1.0.3/glm-1.0.3.zip
   OPTIONS
     "GLM_ENABLE_CXX_20 ON"
+  EXCLUDE_FROM_ALL YES
+  SYSTEM YES
 )
 
 # ImGui
@@ -180,6 +183,7 @@ add_library(imgui STATIC
   "${imgui_SOURCE_DIR}/backends/imgui_impl_sdl3.cpp"
   "${imgui_SOURCE_DIR}/backends/imgui_impl_sdl3.h"
 )
+set_target_properties(imgui PROPERTIES SYSTEM TRUE)
 target_compile_definitions(imgui PUBLIC IMGUI_DISABLE_OBSOLETE_FUNCTIONS)
 # use ImGui_ImplVulkan_LoadFunctions():
 target_compile_definitions(imgui PUBLIC IMGUI_IMPL_VULKAN_NO_PROTOTYPES)
@@ -222,6 +226,7 @@ add_library(stb STATIC
   "${stb_SOURCE_DIR}/stb_image_impl.cpp"
   "${stb_SOURCE_DIR}/stb_image.h"
 )
+set_target_properties(stb PROPERTIES SYSTEM TRUE)
 target_include_directories(stb PUBLIC ${stb_SOURCE_DIR})
 
 # MikkTSpace
@@ -234,6 +239,7 @@ add_library(mikktspace STATIC
     "${mikktspace_SOURCE_DIR}/mikktspace.c"
     "${mikktspace_SOURCE_DIR}/mikktspace.h"
 )
+set_target_properties(mikktspace PROPERTIES SYSTEM TRUE)
 target_include_directories(mikktspace PUBLIC ${mikktspace_SOURCE_DIR})
 
 # weldmesh
@@ -246,6 +252,7 @@ add_library(weldmesh STATIC
     "${weldmesh_SOURCE_DIR}/weldmesh.c"
     "${weldmesh_SOURCE_DIR}/weldmesh.h"
 )
+set_target_properties(weldmesh PROPERTIES SYSTEM TRUE)
 target_include_directories(weldmesh PUBLIC ${weldmesh_SOURCE_DIR})
 
 # shaderc_combined (from Vulkan SDK)
@@ -263,7 +270,16 @@ add_subdirectory(gamecore_template)
 
 add_subdirectory(dedicated_server)
 
-add_subdirectory(tools/gcpak_editor) # broken
+add_subdirectory(tools/gcpak_editor)
 add_subdirectory(tools/compile_shaders)
 add_subdirectory(tools/package_textures)
 add_subdirectory(tools/package_meshes)
+
+add_custom_target(
+    GamecoreGenerateNameStrings ALL
+    COMMAND scripts/extract_constexpr_names.sh > content/name_strings.txt
+    WORKING_DIRECTORY ${CMAKE_SOURCE_DIR}
+    DEPENDS scripts/extract_constexpr_names.sh
+    COMMENT "Generating name_strings.txt from constexpr names"
+    VERBATIM
+)

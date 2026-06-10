@@ -4,18 +4,24 @@
 #include <glm/gtc/constants.hpp>
 
 #include <gamecore/gc_ecs.h>
+#include <gamecore/gc_name.h>
 
 class MouseMoveSystem; // forward-dec
 
 class MouseMoveComponent {
     friend class MouseMoveSystem;
+
+public:
+    static constexpr auto NAME = gc::Name::createConstexpr("MouseMoveComponent");
+
+private:
     float m_sensitivity{0.01f};
-    float m_move_speed{1.0f}; // max speed in m/s
-    float m_acceleration{1.0f}; // m/s/s
-    float m_deceleration{5.0f}; // m/s/s
+    float m_move_speed{1.0f};                       // max speed in m/s
+    float m_acceleration{1.0f};                     // m/s/s
+    float m_deceleration{5.0f};                     // m/s/s
     glm::vec3 m_current_velocity{0.0f, 0.0f, 0.0f}; // m/s {+x, +y, +z} world space
-    float m_yaw{0.0f};   // along Z axis
-    float m_pitch{glm::half_pi<float>()}; // along X axis
+    float m_yaw{0.0f};                              // along Z axis
+    float m_pitch{glm::half_pi<float>()};           // along X axis
 public:
     MouseMoveComponent& setSensitivity(float sensitivity)
     {
@@ -40,6 +46,8 @@ public:
 };
 
 class MouseMoveSystem : public gc::System {
+public:
+    static constexpr auto NAME = gc::Name::createConstexpr("MouseMoveSystem");
 
 public:
     MouseMoveSystem(gc::World& world) : gc::System(world) {}

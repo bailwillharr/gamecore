@@ -8,9 +8,12 @@
 
 namespace gc {
 
-class RenderSystem; // forward-dec
-
 struct RenderableComponent {
+
+public:
+    static constexpr auto NAME = Name::createConstexpr("RenderableComponent");
+
+public:
     bool m_visible = true;
     Name m_mesh{};     // can be empty
     Name m_material{}; // can be empty

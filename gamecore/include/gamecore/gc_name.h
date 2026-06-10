@@ -86,24 +86,39 @@ public:
 
 inline void loadNameLookupTable(const std::filesystem::path& file_path)
 {
+#ifdef GC_LOOKUP_ASSET_IDS
     std::ifstream file(file_path);
     if (!file) {
-        GC_ERROR("Failed to open file: {}", file_path.filename().string());
         return;
     }
     std::string line{};
     file.seekg(0);
     while (std::getline(file, line)) {
-        uint32_t hash;
-        std::from_chars_result res = std::from_chars(line.data(), line.data() + line.size(), hash, 16);
-        if (res.ptr != line.data() + 8) {
-            GC_ERROR("Error parsing hash file: {}", file_path.filename().string());
-            return;
-        }
         const char* const str = line.c_str() + 9; // skip over hash and space character
         // just create a Name object, if GC_LOOKUP_ASSET_IDS is defined, this will add to the LUT
         (void)Name(str);
     }
+#else
+    (void)file_path;
+#endif
+}
+
+// every line just contains a string
+inline void loadNameStringsFile(const std::filesystem::path& file_path)
+{
+#ifdef GC_LOOKUP_ASSET_IDS
+    std::ifstream file(file_path);
+    if (!file) {
+        return;
+    }
+    std::string line{};
+    file.seekg(0);
+    while (std::getline(file, line)) {
+        (void)Name(line.c_str()); // if GC_LOOKUP_ASSET_IDS is defined, this will add the name to the LUT
+    }
+#else
+    (void)file_path;
+#endif
 }
 
 } // namespace gc

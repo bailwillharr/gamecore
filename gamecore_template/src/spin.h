@@ -4,8 +4,13 @@
 #include <glm/geometric.hpp>
 
 #include <gamecore/gc_ecs.h>
+#include <gamecore/gc_name.h>
 
 class SpinComponent {
+public:
+    static constexpr auto NAME = gc::Name::createConstexpr("SpinComponent");
+
+private:
     friend class SpinSystem;
     float m_angle_radians{};
     glm::vec3 m_axis_norm{0.0f, 1.0f, 0.0f};
@@ -25,6 +30,9 @@ public:
 };
 
 class SpinSystem : public gc::System {
+public:
+    static constexpr auto NAME = gc::Name::createConstexpr("SpinSystem");
+
 public:
     SpinSystem(gc::World& world) : gc::System(world) {}
 

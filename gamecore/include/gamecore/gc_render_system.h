@@ -7,14 +7,19 @@
 #include <glm/mat4x4.hpp>
 
 #include "gamecore/gc_ecs.h"
+#include "gamecore/gc_name.h"
 #include "gamecore/gc_render_object_manager.h"
 
 namespace gc {
 
-class World;      // forward-dec
+class World;       // forward-dec
 struct FrameState; // forward-dec
 
 class RenderSystem : public System {
+public:
+    static constexpr auto NAME = Name::createConstexpr("RenderSystem");
+
+private:
     struct MeshMaterialPairHash {
         size_t operator()(const std::pair<RenderMesh*, RenderMaterial*>& p) const noexcept
         {
@@ -34,4 +39,3 @@ public:
 };
 
 } // namespace gc
-

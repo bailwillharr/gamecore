@@ -65,15 +65,15 @@ static void parseF(const std::string& line, std::span<const glm::vec3> positions
                 gc::abortGame("Don't support negative indices");
             }
         }
-        const int pos_index = indices[i][0] - 1;
+        const size_t pos_index = indices[i][0] - 1;
         if (pos_index >= positions.size()) {
             gc::abortGame("Invalid pos index");
         }
-        const int uv_index = indices[i][1] - 1;
+        const size_t uv_index = indices[i][1] - 1;
         if (uv_index >= uvs.size()) {
             gc::abortGame("Invalid uv index");
         }
-        const int norm_index = indices[i][2] - 1;
+        const size_t norm_index = indices[i][2] - 1;
         if (norm_index >= normals.size()) {
             gc::abortGame("Invalid normal index");
         }
@@ -100,25 +100,25 @@ gc::ResourceMesh genOBJMesh(std::span<const uint8_t> file_data)
 
     while (std::getline(stream, line)) {
         switch (line[0]) {
-            case 'v':
-                switch (line[1]) {
-                    case ' ':
-                        // position
-                        parseV(line, positions);
-                        break;
-                    case 't':
-                        // UV
-                        parseT(line, uvs);
-                        break;
-                    case 'n':
-                        // normal
-                        parseN(line, normals);
-                        break;
-                }
+        case 'v':
+            switch (line[1]) {
+            case ' ':
+                // position
+                parseV(line, positions);
                 break;
-            case 'f':
-                parseF(line, positions, uvs, normals, vertices);
+            case 't':
+                // UV
+                parseT(line, uvs);
                 break;
+            case 'n':
+                // normal
+                parseN(line, normals);
+                break;
+            }
+            break;
+        case 'f':
+            parseF(line, positions, uvs, normals, vertices);
+            break;
         }
     }
 

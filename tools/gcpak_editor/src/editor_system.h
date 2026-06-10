@@ -23,7 +23,10 @@ class Window; // forward-dec
 }
 
 class EditorSystem : public gc::System {
+public:
+    static constexpr auto NAME = gc::Name::createConstexpr("EditorSystem");
 
+private:
     struct PakFileInfo {
         std::filesystem::path path;
     };
@@ -47,8 +50,8 @@ class EditorSystem : public gc::System {
     const SDL_DialogFileFilter m_gcpak_filter{.name = "Gamecore Package File (*.gcpak)", .pattern = "gcpak"};
 
     const std::array<SDL_DialogFileFilter, 3> m_asset_filters{SDL_DialogFileFilter{.name = "Mesh File (*.obj)", .pattern = "obj"},
-                                                             SDL_DialogFileFilter{.name = "Texture File (*.png)", .pattern = "png"},
-                                                             SDL_DialogFileFilter{.name = "Shader File (*.vert;*.frag)", .pattern = "vert;frag"}};
+                                                              SDL_DialogFileFilter{.name = "Texture File (*.png)", .pattern = "png"},
+                                                              SDL_DialogFileFilter{.name = "Shader File (*.vert;*.frag)", .pattern = "vert;frag"}};
 
     std::mutex m_assets_mutex{};
     std::unordered_map<gcpak::GcpakAssetType, AssetCategoryList> m_assets{};

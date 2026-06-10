@@ -2,6 +2,8 @@
 
 #include <glm/trigonometric.hpp>
 
+#include "gamecore/gc_name.h"
+
 namespace gc {
 
 class CameraSystem; // forward-dec
@@ -9,6 +11,10 @@ class CameraSystem; // forward-dec
 class CameraComponent {
     friend class CameraSystem;
 
+public:
+    static constexpr auto NAME = Name::createConstexpr("CameraComponent");
+
+private:
     float m_fov_radians{glm::radians(45.0f)};
     float m_near = 0.1f;
     bool m_active = true;

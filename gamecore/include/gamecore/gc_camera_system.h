@@ -9,10 +9,14 @@
 #include <gamecore/gc_transform_component.h>
 #include <gamecore/gc_camera_component.h>
 #include <gamecore/gc_window.h>
+#include <gamecore/gc_name.h>
 
 namespace gc {
 
 class CameraSystem : public System {
+public:
+    static constexpr auto NAME = Name::createConstexpr("CameraSystem");
+
 public:
     CameraSystem(World& world) : System(world) {}
 

@@ -20,11 +20,11 @@
 #include <asio/streambuf.hpp>
 #include <asio/experimental/channel.hpp>
 
-#include "gamecore/gc_asio_throw_exception.h"
 #include "gamecore/gc_logger.h"
 #include "gamecore/gc_net_common.h"
 #include "gamecore/gc_assert.h"
 #include "gamecore/gc_crc_table.h"
+#include "gamecore/gc_abort.h"
 
 namespace gc {
 

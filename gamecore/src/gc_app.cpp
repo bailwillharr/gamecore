@@ -63,6 +63,8 @@ App::App(const AppInitOptions& options)
 
     m_application_directory = findApplicationDirectory();
 
+    loadNameStringsFile(m_application_directory / "content" / "name_strings.txt"); // for debugging, load names scanned from the source code
+
 #ifdef GC_LOG_FILE_CWD
     Logger::instance().setLogFile(m_application_directory / "logfile.txt");
 #else

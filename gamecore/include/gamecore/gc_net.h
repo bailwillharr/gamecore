@@ -55,10 +55,10 @@ public:
     std::optional<asio::ip::udp::endpoint> resolve(std::string_view host, std::string_view service);
 
 private:
-    NetServer& getServer();
-    const NetServer& getServer() const;
-    NetClient& getClient();
-    const NetClient& getClient() const;
+    NetServer* getServer();
+    const NetServer* getServer() const;
+    NetClient* getClient();
+    const NetClient* getClient() const;
 };
 
 } // namespace gc

@@ -9,6 +9,10 @@
 #include <gamecore/gc_net.h>
 
 class WorldLoadSystem : public gc::System {
+public:
+    static constexpr auto NAME = gc::Name::createConstexpr("WorldLoadSystem");
+
+private:
     bool m_loaded = false;
 
 public:

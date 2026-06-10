@@ -7,13 +7,17 @@
 #include <glm/mat4x4.hpp>
 
 #include "gamecore/gc_ecs.h"
+#include "gamecore/gc_name.h"
 
 namespace gc {
 
 class World; // forward-dec
 
 class TransformSystem : public System {
+public:
+    static constexpr auto NAME = Name::createConstexpr("TransformSystem");
 
+private:
     std::unordered_map<Entity, std::vector<Entity>> m_parent_children{};
 
 public:

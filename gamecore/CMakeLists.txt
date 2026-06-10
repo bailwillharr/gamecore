@@ -20,7 +20,6 @@ set(SRC_FILES
   "src/gc_vulkan_device.cpp"
   "src/gc_vulkan_allocator.cpp"
   "src/gc_vk_mem_alloc_impl.cpp"
-  "src/gc_asio_impl.cpp"
   "src/gc_render_backend.cpp"
   "src/gc_render_mesh.cpp"
   "src/gc_render_world.cpp"
@@ -51,7 +50,6 @@ set(SRC_FILES
 # Care must be taken to ensure these headers do not reference private headers
 set(INCLUDE_FILES
   "include/gamecore/gc_app.h"
-  "include/gamecore/gc_asio_throw_exception.h"
   "include/gamecore/gc_assert.h"
   "include/gamecore/gc_logger.h"
   "include/gamecore/gc_logger_spdlog.h"

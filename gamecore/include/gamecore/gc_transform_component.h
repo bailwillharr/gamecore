@@ -17,6 +17,10 @@ namespace gc {
 class TransformComponent {
     friend class TransformSystem;
 
+public:
+    static constexpr auto NAME = Name::createConstexpr("TransformComponent");
+
+private:
     glm::vec3 m_position{0.0f, 0.0f, 0.0f};
     glm::quat m_rotation{1.0f, 0.0f, 0.0f, 0.0f};
     glm::vec3 m_scale{1.0f};

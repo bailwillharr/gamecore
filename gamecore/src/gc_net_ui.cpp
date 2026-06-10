@@ -85,7 +85,7 @@ void renderNetUI(Net& net)
                 net.stopServer();
             }
             if (ImGui::Button("Send shutdown command to clients")) {
-                net.postEvent(NetEvent{Name("shutdown")});
+                net.postEvent(NetEvent{Name("shutdown"), {}});
             }
             const auto server_addr = net.getServerEndpoint();
             ImGui::Text("Address: %s:%d", server_addr.address().to_string().c_str(), server_addr.port());
@@ -115,7 +115,7 @@ void renderNetUI(Net& net)
                 net.disconnectFromServer();
             }
             if (ImGui::Button("Send shutdown command to server")) {
-                net.postEvent(NetEvent{Name("shutdown")});
+                net.postEvent(NetEvent{Name("shutdown"), {}});
             }
         } break;
         }

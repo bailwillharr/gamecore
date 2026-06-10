@@ -27,6 +27,9 @@ class World {
     std::vector<Entity> m_free_entity_ids;
     std::vector<std::unique_ptr<System>> m_systems{};
 
+    std::vector<Name> m_component_names{};
+    std::vector<Name> m_system_names{};
+
     Entity m_max_alive_entity_id{};
 
 public:
@@ -56,6 +59,7 @@ public:
             gc::abortGame("Attempt to register same component twice!");
         }
         m_component_arrays.emplace_back(std::make_unique<ComponentArray<T, ArrayType>>(), ArrayType);
+        m_component_names.push_back(T::NAME);
     }
 
     // The returned reference can be invalidated when addComponent() is called again for the same component type.
@@ -135,6 +139,8 @@ public:
         }
     }
 
+    std::vector<Name> getComponentList(Entity entity) const;
+
     template <ValidDerivedSystem T, typename... Args>
     void registerSystem(Args&&... args)
     {
@@ -143,6 +149,7 @@ public:
             gc::abortGame("Attempt to register same system twice!");
         }
         m_systems.push_back(std::make_unique<T>(*this, std::forward<Args>(args)...));
+        m_system_names.push_back(T::NAME);
     }
 
     template <ValidDerivedSystem T>
