@@ -1,6 +1,8 @@
 Replace mutable FrameState with immutable FrameInput, Mutable FrameOutput. Split systems between 'simulation' and 'presentation'.
-Simulation systems cannot modify FrameOutput, they only receive FrameInput as const ref parameter.
-Presentation systems receive FrameInput const ref, but also receive FrameOutput as a mutable ref parameter.
+	Simulation systems cannot modify FrameOutput, they only receive FrameInput as const ref parameter.
+	Presentation systems receive FrameInput const ref, but also receive FrameOutput as a mutable ref parameter.
+
+
 
 Pipeline variants
 	If a given material doesn't use a normal map, for example, it shouldn't sample a normal texture in the fragment shader.
@@ -9,4 +11,64 @@ Pipeline variants
 	 - use normal map
 	 - constant roughness vs roughness map
 
+
+
+Use the same ByteReader and ByteWriter classes engine-wide.
+	No more NetByteReader for network stuff, and also stream usage for file stuff.
+	Just standardise the serialised format used both for file and network.
+
+
+
 Prefabs
+	Prefabs should support game-defined components.
+	To support this, every component now declares a 'static constexpr gc::Name NAME' field.
+	Every component will also need serialisation and deserialisation functions (THAT ARE TYPE ERASED). I.e.,
+
+	static void serialise(const void* comp, ByteWriter& writer);
+	static void deserialise(ByteReader& reader, void* out);
+	static constexpr size_t getSerialisedSize();
+
+	gc::World will save references to all these functions in the registerComponent() call.
+	This way, the prefab loader can easily get the gc::Name for a component, have no idea what it is, and do:
+
+	world.deserialiseComponent(entity, comp_name, byte_reader)
+
+	and gc::World will figure out the component index for comp_name, get the deserialise() function, and call:
+
+	m_component_arrays[index].addComponent(entity) (which I'll modify to return a reference).
+
+	Then it'll directly deserialise into the memory that the reference points to (taking to care avoid aliasing / alignment problems.)
+
+
+
+Use 64 bit hash for gc::Name (4 billion combinations isn't that much, and I don't see a reason why Names can't be 8 bytes instead of 4)
+
+
+
+gc::World needs some serious optimisation:
+	forEach<> currently iterates through the entire m_entity_signatures array, and then calls getComponent<> for every component for
+	every matching entity. getComponent<> also checks m_entity_signatures, so I should probably make a faster getComponentUnchecked<>.
+
+	Add a World::getTransform() that doesn't check, since TransformComponents always exist (unless the entity doesn't exist!)
+	But if the entity doesn't exist when calling getComponent<>, that should be UB anyway.
+	
+	The comment in findEntity() suggests that a Name->Entity map should just be made for optimisation purposes.
+	But the the same name is allowed for different entities under different parents, so this won't work.
+	Alternately, use TransformSystem::getChildren().
+
+	m_component_names can probably be merged with m_component_arrays, likewise for m_system_names, which can be merged with m_systems.
+
+
+
+Improve and optimise networking:
+	The network backend is currently unoptimised garbage.
+	std::vector<uint8_t>s are copied around like they're integers.
+	When a message packet is created, it should only exist once in memory, and only be deleted once it's either acknowledged or times out.
+	Currently, when a message packet is passed to sendMessage(), it is correctly moved into the send queue, and (probably) moved out of
+	the send queue. Then, it is copied into the Tx buffer and the original vector is moved into the retransmit queue.
+	So far so good.
+	But then, whenever keepAliveLoop() decides to retransmit it, it copies the retransmit vector back into the sendQueue.
+	I should probably benchmark before trying to optimise this, as readability and maintainability is important in the netcode.
+
+	More importantly, there is currently a lot of duplicated code in the NetServer and NetClient, this should be factored out into
+	net_common.h/cpp as much as possible.

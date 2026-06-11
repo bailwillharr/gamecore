@@ -128,12 +128,13 @@ public:
             GC_ASSERT(component_index < static_cast<uint32_t>(m_component_arrays.size()));
             GC_ASSERT(m_component_arrays[component_index].component_array);
 
-            if (m_component_arrays[component_index].type == ComponentArrayType::SPARSE) {
-                auto& component_array = static_cast<ComponentArray<T, ComponentArrayType::SPARSE>&>(*(m_component_arrays[component_index].component_array));
+            auto& component_array_entry = m_component_arrays[component_index];
+            if (component_array_entry.type == ComponentArrayType::SPARSE) {
+                auto& component_array = static_cast<ComponentArray<T, ComponentArrayType::SPARSE>&>(*(component_array_entry.component_array));
                 return &component_array.get(entity);
             }
             else {
-                auto& component_array = static_cast<ComponentArray<T, ComponentArrayType::DENSE>&>(*(m_component_arrays[component_index].component_array));
+                auto& component_array = static_cast<ComponentArray<T, ComponentArrayType::DENSE>&>(*(component_array_entry.component_array));
                 return &component_array.get(entity);
             }
         }
