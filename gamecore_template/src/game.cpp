@@ -38,104 +38,6 @@
 #include "mouse_move.h"
 #include "spin.h"
 
-class SceneGraphUISystem : public gc::System {
-public:
-    static constexpr auto NAME = gc::Name::createConstexpr("SceneGraphUISystem");
-
-private:
-    gc::Entity m_selected_entity = gc::ENTITY_NONE;
-
-    void drawSceneNode(gc::Entity entity)
-    {
-        auto& transform_system = m_world.getSystem<gc::TransformSystem>();
-        const auto children = transform_system.getChildren(entity);
-
-        const auto t = m_world.getComponent<gc::TransformComponent>(entity);
-        const std::string name = t->name.getString();
-
-        ImGuiTreeNodeFlags flags = ImGuiTreeNodeFlags_OpenOnArrow | ImGuiTreeNodeFlags_OpenOnDoubleClick | ImGuiTreeNodeFlags_SpanAvailWidth;
-
-        if (entity == m_selected_entity) flags |= ImGuiTreeNodeFlags_Selected;
-
-        if (children.empty()) flags |= ImGuiTreeNodeFlags_Leaf; // We intentionally do NOT use NoTreePushOnOpen here
-
-        if (ImGui::TreeNodeEx(reinterpret_cast<void*>(static_cast<intptr_t>(entity)), flags, "%s", name.c_str())) {
-            // Selection works whether the node is open or closed
-            if (ImGui::IsItemClicked() && !ImGui::IsItemToggledOpen()) {
-                m_selected_entity = entity;
-            }
-
-            for (gc::Entity child : children) {
-                drawSceneNode(child);
-            }
-
-            ImGui::TreePop(); // Only called when TreeNodeEx returned true
-        }
-        else {
-            // Still allow selection when the node is closed
-            if (ImGui::IsItemClicked() && !ImGui::IsItemToggledOpen()) {
-                m_selected_entity = entity;
-            }
-        }
-    }
-
-public:
-    SceneGraphUISystem(gc::World& world) : gc::System(world) {}
-
-    void onUpdate([[maybe_unused]] gc::FrameState& frame_state) override
-    {
-        if (ImGui::Begin("Scene Graph")) {
-            if (ImGui::Button("Clear Selection")) {
-                m_selected_entity = gc::ENTITY_NONE;
-            }
-            ImGui::SameLine();
-            ImGui::TextDisabled("(live)");
-
-            ImGui::Separator();
-
-            // === Left pane: Hierarchy ===
-            ImGui::BeginChild("##Hierarchy", ImVec2(ImGui::GetContentRegionAvail().x * 0.42f, 0), ImGuiChildFlags_Borders);
-
-            m_world.forEach<gc::TransformComponent>([this](gc::Entity e, const gc::TransformComponent& t) {
-                if (t.getParent() == gc::ENTITY_NONE) {
-                    drawSceneNode(e);
-                }
-            });
-
-            ImGui::EndChild();
-
-            ImGui::SameLine();
-
-            // === Right pane: Inspector ===
-            ImGui::BeginChild("##Inspector", ImVec2(0, 0), ImGuiChildFlags_Borders);
-
-            if (m_selected_entity != gc::ENTITY_NONE) {
-                const auto t = m_world.getComponent<gc::TransformComponent>(m_selected_entity);
-                ImGui::Text("Name: %s", t->name.getString().c_str());
-                ImGui::Separator();
-
-                ImGui::Text("Components:");
-                auto comp_list = m_world.getComponentList(m_selected_entity);
-
-                if (!comp_list.empty()) {
-                    for (const gc::Name name : comp_list) {
-                        ImGui::BulletText("%s", name.getString().c_str());
-                    }
-                }
-                else {
-                    ImGui::TextDisabled("No components");
-                }
-            }
-            else {
-                ImGui::TextDisabled("Select an entity in the hierarchy on the left to see its components.");
-            }
-
-            ImGui::EndChild();
-        }
-        ImGui::End();
-    }
-};
-
 static gc::Entity createRemotePlayer(gc::World& world, gc::Name name)
 {
     constexpr float CAMERA_HEIGHT = 67.5f * 25.4e-3f;
@@ -326,7 +228,6 @@ public:
             world.registerSystem<MouseMoveSystem>();
             world.registerSystem<ReplicatedPlayerSystem>();
             world.registerSystem<ReplicatablePlayerSystem>(app.net());
-            world.registerSystem<SceneGraphUISystem>();
 
             {
                 // player
