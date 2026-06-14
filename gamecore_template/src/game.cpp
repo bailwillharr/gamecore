@@ -342,8 +342,8 @@ void buildAndStartGame(gc::App& app, Options options)
     app.window().setMouseCaptured(true);
 
     // app.window().setSize(0, 0, true);
-    app.debugUI().active = true;
-    app.window().setMouseCaptured(false);
+    // app.debugUI().active = true;
+    // app.window().setMouseCaptured(false);
 
     gc::World& world = app.world();
     world.registerSystem<WorldLoadSystem>();
