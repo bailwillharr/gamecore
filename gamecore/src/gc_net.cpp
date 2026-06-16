@@ -125,14 +125,14 @@ void Net::postEvent(NetEvent ev, NetSessionToken session_token)
 {
     if (std::holds_alternative<NetServer>(m_server_client)) {
         std::vector<uint8_t> buf(4 + ev.data.size());
-        NetByteWriter writer(buf);
+        ByteWriter writer(buf);
         writer.writeU32(ev.type.getHash());
         writer.writeBytes(ev.data);
         getServer()->sendMessage(1, std::move(buf), session_token);
     }
     else if (std::holds_alternative<NetClient>(m_server_client)) {
         std::vector<uint8_t> buf(4 + ev.data.size());
-        NetByteWriter writer(buf);
+        ByteWriter writer(buf);
         writer.writeU32(ev.type.getHash());
         writer.writeBytes(ev.data);
         getClient()->sendMessage(1, std::move(buf));

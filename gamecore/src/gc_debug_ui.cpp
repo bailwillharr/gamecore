@@ -69,12 +69,12 @@ DebugUI::DebugUI(SDL_Window* window, const RenderBackendInfo& render_backend_inf
         // Using 2 works fine here.
         info.MinImageCount = 2;
         info.ImageCount = info.MinImageCount;
-        
+
         info.UseDynamicRendering = true;
         info.PipelineInfoMain.MSAASamples = render_backend_info.msaa_samples;
         info.PipelineInfoMain.PipelineRenderingCreateInfo = rendering_info;
 
-        //info.MinAllocationSize = 1024 * 1024; // stop 'best practices' complaining
+        // info.MinAllocationSize = 1024 * 1024; // stop 'best practices' complaining
 
         if (!ImGui_ImplVulkan_Init(&info)) {
             gc::abortGame("ImGui_ImplVulkan_Init() error");
@@ -132,6 +132,10 @@ void DebugUI::update(FrameState& frame_state)
 
 void DebugUI::windowEventInterceptor(SDL_Event& ev)
 {
+    if (!active) {
+        return;
+    }
+
     ImGui_ImplSDL3_ProcessEvent(&ev);
 
     // cancel inputs that ImGui wants to intercept by setting ev.type to zero

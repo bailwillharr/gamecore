@@ -39,7 +39,7 @@ public:
         }
     }
 
-    MaybeOwning(MaybeOwning&&) = default;
+    MaybeOwning(MaybeOwning&&) noexcept = default;
 
     // always copies data and makes owning (safe default behaviour)
     MaybeOwning& operator=(const MaybeOwning& other)

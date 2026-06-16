@@ -3,9 +3,9 @@
 #include <string>
 #include <filesystem>
 
-struct ImGuiContext; // forward-dec
-struct SDL_Window;   // forward-dec
-union SDL_Event;     // forward-dec
+struct ImGuiContext;                               // forward-dec
+struct SDL_Window;                                 // forward-dec
+union SDL_Event;                                   // forward-dec
 typedef struct VkCommandBuffer_T* VkCommandBuffer; // forward-dec
 
 namespace gc {
@@ -44,7 +44,8 @@ public:
 
     void update(FrameState& frame_state);
 
-    static void windowEventInterceptor(SDL_Event& ev);
+    void windowEventInterceptor(SDL_Event& ev);
+
     static bool postRenderCallback(VkCommandBuffer cmd);
 };
 

@@ -24,3 +24,10 @@ set_target_properties(${PROJECT_NAME} PROPERTIES
 
 add_library(${PROJECT_NAME}_test STATIC "src/test.cpp")
 target_link_libraries(${PROJECT_NAME}_test PRIVATE ${PROJECT_NAME})
+target_compile_features(${PROJECT_NAME}_test INTERFACE cxx_std_20)
+set_target_properties(${PROJECT_NAME}_test PROPERTIES
+  CXX_STANDARD 20
+  CXX_STANDARD_REQUIRED YES
+  CXX_EXTENSIONS NO
+)
+

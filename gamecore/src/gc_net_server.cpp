@@ -106,7 +106,7 @@ static uint64_t generateServerSecret()
 struct PacketContext {
     const asio::ip::udp::endpoint& endpoint;
     const NetPacketHeader& received_header;
-    NetByteReader& reader;
+    ByteReader& reader;
     const uint64_t server_secret;
     const uint32_t time_bucket;
 };
@@ -370,7 +370,7 @@ asio::awaitable<void> NetServer::sendLoop()
 
     OutboundCommand command{};
     std::array<uint8_t, NET_MAX_PACKET_SIZE> buffer{};
-    NetByteWriter writer(buffer);
+    ByteWriter writer(buffer);
     for (;;) {
         std::tie(ec, command) = co_await m_outbound_queue.async_receive(TOKEN);
         if (ec) {
@@ -464,7 +464,7 @@ asio::awaitable<void> NetServer::receiveLoop()
         }
 
         const uint32_t time_bucket = getTimeBucket();
-        NetByteReader reader(std::span(recv_buf.data(), bytes_read));
+        ByteReader reader(std::span(recv_buf.data(), bytes_read));
 
         const auto header = tryDeserialise<NetPacketHeader>(reader);
         if (!header || !verifyPacketHeader(*header)) {

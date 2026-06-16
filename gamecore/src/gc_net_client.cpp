@@ -84,7 +84,7 @@ static asio::awaitable<void> initiateConnection(asio::ip::udp::socket& socket, N
     for (int i = 0; i < NUM_CONNECT_ATTEMPTS; ++i) {
         NetPacketConnectRequest connect_request{};
         connect_request.client_nonce = client_nonce;
-        NetByteWriter writer(buf);
+        ByteWriter writer(buf);
         writePacketWithHeader(writer, NetSessionToken{0}, connect_request);
         last_send_timestamp = SDL_GetTicksNS();
         bool send_success = co_await checkSend(socket, std::span(buf.begin(), writer.pos()));
@@ -93,7 +93,7 @@ static asio::awaitable<void> initiateConnection(asio::ip::udp::socket& socket, N
         }
 
         const size_t bytes_received = co_await checkReceive(socket, buf);
-        NetByteReader reader(std::span(buf.begin(), bytes_received));
+        ByteReader reader(std::span(buf.begin(), bytes_received));
         const auto received_header = tryDeserialise<NetPacketHeader>(reader);
         if (received_header && verifyPacketHeader(*received_header) && received_header->type == NetPacketType::CONNECT_CHALLENGE) {
             const auto received_challenge = tryDeserialiseExact<NetPacketConnectChallenge>(reader);
@@ -118,7 +118,7 @@ static asio::awaitable<void> initiateConnection(asio::ip::udp::socket& socket, N
     {
         NetPacketConnectChallengeResponse challenge_response{};
         challenge_response.client_nonce = client_nonce;
-        NetByteWriter writer(buf);
+        ByteWriter writer(buf);
         writePacketWithHeader(writer, session_token, challenge_response);
         for (int i = 0; i < NUM_CONNECT_ATTEMPTS; ++i) {
             bool send_success = co_await checkSend(socket, std::span(buf.begin(), writer.pos()));
@@ -135,7 +135,7 @@ static asio::awaitable<void> initiateConnection(asio::ip::udp::socket& socket, N
     out_session.last_send_timestamp = last_send_timestamp;
 }
 
-[[nodiscard]] static std::optional<NetEvent> handleMessage(NetByteReader& reader, NetClientSession& session)
+[[nodiscard]] static std::optional<NetEvent> handleMessage(ByteReader& reader, NetClientSession& session)
 {
     const auto message = tryDeserialise<NetPacketMessage>(reader);
     if (!message) {
@@ -293,7 +293,7 @@ asio::awaitable<void> NetClient::sendLoop()
 
     OutboundCommand command{};
     std::array<uint8_t, NET_MAX_PACKET_SIZE> buffer{};
-    NetByteWriter writer(buffer);
+    ByteWriter writer(buffer);
     for (;;) {
         std::tie(ec, command) = co_await m_outbound_queue.async_receive(TOKEN);
         if (ec) {
@@ -364,7 +364,7 @@ asio::awaitable<void> NetClient::receiveLoop()
             continue;
         }
 
-        NetByteReader reader(std::span(recv_buf.data(), bytes_read));
+        ByteReader reader(std::span(recv_buf.data(), bytes_read));
 
         const auto header = tryDeserialise<NetPacketHeader>(reader);
         if (!header || !verifyPacketHeader(*header)) {

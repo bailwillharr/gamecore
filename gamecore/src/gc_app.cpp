@@ -221,7 +221,7 @@ void App::run()
         frame_state.average_frame_time = std::accumulate(delta_times.cbegin(), delta_times.cend(), 0.0) / static_cast<double>(delta_times.size());
 
         if (m_window) {
-            frame_state.window_state = &m_window->processEvents(DebugUI::windowEventInterceptor);
+            frame_state.window_state = &m_window->processEvents([debug_ui = this->m_debug_ui.get()](SDL_Event& ev) { debug_ui->windowEventInterceptor(ev); });
             {
                 if (frame_state.window_state->getKeyDown(SDL_SCANCODE_ESCAPE)) {
                     m_window->pushQuitEvent();

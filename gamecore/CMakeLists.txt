@@ -44,6 +44,8 @@ set(SRC_FILES
   "src/gc_net_client.cpp"
   "src/gc_net_common.cpp"
   "src/gc_net_ui.cpp"
+  "src/gc_byte_reader.cpp"
+  "src/gc_byte_writer.cpp"
 )
 
 # Public API includes
@@ -105,6 +107,8 @@ set(INCLUDE_FILES
   "include/gamecore/gc_net_common.h"
   "include/gamecore/gc_net_ui.h"
   "include/gamecore/gc_net_rto.h"
+  "include/gamecore/gc_byte_reader.h"
+  "include/gamecore/gc_byte_writer.h"
 )
 
 # gamecore is a static library

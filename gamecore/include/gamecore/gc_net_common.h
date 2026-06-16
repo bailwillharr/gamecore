@@ -15,53 +15,13 @@
 #include <asio/ip/udp.hpp>
 
 #include "gamecore/gc_name.h"
+#include "gamecore/gc_byte_reader.h"
+#include "gamecore/gc_byte_writer.h"
 
 namespace gc {
 
 // All fields in packets are little endian
 static_assert(std::endian::native == std::endian::little);
-
-class NetByteWriter {
-    std::span<uint8_t> m_buffer;
-    size_t m_pos = 0;
-
-public:
-    NetByteWriter(std::span<uint8_t> buffer);
-
-    void writeU8(uint8_t v);
-    void writeU16(uint16_t v);
-    void writeU32(uint32_t v);
-    void writeU64(uint64_t v);
-    void writeF32(float v);
-    void writeBytes(std::span<const uint8_t> bytes);
-
-    void skip(size_t n);
-    void reset();
-
-    size_t pos() const;
-    size_t remaining() const;
-};
-
-class NetByteReader {
-    std::span<const uint8_t> m_buffer;
-    size_t m_pos = 0;
-
-public:
-    NetByteReader(std::span<const uint8_t> buffer);
-
-    uint8_t readU8();
-    uint16_t readU16();
-    uint32_t readU32();
-    uint64_t readU64();
-    float readF32();
-    void readBytes(std::span<uint8_t> out);
-
-    void skip(size_t n);
-    void reset();
-
-    size_t pos() const;
-    size_t remaining() const;
-};
 
 constexpr size_t NET_MAX_PACKET_SIZE = 1200;
 
@@ -90,7 +50,7 @@ struct NetPacketHeader {
     static_assert(sizeof(token) == 8);
     static_assert(sizeof(type) == 1);
 
-    void serialise(NetByteWriter& writer) const
+    void serialise(ByteWriter& writer) const
     {
         writer.writeBytes(magic);
         writer.writeU16(version);
@@ -98,7 +58,7 @@ struct NetPacketHeader {
         writer.writeU8(static_cast<uint8_t>(type));
     }
 
-    static NetPacketHeader deserialise(NetByteReader& reader)
+    static NetPacketHeader deserialise(ByteReader& reader)
     {
         NetPacketHeader obj{};
         reader.readBytes(obj.magic);
@@ -136,13 +96,13 @@ struct NetPacketConnectRequest {
 
     uint64_t client_nonce; // unique per connection request
 
-    void serialise(NetByteWriter& writer) const
+    void serialise(ByteWriter& writer) const
     {
         writer.skip(PADDING_SIZE_BYTES);
         writer.writeU64(client_nonce);
     }
 
-    static NetPacketConnectRequest deserialise(NetByteReader& reader)
+    static NetPacketConnectRequest deserialise(ByteReader& reader)
     {
         NetPacketConnectRequest obj{};
         reader.skip(PADDING_SIZE_BYTES);
@@ -160,9 +120,9 @@ struct NetPacketConnectChallenge {
 
     uint64_t client_nonce; // unique per connection request
 
-    void serialise(NetByteWriter& writer) const { writer.writeU64(client_nonce); }
+    void serialise(ByteWriter& writer) const { writer.writeU64(client_nonce); }
 
-    static NetPacketConnectChallenge deserialise(NetByteReader& reader)
+    static NetPacketConnectChallenge deserialise(ByteReader& reader)
     {
         NetPacketConnectChallenge obj{};
         obj.client_nonce = reader.readU64();
@@ -182,9 +142,9 @@ struct NetPacketConnectChallengeResponse {
 
     uint64_t client_nonce; // unique per connection request
 
-    void serialise(NetByteWriter& writer) const { writer.writeU64(client_nonce); }
+    void serialise(ByteWriter& writer) const { writer.writeU64(client_nonce); }
 
-    static NetPacketConnectChallengeResponse deserialise(NetByteReader& reader)
+    static NetPacketConnectChallengeResponse deserialise(ByteReader& reader)
     {
         NetPacketConnectChallengeResponse obj{};
         obj.client_nonce = reader.readU64();
@@ -205,7 +165,7 @@ struct NetPacketMessage {
     uint16_t payload_type;
     uint16_t payload_size;
 
-    void serialise(NetByteWriter& writer) const
+    void serialise(ByteWriter& writer) const
     {
         writer.writeU16(seq_num);
         writer.writeU16(ack_num);
@@ -214,7 +174,7 @@ struct NetPacketMessage {
         writer.writeU16(payload_size);
     }
 
-    static NetPacketMessage deserialise(NetByteReader& reader)
+    static NetPacketMessage deserialise(ByteReader& reader)
     {
         NetPacketMessage obj{};
         obj.seq_num = reader.readU16();
@@ -236,7 +196,7 @@ struct NetPacketMessage {
 };
 
 template <typename T>
-std::optional<T> tryDeserialise(NetByteReader& reader)
+std::optional<T> tryDeserialise(ByteReader& reader)
 {
     if (reader.remaining() < T::getSerialisedSize()) {
         return std::nullopt;
@@ -245,7 +205,7 @@ std::optional<T> tryDeserialise(NetByteReader& reader)
 }
 
 template <typename T>
-std::optional<T> tryDeserialiseExact(NetByteReader& reader)
+std::optional<T> tryDeserialiseExact(ByteReader& reader)
 {
     if (reader.remaining() != T::getSerialisedSize()) {
         return std::nullopt;
@@ -254,7 +214,7 @@ std::optional<T> tryDeserialiseExact(NetByteReader& reader)
 }
 
 template <typename T>
-void writePacketWithHeader(NetByteWriter& writer, NetSessionToken token, const T& payload)
+void writePacketWithHeader(ByteWriter& writer, NetSessionToken token, const T& payload)
 {
     static_assert(!std::is_same_v<T, NetPacketHeader>);
     NetPacketHeader::createValid(T::TYPE, token).serialise(writer);
