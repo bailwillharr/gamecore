@@ -132,7 +132,7 @@ public:
         if (m_net.getMode() == gc::NetMode::DISCONNECTED) return;
 
         m_world.forEach<gc::TransformComponent, ReplicatablePlayerComponent>(
-            [&](gc::Entity e, const gc::TransformComponent& t, ReplicatablePlayerComponent& p) {
+            [&](gc::Entity, const gc::TransformComponent& t, ReplicatablePlayerComponent& p) {
                 const uint32_t name = t.name.getHash();
                 const glm::vec3 pos = t.getPosition();
                 const float yaw = extractYaw(t.getRotation());
