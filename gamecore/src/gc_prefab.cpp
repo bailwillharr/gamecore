@@ -6,7 +6,7 @@
 
 #include <gcpak/gcpak_prefab.h>
 
-#include "gamecore/gc_logger.h"
+#include "gclog/gclog.h"
 #include "gamecore/gc_transform_component.h"
 #include "gamecore/gc_renderable_component.h"
 #include "gamecore/gc_world.h"

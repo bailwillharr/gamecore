@@ -15,7 +15,7 @@
 
 #include <tracy/Tracy.hpp>
 
-#include "gamecore/gc_logger.h"
+#include "gclog/gclog.h"
 #include "gamecore/gc_vulkan_common.h"
 #include "gamecore/gc_render_backend.h"
 #include "gamecore/gc_frame_state.h"

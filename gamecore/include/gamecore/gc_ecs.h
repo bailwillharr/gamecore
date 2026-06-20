@@ -9,7 +9,7 @@
 #include <atomic>
 
 #include "gamecore/gc_assert.h"
-#include "gamecore/gc_logger.h"
+#include "gclog/gclog.h"
 
 namespace gc {
 

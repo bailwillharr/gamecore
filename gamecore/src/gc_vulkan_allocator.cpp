@@ -6,7 +6,7 @@
 
 #include "gamecore/gc_vulkan_common.h"
 #include "gamecore/gc_vulkan_device.h"
-#include "gamecore/gc_logger.h"
+#include "gclog/gclog.h"
 #include "gamecore/gc_abort.h"
 
 namespace gc {

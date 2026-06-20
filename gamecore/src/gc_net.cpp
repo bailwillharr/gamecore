@@ -19,7 +19,7 @@
 #include <variant>
 
 #include "gamecore/gc_assert.h"
-#include "gamecore/gc_logger.h"
+#include "gclog/gclog.h"
 #include "gamecore/gc_net_client.h"
 
 namespace gc {

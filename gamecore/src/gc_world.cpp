@@ -2,7 +2,7 @@
 
 #include <tracy/Tracy.hpp>
 
-#include "gamecore/gc_logger.h"
+#include "gclog/gclog.h"
 #include "gamecore/gc_transform_component.h"
 #include "gamecore/gc_transform_system.h"
 

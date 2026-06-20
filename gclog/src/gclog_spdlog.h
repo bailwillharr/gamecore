@@ -3,13 +3,13 @@
 #include <memory>
 #include <string_view>
 
-#include "gamecore/gc_logger.h"
+#include "gclog/gclog.h"
 
 namespace spdlog {
 class logger; // forward-dec
 }
 
-namespace gc {
+namespace gclog {
 
 /* Create with createLoggerSpdlog() */
 class LoggerSpdlog final : public Logger {
@@ -31,4 +31,4 @@ public:
 
 std::unique_ptr<LoggerSpdlog> createLoggerSpdlog();
 
-} // namespace gc
+} // namespace gclog

@@ -1,25 +1,19 @@
-#include "gamecore/gc_logger.h"
+#include "gclog/gclog.h"
 
 #include <string_view>
 
-#include "gamecore/gc_defines.h"
-#include "gamecore/gc_threading.h"
-#include "gamecore/gc_abort.h"
+#define GC_LOGGER_NULL 0
+#define GC_LOGGER_SPDLOG 1
+
 #if GC_LOGGER == GC_LOGGER_SPDLOG
-#include "gamecore/gc_logger_spdlog.h"
+#include "gclog_spdlog.h"
 #endif
 
-namespace gc {
+namespace gclog {
 
 Logger::~Logger() {}
 
-void Logger::incrementFrameNumber()
-{
-    if (!isMainThread()) {
-        gc::abortGame("Cannot call Logger::incrementFrameNumber() from another thread!");
-    }
-    m_frame_number.fetch_add(1LL, std::memory_order_relaxed);
-}
+void Logger::incrementFrameNumber() { m_frame_number.fetch_add(1LL, std::memory_order_relaxed); }
 
 int64_t Logger::getFrameNumber() const { return m_frame_number.load(std::memory_order_relaxed); }
 
@@ -54,4 +48,4 @@ void Logger::log(std::string_view message, LogLevel level)
     (void)level;
 }
 
-} // namespace gc
+} // namespace gclog

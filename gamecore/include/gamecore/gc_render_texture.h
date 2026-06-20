@@ -2,7 +2,7 @@
 
 #include "gamecore/gc_gpu_resources.h"
 
-#include "gamecore/gc_logger.h"
+#include "gclog/gclog.h"
 
 namespace gc {
 

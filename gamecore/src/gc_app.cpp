@@ -11,10 +11,11 @@
 
 #include <tracy/Tracy.hpp>
 
+#include <gclog/gclog.h>
+
 #include "gamecore/gc_threading.h"
 #include "gamecore/gc_assert.h"
 #include "gamecore/gc_abort.h"
-#include "gamecore/gc_logger.h"
 #include "gamecore/gc_jobs.h"
 #include "gamecore/gc_content.h"
 #include "gamecore/gc_window.h"
@@ -66,7 +67,7 @@ App::App(const AppInitOptions& options)
     loadNameStringsFile(m_application_directory / "content" / "name_strings.txt"); // for debugging, load names scanned from the source code
 
 #ifdef GC_LOG_FILE_CWD
-    Logger::instance().setLogFile(m_application_directory / "logfile.txt");
+    gclog::Logger::instance().setLogFile(m_application_directory / "logfile.txt");
 #else
     Logger::instance().setLogFile(m_save_directory / "logfile.txt");
 #endif
@@ -214,7 +215,7 @@ void App::run()
             break;
         }
 
-        Logger::instance().incrementFrameNumber();
+        gclog::Logger::instance().incrementFrameNumber();
 
         frame_state.delta_time = static_cast<double>(last_frame_time_ns) * 1e-9;
         delta_times[frame_state.frame_count % delta_times.size()] = frame_state.delta_time;

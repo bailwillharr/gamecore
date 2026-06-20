@@ -10,7 +10,7 @@
 
 #include <backends/imgui_impl_sdl3.h>
 
-#include "gamecore/gc_logger.h"
+#include "gclog/gclog.h"
 #include "gamecore/gc_abort.h"
 #include "gamecore/gc_assert.h"
 #include "gamecore/gc_threading.h"

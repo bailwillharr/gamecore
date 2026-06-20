@@ -20,7 +20,7 @@
 #include <asio/streambuf.hpp>
 #include <asio/experimental/channel.hpp>
 
-#include "gamecore/gc_logger.h"
+#include "gclog/gclog.h"
 #include "gamecore/gc_net_common.h"
 #include "gamecore/gc_assert.h"
 #include "gamecore/gc_crc_table.h"

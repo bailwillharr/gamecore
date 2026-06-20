@@ -11,6 +11,12 @@
 
 #ifdef GC_CHECK_COLLISIONS
 #include <mutex>
+#include <string>
+#include <unordered_map>
+#endif
+
+#ifdef GC_CHECK_COLLISIONS
+#include <gclog/gclog.h>
 #endif
 
 #ifdef GC_CHECK_COLLISIONS
@@ -88,7 +94,7 @@ inline uint32_t crc32(const char* const id)
     const std::string id_str(id);
     auto [it, success] = t_local_map.local_map.try_emplace(hash, id_str);
     if (success) {
-        const int64_t frame_count = Logger::instance().getFrameNumber();
+        const int64_t frame_count = gclog::Logger::instance().getFrameNumber();
         if (t_local_map.local_map.size() >= THREAD_LOCAL_MAP_FLUSH_SIZE || frame_count != t_local_map.last_flushed_frame_count) {
             crc32FlushMapAndCheckCollisions(t_local_map.local_map);
             t_local_map.local_map.clear();

@@ -6,7 +6,7 @@
 
 #include <SDL3/SDL_messagebox.h>
 
-#include "gamecore/gc_logger.h"
+#include "gclog/gclog.h"
 
 namespace gc {
 

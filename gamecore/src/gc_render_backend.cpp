@@ -18,7 +18,7 @@
 #include "gamecore/gc_vulkan_device.h"
 #include "gamecore/gc_vulkan_allocator.h"
 #include "gamecore/gc_vulkan_swapchain.h"
-#include "gamecore/gc_logger.h"
+#include "gclog/gclog.h"
 #include "gamecore/gc_world_draw_data.h"
 #include "gamecore/gc_units.h"
 #include "gamecore/gc_render_world.h"

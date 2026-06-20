@@ -5,8 +5,9 @@
 
 #include <gctemplates/gct_static_vector.h>
 
+#include <gclog/gclog.h>
+
 #include <gamecore/gc_app.h>
-#include <gamecore/gc_logger.h>
 #include <gamecore/gc_net.h>
 
 #include "server.h"

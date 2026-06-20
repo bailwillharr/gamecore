@@ -264,6 +264,8 @@ add_subdirectory(gcpak)
 # useful containers and templates to supplement the standard library
 add_subdirectory(gctemplates)
 
+add_subdirectory(gclog)
+
 add_subdirectory(gamecore)
 
 add_subdirectory(gamecore_template)

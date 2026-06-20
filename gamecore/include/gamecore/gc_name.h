@@ -20,8 +20,9 @@
 #include <ostream>
 #include <istream>
 
+#include <gclog/gclog.h>
+
 #include "gamecore/gc_crc_table.h"
-#include "gamecore/gc_logger.h"
 
 namespace gc {
 

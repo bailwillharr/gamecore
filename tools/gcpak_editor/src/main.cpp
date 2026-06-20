@@ -13,10 +13,11 @@
 
 #include <stb_image.h>
 
+#include <gclog/gclog.h>
+
 #include <gcpak/gcpak.h>
 #include <gcpak/gcpak_prefab.h>
 
-#include <gamecore/gc_logger.h>
 #include <gamecore/gc_app.h>
 #include <gamecore/gc_window.h>
 #include <gamecore/gc_render_backend.h>

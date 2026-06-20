@@ -12,7 +12,7 @@
 
 #include "gamecore/gc_abort.h"
 #include "gamecore/gc_assert.h"
-#include "gamecore/gc_logger.h"
+#include "gclog/gclog.h"
 #include "gamecore/gc_vulkan_common.h"
 
 namespace gc {

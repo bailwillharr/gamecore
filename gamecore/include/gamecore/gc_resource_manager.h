@@ -7,7 +7,7 @@
 
 #include "gamecore/gc_name.h"
 #include "gamecore/gc_assert.h"
-#include "gamecore/gc_logger.h"
+#include "gclog/gclog.h"
 #include "gamecore/gc_resources.h"
 
 namespace gc {
