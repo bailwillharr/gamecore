@@ -137,8 +137,8 @@ public:
                 const glm::vec3 pos = t.getPosition();
                 const float yaw = extractYaw(t.getRotation());
 
-                constexpr float MIN_DISTANCE_CHANGE = 0.05; // meters
-                constexpr float MIN_YAW_CHANGE = 0.01;      // radians
+                constexpr float MIN_DISTANCE_CHANGE = 0.05f; // meters
+                constexpr float MIN_YAW_CHANGE = 0.01f;      // radians
 
                 if (glm::distance(p.old_pos, pos) > MIN_DISTANCE_CHANGE || fabsf(p.old_yaw - yaw) > MIN_YAW_CHANGE) {
                     gc::NetEvent ev{};

@@ -2,6 +2,9 @@
 
 #include <cstring>
 
+#include <bit>
+#include <limits>
+
 #include "gamecore/gc_assert.h"
 
 namespace gc {

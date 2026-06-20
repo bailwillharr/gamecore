@@ -102,9 +102,10 @@ cpmaddpackage(
   VERSION 1.38.0
   URL https://github.com/chriskohlhoff/asio/archive/asio-1-38-0.zip
 )
-file(WRITE "${asio_SOURCE_DIR}/asio_impl.cpp" "#include <asio/impl/src.hpp>\n")
-add_library(asio STATIC "${asio_SOURCE_DIR}/asio_impl.cpp")
+file(WRITE "${asio_BINARY_DIR}/asio_impl.cpp" "#include <asio/impl/src.hpp>\n")
+add_library(asio STATIC "${asio_BINARY_DIR}/asio_impl.cpp")
 add_library(asio::asio ALIAS asio)
+target_compile_features(asio PUBLIC cxx_std_20)
 target_include_directories(asio PUBLIC
   ${asio_SOURCE_DIR}/include
 )
@@ -277,11 +278,13 @@ add_subdirectory(tools/compile_shaders)
 add_subdirectory(tools/package_textures)
 add_subdirectory(tools/package_meshes)
 
-add_custom_target(
-    GamecoreGenerateNameStrings ALL
-    COMMAND scripts/extract_constexpr_names.sh > content/name_strings.txt
-    WORKING_DIRECTORY ${CMAKE_SOURCE_DIR}
-    DEPENDS scripts/extract_constexpr_names.sh
-    COMMENT "Generating name_strings.txt from constexpr names"
-    VERBATIM
-)
+if (UNIX)
+    add_custom_target(
+        GamecoreGenerateNameStrings ALL
+        COMMAND scripts/extract_constexpr_names.sh > content/name_strings.txt
+        WORKING_DIRECTORY ${CMAKE_SOURCE_DIR}
+        DEPENDS scripts/extract_constexpr_names.sh
+        COMMENT "Generating name_strings.txt from constexpr names"
+        VERBATIM
+    )
+endif()
