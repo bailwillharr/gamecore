@@ -167,7 +167,7 @@ static void handleParsed(PacketContext& ctx, Func&& func)
                 if (it->second.attempts == 0) {
                     const uint64_t rtt_ns = session.last_receive_timestamp - it->second.original_timestamp;
                     session.rto_calc.recordRTT(std::chrono::nanoseconds(rtt_ns));
-                    GC_DEBUG("New RTT: {} ms, RTO: {} ms", static_cast<double>(rtt_ns) / 1.0e6,
+                    GC_TRACE("New RTT: {} ms, RTO: {} ms", static_cast<double>(rtt_ns) / 1.0e6,
                              static_cast<double>(session.rto_calc.getRTONanoseconds()) / 1.0e6);
                 }
                 session.retransmit_queue.erase(it);
@@ -181,8 +181,8 @@ static void handleParsed(PacketContext& ctx, Func&& func)
         return std::nullopt; // malformed packet
     }
 
-    GC_DEBUG("Session: {:016X}, Received {} bytes", session.session_token, message->payload_size);
-    GC_DEBUG("  Message: seq_num: {}, ack_num: {}", message->seq_num, message->ack_num);
+    GC_TRACE("Session: {:016X}, Received {} bytes", session.session_token, message->payload_size);
+    GC_TRACE("  Message: seq_num: {}, ack_num: {}", message->seq_num, message->ack_num);
 
     if (ctx.reader.remaining() >= sizeof(uint32_t) && message->payload_type == 1) {
         const uint32_t hash = ctx.reader.readU32();
@@ -410,12 +410,11 @@ asio::awaitable<void> NetServer::sendLoop()
                                       session.last_send_timestamp = now;
                                       session.next_seq_num += 1;
 
-                                      GC_DEBUG("Sending message: seq_num: {}, ack_num: {}, msg size: {}", message.seq_num, message.ack_num,
+                                      GC_TRACE("Sending message: seq_num: {}, ack_num: {}, msg size: {}", message.seq_num, message.ack_num,
                                                message.payload_size);
                                   }
                               },
                               [&](const OutboundRaw& raw) {
-                                  GC_DEBUG("sendLoop() OutboundRaw");
                                   GC_ASSERT(raw.packet_data);
                                   auto it = m_sessions.find(raw.session_token);
                                   if (it != m_sessions.end()) {

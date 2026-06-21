@@ -180,7 +180,7 @@ static asio::awaitable<void> initiateConnection(asio::ip::udp::socket& socket, N
                 if (it->second.attempts == 0) {
                     const uint64_t rtt_ns = session.last_receive_timestamp - it->second.original_timestamp;
                     session.rto_calc.recordRTT(std::chrono::nanoseconds(rtt_ns));
-                    GC_DEBUG("New RTT: {} ms, RTO: {} ms", static_cast<double>(rtt_ns) / 1.0e6,
+                    GC_TRACE("New RTT: {} ms, RTO: {} ms", static_cast<double>(rtt_ns) / 1.0e6,
                              static_cast<double>(session.rto_calc.getRTONanoseconds()) / 1.0e6);
                 }
                 session.retransmit_queue.erase(it);
@@ -194,8 +194,8 @@ static asio::awaitable<void> initiateConnection(asio::ip::udp::socket& socket, N
         return std::nullopt; // malformed packet
     }
 
-    GC_DEBUG("Received {} bytes:", message->payload_size);
-    GC_DEBUG("  Message: seq_num: {}, ack_num: {}", message->seq_num, message->ack_num);
+    GC_TRACE("Received {} bytes:", message->payload_size);
+    GC_TRACE("  Message: seq_num: {}, ack_num: {}", message->seq_num, message->ack_num);
 
     if (reader.remaining() >= sizeof(uint32_t) && message->payload_type == 1) {
         const uint32_t hash = reader.readU32();
@@ -324,7 +324,7 @@ asio::awaitable<void> NetClient::sendLoop()
                                   m_session.last_send_timestamp = now;
                                   m_session.next_seq_num += 1;
 
-                                  GC_DEBUG("Sending message: seq_num: {}, ack_num: {}", message.seq_num, message.ack_num);
+                                  GC_TRACE("Sending message: seq_num: {}, ack_num: {}", message.seq_num, message.ack_num);
                               },
                               [&](const OutboundRaw& raw) {
                                   m_session.last_send_timestamp = now;
