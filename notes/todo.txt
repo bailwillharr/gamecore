@@ -61,14 +61,11 @@ gc::World needs some serious optimisation:
 
 
 Improve and optimise networking:
-	The network backend is currently unoptimised garbage.
-	std::vector<uint8_t>s are copied around like they're integers.
-	When a message packet is created, it should only exist once in memory, and only be deleted once it's either acknowledged or times out.
-	Currently, when a message packet is passed to sendMessage(), it is correctly moved into the send queue, and (probably) moved out of
-	the send queue. Then, it is copied into the Tx buffer and the original vector is moved into the retransmit queue.
-	So far so good.
-	But then, whenever keepAliveLoop() decides to retransmit it, it copies the retransmit vector back into the sendQueue.
-	I should probably benchmark before trying to optimise this, as readability and maintainability is important in the netcode.
-
-	More importantly, there is currently a lot of duplicated code in the NetServer and NetClient, this should be factored out into
+	There is currently a lot of duplicated code in the NetServer and NetClient, this should be factored out into
 	net_common.h/cpp as much as possible.
+
+
+
+Asset compilation
+	Get rid of compile_shaders, package_meshes, and package_textures and move all the behaviour into gcpak_editor.
+	gpcak_editor should also take arguments where it can add all assets in a directory into a gcpak file without opening a window.
