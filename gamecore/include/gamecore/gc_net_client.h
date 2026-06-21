@@ -3,6 +3,7 @@
 #include <cstdint>
 
 #include <atomic>
+#include <memory>
 #include <thread>
 #include <variant>
 #include <vector>
@@ -33,7 +34,7 @@ struct NetClientSession {
         uint64_t original_timestamp{};
         uint64_t last_send_timestamp{};
         uint32_t attempts{};
-        std::vector<uint8_t> packet_data{};
+        std::shared_ptr<std::vector<uint8_t>> packet_data{};
     };
     std::unordered_map<uint16_t, QueuedPacket> retransmit_queue{}; // indexed by sequence number
 };
@@ -43,8 +44,8 @@ class NetClient {
         uint16_t payload_type;
         std::vector<uint8_t> payload;
     };
-    struct OutboundRaw {
-        std::vector<uint8_t> packet_data;
+    struct OutboundRaw { // used only for retransmits
+        std::shared_ptr<std::vector<uint8_t>> packet_data;
     };
     using OutboundCommand = std::variant<OutboundMessage, OutboundRaw>;
     using OutboundChannel = asio::experimental::channel<asio::io_context::executor_type, void(asio::error_code, OutboundCommand)>;

@@ -5,6 +5,7 @@
 #include <asio/io_context.hpp>
 #include <asio/ip/udp.hpp>
 
+#include <memory>
 #include <mutex>
 #include <queue>
 #include <thread>
@@ -40,7 +41,7 @@ struct NetServerSession {
         uint64_t original_timestamp{};
         uint64_t last_send_timestamp{};
         uint32_t attempts{};
-        std::vector<uint8_t> packet_data{};
+        std::shared_ptr<std::vector<uint8_t>> packet_data{};
     };
     std::unordered_map<uint16_t, QueuedPacket> retransmit_queue{}; // indexed by sequence number
 };
@@ -63,7 +64,7 @@ class NetServer {
     };
     struct OutboundRaw {
         NetSessionToken session_token;
-        std::vector<uint8_t> packet_data;
+        std::shared_ptr<std::vector<uint8_t>> packet_data;
     };
     using OutboundCommand = std::variant<OutboundConnectChallenge, OutboundUnicast, OutboundRaw>;
     using OutboundChannel = asio::experimental::channel<asio::io_context::executor_type, void(asio::error_code, OutboundCommand)>;

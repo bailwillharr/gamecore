@@ -318,7 +318,7 @@ asio::awaitable<void> NetClient::sendLoop()
                                   retransmit_packet.original_timestamp = now;
                                   retransmit_packet.last_send_timestamp = now;
                                   retransmit_packet.attempts = 0;
-                                  retransmit_packet.packet_data = std::vector<uint8_t>(buffer.cbegin(), buffer.cbegin() + writer.pos());
+                                  retransmit_packet.packet_data = std::make_shared<std::vector<uint8_t>>(buffer.cbegin(), buffer.cbegin() + writer.pos());
                                   m_session.retransmit_queue.emplace(message.seq_num, std::move(retransmit_packet));
 
                                   m_session.last_send_timestamp = now;
@@ -328,7 +328,8 @@ asio::awaitable<void> NetClient::sendLoop()
                               },
                               [&](const OutboundRaw& raw) {
                                   m_session.last_send_timestamp = now;
-                                  writer.writeBytes(raw.packet_data);
+                                  GC_ASSERT(raw.packet_data);
+                                  writer.writeBytes(std::span<const uint8_t>(raw.packet_data->data(), raw.packet_data->size()));
                               }},
                    command);
 
@@ -405,6 +406,7 @@ asio::awaitable<void> NetClient::keepAliveLoop()
 
         const int64_t now = SDL_GetTicksNS();
 
+        std::vector<uint16_t> to_retransmit{};
         for (auto it = m_session.retransmit_queue.begin(); it != m_session.retransmit_queue.end();) {
             auto& [seq_num, packet] = *it;
             if (packet.attempts >= packet.MAX_ATTEMPTS || seq_diff(seq_num, m_session.next_seq_num) < -static_cast<int16_t>(m_session.ack_bits.size() * 2)) {
@@ -414,24 +416,32 @@ asio::awaitable<void> NetClient::keepAliveLoop()
             }
             else {
                 if (now - packet.last_send_timestamp > static_cast<uint64_t>(m_session.rto_calc.getRTONanoseconds())) {
-                    // retransmit
-                    packet.last_send_timestamp = now;
-                    packet.attempts += 1;
-
-                    OutboundCommand command{};
-                    auto& message = command.emplace<OutboundRaw>();
-                    message.packet_data = packet.packet_data; // Copying a vector
-
-                    GC_DEBUG("Retransmitting packet with seq_num: {}, attempt: {}", seq_num, packet.attempts);
-
-                    std::tie(ec) = co_await m_outbound_queue.async_send(asio::error_code{}, std::move(command), TOKEN);
-                    if (ec) {
-                        GC_ERROR("Outbound channel send error: {}", ec.message());
-                        continue;
-                    }
+                    to_retransmit.push_back(seq_num);
                 }
-
                 ++it;
+            }
+        }
+
+        for (const uint16_t seq_num : to_retransmit) {
+            auto it = m_session.retransmit_queue.find(seq_num);
+            if (it == m_session.retransmit_queue.end()) {
+                continue; // packet was acked by receiveLoop() during the below co_await
+            }
+            auto& packet = it->second;
+
+            // retransmit
+            packet.last_send_timestamp = now;
+            packet.attempts += 1;
+
+            OutboundCommand command{};
+            command.emplace<OutboundRaw>(packet.packet_data); // increases shared_ptr refcount
+
+            GC_DEBUG("Retransmitting packet with seq_num: {}, attempt: {}", seq_num, packet.attempts);
+
+            std::tie(ec) = co_await m_outbound_queue.async_send(asio::error_code{}, std::move(command), TOKEN);
+            if (ec) {
+                GC_ERROR("Outbound channel send error: {}", ec.message());
+                continue;
             }
         }
 

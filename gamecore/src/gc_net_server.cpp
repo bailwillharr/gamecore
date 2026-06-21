@@ -404,7 +404,7 @@ asio::awaitable<void> NetServer::sendLoop()
                                       retransmit_packet.original_timestamp = now;
                                       retransmit_packet.last_send_timestamp = now;
                                       retransmit_packet.attempts = 0;
-                                      retransmit_packet.packet_data = std::vector<uint8_t>(buffer.cbegin(), buffer.cbegin() + writer.pos());
+                                      retransmit_packet.packet_data = std::make_shared<std::vector<uint8_t>>(buffer.cbegin(), buffer.cbegin() + writer.pos());
                                       session.retransmit_queue.emplace(message.seq_num, std::move(retransmit_packet));
 
                                       session.last_send_timestamp = now;
@@ -416,12 +416,13 @@ asio::awaitable<void> NetServer::sendLoop()
                               },
                               [&](const OutboundRaw& raw) {
                                   GC_DEBUG("sendLoop() OutboundRaw");
+                                  GC_ASSERT(raw.packet_data);
                                   auto it = m_sessions.find(raw.session_token);
                                   if (it != m_sessions.end()) {
                                       NetServerSession& session = it->second;
                                       endpoint = session.endpoint;
                                       session.last_send_timestamp = now;
-                                      writer.writeBytes(raw.packet_data);
+                                      writer.writeBytes(std::span<const uint8_t>(raw.packet_data->data(), raw.packet_data->size()));
                                   }
                               }},
                    command);
@@ -522,6 +523,11 @@ asio::awaitable<void> NetServer::keepAliveLoop()
 
         const int64_t now = SDL_GetTicksNS();
 
+        struct RetransmitWork {
+            NetSessionToken token{};
+            uint16_t seq_num{};
+        };
+        std::vector<RetransmitWork> retransmit_work{};
         for (auto& [_, session] : m_sessions) {
             for (auto it = session.retransmit_queue.begin(); it != session.retransmit_queue.end();) {
                 auto& [seq_num, packet] = *it;
@@ -532,27 +538,41 @@ asio::awaitable<void> NetServer::keepAliveLoop()
                 }
                 else {
                     if (now - packet.last_send_timestamp > static_cast<uint64_t>(session.rto_calc.getRTONanoseconds())) {
-                        // retransmit
-                        packet.last_send_timestamp = now;
-                        packet.attempts += 1;
-
-                        OutboundCommand command{};
-                        auto& message = command.emplace<OutboundRaw>();
-                        message.session_token = session.session_token;
-                        message.packet_data = packet.packet_data; // Copying a vector
-
-                        GC_DEBUG("Retransmitting packet with seq_num: {}, attempt: {}, rto: {} ms", seq_num, packet.attempts,
-                                 session.rto_calc.getRTONanoseconds() * 1.0e-6);
-
-                        std::tie(ec) = co_await m_outbound_queue.async_send(asio::error_code{}, std::move(command), TOKEN);
-                        if (ec) {
-                            GC_ERROR("Outbound channel send error: {}", ec.message());
-                            continue;
-                        }
+                        retransmit_work.emplace_back(session.session_token, seq_num);
                     }
-
                     ++it;
                 }
+            }
+        }
+
+        // Retransmit after collecting in case session OR retransmit_queue was invalidated across co_await.
+        for (const auto& [token, seq_num] : retransmit_work) {
+            auto session_it = m_sessions.find(token);
+            GC_ASSERT(session_it != m_sessions.end()); // sessions are only removed in this coroutine later on.
+            auto& session = session_it->second;
+
+            auto queue_it = session.retransmit_queue.find(seq_num);
+            if (queue_it == session.retransmit_queue.end()) {
+                continue; // packet was acked during the below co_await
+            }
+            auto& packet = queue_it->second;
+
+            // retransmit
+            packet.last_send_timestamp = now;
+            packet.attempts += 1;
+
+            OutboundCommand command{};
+            auto& message = command.emplace<OutboundRaw>();
+            message.session_token = token;
+            message.packet_data = packet.packet_data; // increases shared_ptr refcount
+
+            GC_DEBUG("Retransmitting packet with seq_num: {}, attempt: {}, rto: {} ms", seq_num, packet.attempts,
+                     session.rto_calc.getRTONanoseconds() * 1.0e-6);
+
+            std::tie(ec) = co_await m_outbound_queue.async_send(asio::error_code{}, std::move(command), TOKEN);
+            if (ec) {
+                GC_ERROR("Outbound channel send error: {}", ec.message());
+                continue;
             }
         }
 
