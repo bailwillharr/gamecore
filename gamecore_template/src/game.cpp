@@ -131,39 +131,38 @@ public:
     {
         if (m_net.getMode() == gc::NetMode::DISCONNECTED) return;
 
-        m_world.forEach<gc::TransformComponent, ReplicatablePlayerComponent>(
-            [&](gc::Entity, const gc::TransformComponent& t, ReplicatablePlayerComponent& p) {
-                const uint32_t name = t.name.getHash();
-                const glm::vec3 pos = t.getPosition();
-                const float yaw = extractYaw(t.getRotation());
+        m_world.forEach<gc::TransformComponent, ReplicatablePlayerComponent>([&](gc::Entity, const gc::TransformComponent& t, ReplicatablePlayerComponent& p) {
+            const uint32_t name = t.name.getHash();
+            const glm::vec3 pos = t.getPosition();
+            const float yaw = extractYaw(t.getRotation());
 
-                constexpr float MIN_DISTANCE_CHANGE = 0.05f; // meters
-                constexpr float MIN_YAW_CHANGE = 0.01f;      // radians
+            constexpr float MIN_DISTANCE_CHANGE = 0.05f; // meters
+            constexpr float MIN_YAW_CHANGE = 0.01f;      // radians
 
-                if (glm::distance(p.old_pos, pos) > MIN_DISTANCE_CHANGE || fabsf(p.old_yaw - yaw) > MIN_YAW_CHANGE) {
-                    gc::NetEvent ev{};
-                    ev.type = gc::Name("player_snapshot");
-                    ev.data.resize(sizeof(uint32_t)   // player_name
-                                   + sizeof(uint16_t) // seq_num
-                                   + sizeof(float)    // pos_x
-                                   + sizeof(float)    // pos_y
-                                   + sizeof(float)    // pos_z
-                                   + sizeof(float));  // yaw
-                    gc::ByteWriter writer(ev.data);
-                    writer.writeU32(name);
-                    writer.writeU16(p.seq_num);
-                    writer.writeF32(pos.x);
-                    writer.writeF32(pos.y);
-                    writer.writeF32(pos.z);
-                    writer.writeF32(yaw);
+            if (glm::distance(p.old_pos, pos) > MIN_DISTANCE_CHANGE || fabsf(p.old_yaw - yaw) > MIN_YAW_CHANGE) {
+                gc::NetEvent ev{};
+                ev.type = gc::Name("player_snapshot");
+                ev.data.resize(sizeof(uint32_t)   // player_name
+                               + sizeof(uint16_t) // seq_num
+                               + sizeof(float)    // pos_x
+                               + sizeof(float)    // pos_y
+                               + sizeof(float)    // pos_z
+                               + sizeof(float));  // yaw
+                gc::ByteWriter writer(ev.data);
+                writer.writeU32(name);
+                writer.writeU16(p.seq_num);
+                writer.writeF32(pos.x);
+                writer.writeF32(pos.y);
+                writer.writeF32(pos.z);
+                writer.writeF32(yaw);
 
-                    m_net.postEvent(ev);
-                    ++p.seq_num;
+                m_net.postEvent(ev);
+                ++p.seq_num;
 
-                    p.old_pos = pos;
-                    p.old_yaw = yaw;
-                }
-            });
+                p.old_pos = pos;
+                p.old_yaw = yaw;
+            }
+        });
     }
 };
 
@@ -363,11 +362,7 @@ void buildAndStartGame(gc::App& app, Options options)
     }
     else {
         // On Windows/NVIDIA, TRIPLE_BUFFERED gives horrible latency and TRIPLE_BUFFERED_UNTHROTTLED doesn't work properly so use double buffering instead
-#ifdef WIN32
         app.renderBackend().setSyncMode(gc::RenderSyncMode::VSYNC_ON_DOUBLE_BUFFERED);
-#else
-        app.renderBackend().setSyncMode(gc::RenderSyncMode::VSYNC_ON_TRIPLE_BUFFERED_UNTHROTTLED);
-#endif
     }
 
     app.window().setTitle("Hello world!");
