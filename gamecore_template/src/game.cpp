@@ -39,13 +39,15 @@
 #include "mouse_move.h"
 #include "spin.h"
 
+using namespace gc::literals;
+
 static gc::Entity createRemotePlayer(gc::World& world, gc::Name name)
 {
     constexpr float CAMERA_HEIGHT = 67.5f * 25.4e-3f;
     const auto player = world.createEntity(name, gc::ENTITY_NONE);
-    const auto player_model = world.createEntity(gc::Name("player_model"), player, {0.0f, 0.0f, -CAMERA_HEIGHT});
+    const auto player_model = world.createEntity("player_model"_name, player, {0.0f, 0.0f, -CAMERA_HEIGHT});
     world.getComponent<gc::TransformComponent>(player_model)->setScale(0.360f);
-    world.addComponent<gc::RenderableComponent>(player_model).setMaterial(gc::Name()).setMesh(gc::Name("shrek.obj"));
+    world.addComponent<gc::RenderableComponent>(player_model).setMaterial(gc::Name{}).setMesh("shrek.obj"_name);
     return player;
 }
 
@@ -86,7 +88,7 @@ public:
     void onUpdate([[maybe_unused]] gc::FrameState& frame_state) override
     {
         for (const auto& net_ev : frame_state.net_events) {
-            if (net_ev.type == gc::Name("player_snapshot")) {
+            if (net_ev.type == "player_snapshot"_name) {
                 gc::ByteReader reader(net_ev.data);
                 const gc::Name player_name(reader.readU32());
                 const uint16_t seq_num = reader.readU16();
@@ -141,7 +143,7 @@ public:
 
             if (glm::distance(p.old_pos, pos) > MIN_DISTANCE_CHANGE || fabsf(p.old_yaw - yaw) > MIN_YAW_CHANGE) {
                 gc::NetEvent ev{};
-                ev.type = gc::Name("player_snapshot");
+                ev.type = "player_snapshot"_name;
                 ev.data.resize(sizeof(uint32_t)   // player_name
                                + sizeof(uint16_t) // seq_num
                                + sizeof(float)    // pos_x
@@ -192,8 +194,8 @@ public:
             gc::Content& content = app.content();
             gc::World& world = app.world();
             {
-                auto vert = content.findAsset(gc::Name("pbr_single_draw.vert"));
-                auto frag = content.findAsset(gc::Name("pbr.frag"));
+                auto vert = content.findAsset("pbr_single_draw.vert"_name);
+                auto frag = content.findAsset("pbr.frag"_name);
                 if (vert.data.empty() || vert.type != gcpak::GcpakAssetType::SPIRV_SHADER || frag.data.empty() ||
                     frag.type != gcpak::GcpakAssetType::SPIRV_SHADER) {
                     gc::abortGame("Failed to find shaders");
@@ -202,8 +204,8 @@ public:
                 render_backend.createMainPipeline(vert.data, frag.data);
             }
             {
-                auto vert = content.findAsset(gc::Name("pbr_instanced.vert"));
-                auto frag = content.findAsset(gc::Name("pbr.frag"));
+                auto vert = content.findAsset("pbr_instanced.vert"_name);
+                auto frag = content.findAsset("pbr.frag"_name);
                 if (vert.data.empty() || vert.type != gcpak::GcpakAssetType::SPIRV_SHADER || frag.data.empty() ||
                     frag.type != gcpak::GcpakAssetType::SPIRV_SHADER) {
                     gc::abortGame("Failed to find shaders");
@@ -242,101 +244,100 @@ public:
 
             {
                 // light
-                auto light = world.createEntity(gc::Name("light"), gc::ENTITY_NONE, {0.0f, 0.0f, 3.0f});
+                auto light = world.createEntity("light"_name, gc::ENTITY_NONE, {0.0f, 0.0f, 3.0f});
                 world.addComponent<gc::LightComponent>(light);
             }
 
             {
                 gc::ResourceMaterial material{};
-                material.base_color_texture = gc::Name("bricks-mortar-albedo.png");
-                material.orm_texture = gc::Name("bricks-mortar-orm.png");
-                material.normal_texture = gc::Name("bricks-mortar-normal.png");
-                resource_manager.add<gc::ResourceMaterial>(std::move(material), gc::Name("bricks-mortar"));
+                material.base_color_texture = "bricks-mortar-albedo.png"_name;
+                material.orm_texture = "bricks-mortar-orm.png"_name;
+                material.normal_texture = "bricks-mortar-normal.png"_name;
+                resource_manager.add<gc::ResourceMaterial>(std::move(material), "bricks-mortar"_name);
             }
             {
                 gc::ResourceMaterial material{};
-                material.base_color_texture = gc::Name("laminate-flooring-brown_albedo.png");
-                material.orm_texture = gc::Name("laminate-flooring-brown_orm.png");
-                material.normal_texture = gc::Name("laminate-flooring-brown_normal.png");
-                resource_manager.add<gc::ResourceMaterial>(std::move(material), gc::Name("laminate-flooring-brown"));
+                material.base_color_texture = "laminate-flooring-brown_albedo.png"_name;
+                material.orm_texture = "laminate-flooring-brown_orm.png"_name;
+                material.normal_texture = "laminate-flooring-brown_normal.png"_name;
+                resource_manager.add<gc::ResourceMaterial>(std::move(material), "laminate-flooring-brown"_name);
             }
             {
                 gc::ResourceMaterial material{};
-                material.base_color_texture = gc::Name("uvcheck.png");
-                resource_manager.add<gc::ResourceMaterial>(std::move(material), gc::Name("testmat"));
+                material.base_color_texture = "uvcheck.png"_name;
+                resource_manager.add<gc::ResourceMaterial>(std::move(material), "testmat"_name);
             }
             {
-                resource_manager.add<gc::ResourceMesh>(gc::genPlaneMesh(100.0f, 100.0f), gc::Name("floor"));
-                resource_manager.add<gc::ResourceMesh>(gc::genPlaneMesh(10.0f, 4.0f), gc::Name("wall1"));
-                resource_manager.add<gc::ResourceMesh>(gc::genSphereMesh(50), gc::Name("ball"));
+                resource_manager.add<gc::ResourceMesh>(gc::genPlaneMesh(100.0f, 100.0f), "floor"_name);
+                resource_manager.add<gc::ResourceMesh>(gc::genPlaneMesh(10.0f, 4.0f), "wall1"_name);
+                resource_manager.add<gc::ResourceMesh>(gc::genSphereMesh(50), "ball"_name);
             }
 
             // add a floor
             {
-                const auto floor = world.createEntity(gc::Name("floor"));
+                const auto floor = world.createEntity("floor"_name);
                 world.getComponent<gc::TransformComponent>(floor)->setScale({100.0f, 100.0f, 1.0f});
-                world.addComponent<gc::RenderableComponent>(floor).setMesh(gc::Name("floor")).setMaterial(gc::Name("laminate-flooring-brown"));
+                world.addComponent<gc::RenderableComponent>(floor).setMesh("floor"_name).setMaterial("laminate-flooring-brown"_name);
             }
 
             // wall1
             {
-                const auto wall1 = world.createEntity(gc::Name("wall1"));
+                const auto wall1 = world.createEntity("wall1"_name);
                 world.getComponent<gc::TransformComponent>(wall1)->setPosition({-5.0f, 0.0f, 2.0f});
                 world.getComponent<gc::TransformComponent>(wall1)->setScale({10.0f, 4.0f, 1.0f});
                 world.getComponent<gc::TransformComponent>(wall1)->setRotation(glm::quat(0.5f, 0.5f, 0.5f, 0.5f));
-                world.addComponent<gc::RenderableComponent>(wall1).setMaterial(gc::Name("bricks-mortar")).setMesh(gc::Name("wall1"));
+                world.addComponent<gc::RenderableComponent>(wall1).setMaterial("bricks-mortar"_name).setMesh("wall1"_name);
             }
 
             // wall2
             {
-                const auto wall2 = world.createEntity(gc::Name("wall2"));
+                const auto wall2 = world.createEntity("wall2"_name);
                 world.getComponent<gc::TransformComponent>(wall2)->setPosition({5.0f, 0.0f, 2.0f});
                 world.getComponent<gc::TransformComponent>(wall2)->setScale({10.0f, 4.0f, 1.0f});
                 world.getComponent<gc::TransformComponent>(wall2)->setRotation(glm::quat(0.5f, 0.5f, -0.5f, -0.5f));
-                world.addComponent<gc::RenderableComponent>(wall2).setMaterial(gc::Name("bricks-mortar")).setMesh(gc::Name("wall1"));
+                world.addComponent<gc::RenderableComponent>(wall2).setMaterial("bricks-mortar"_name).setMesh("wall1"_name);
             }
 
             // wall3
             {
-                const auto wall3 = world.createEntity(gc::Name("wall3"));
+                const auto wall3 = world.createEntity("wall3"_name);
                 world.getComponent<gc::TransformComponent>(wall3)->setPosition({0.0f, -5.0f, 2.0f});
                 world.getComponent<gc::TransformComponent>(wall3)->setScale({10.0f, 4.0f, 1.0f});
                 world.getComponent<gc::TransformComponent>(wall3)->setRotation(
                     glm::quat(0.0f, 0.0f, -glm::one_over_root_two<float>(), -glm::one_over_root_two<float>()));
-                world.addComponent<gc::RenderableComponent>(wall3).setMaterial(gc::Name("bricks-mortar")).setMesh(gc::Name("wall1"));
+                world.addComponent<gc::RenderableComponent>(wall3).setMaterial("bricks-mortar"_name).setMesh("wall1"_name);
             }
 
             // wall4
             {
-                const auto wall4 = world.createEntity(gc::Name("wall4"));
+                const auto wall4 = world.createEntity("wall4"_name);
                 world.getComponent<gc::TransformComponent>(wall4)->setPosition({-5.0f, 0.0f, 2.0f});
                 world.getComponent<gc::TransformComponent>(wall4)->setScale({10.0f, 4.0f, 1.0f});
                 world.getComponent<gc::TransformComponent>(wall4)->setRotation(glm::quat(0.5f, 0.5f, -0.5f, -0.5f));
-                world.addComponent<gc::RenderableComponent>(wall4).setMaterial(gc::Name("bricks-mortar")).setMesh(gc::Name("wall1"));
+                world.addComponent<gc::RenderableComponent>(wall4).setMaterial("bricks-mortar"_name).setMesh("wall1"_name);
             }
 
             // wall5
             {
-                const auto wall5 = world.createEntity(gc::Name("wall5"));
+                const auto wall5 = world.createEntity("wall5"_name);
                 world.getComponent<gc::TransformComponent>(wall5)->setPosition({5.0f, 0.0f, 2.0f});
                 world.getComponent<gc::TransformComponent>(wall5)->setScale({10.0f, 4.0f, 1.0f});
                 world.getComponent<gc::TransformComponent>(wall5)->setRotation(glm::quat(0.5f, 0.5f, 0.5f, 0.5f));
-                world.addComponent<gc::RenderableComponent>(wall5).setMaterial(gc::Name("bricks-mortar")).setMesh(gc::Name("wall1"));
+                world.addComponent<gc::RenderableComponent>(wall5).setMaterial("bricks-mortar"_name).setMesh("wall1"_name);
             }
 
             // wall6
             {
-                const auto wall6 = world.createEntity(gc::Name("wall6"));
+                const auto wall6 = world.createEntity("wall6"_name);
                 world.getComponent<gc::TransformComponent>(wall6)->setPosition({0.0f, -5.0f, 2.0f});
                 world.getComponent<gc::TransformComponent>(wall6)->setScale({10.0f, 4.0f, 1.0f});
                 world.getComponent<gc::TransformComponent>(wall6)->setRotation(
                     glm::quat(-glm::one_over_root_two<float>(), -glm::one_over_root_two<float>(), 0.0f, 0.0f));
-                world.addComponent<gc::RenderableComponent>(wall6).setMaterial(gc::Name("bricks-mortar")).setMesh(gc::Name("wall1"));
+                world.addComponent<gc::RenderableComponent>(wall6).setMaterial("bricks-mortar"_name).setMesh("wall1"_name);
             }
 
             // roof
             {
-                using namespace gc::literals;
                 const auto roof = world.createEntity("roof"_name);
                 world.getComponent<gc::TransformComponent>(roof)->setPosition(0, 0, 4).setRotation(0, -1, 0, 0).setScale(10, 10, 1);
                 world.addComponent<gc::RenderableComponent>(roof).setMesh("floor"_name);
@@ -344,7 +345,6 @@ public:
 
             // ball
             {
-                using namespace gc::literals;
                 const auto ball = world.createEntity("ball"_name);
                 world.getComponent<gc::TransformComponent>(ball)->setPosition(20, 0, 2.5f).setScale(2.0f);
                 world.addComponent<gc::RenderableComponent>(ball).setMesh("ball"_name).setMaterial("testmat"_name);
