@@ -50,7 +50,6 @@ set(INCLUDE_FILES
   "include/gamecore/gc_app.h"
   "include/gamecore/gc_assert.h"
   "include/gamecore/gc_jobs.h"
-  "include/gamecore/gc_ring_buffer.h"
   "include/gamecore/gc_content.h"
   "include/gamecore/gc_abort.h"
   "include/gamecore/gc_crc_table.h"

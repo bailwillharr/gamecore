@@ -7,7 +7,7 @@
 #include <mutex>
 #include <condition_variable>
 
-#include "gamecore/gc_ring_buffer.h"
+#include <gctemplates/gct_ring_buffer.h>
 
 /* multithreaded job system */
 
@@ -25,7 +25,7 @@ struct JobDispatchArgs {
 
 class Jobs {
     const unsigned int m_num_threads;
-    RingBuffer<std::function<void()>, 256> m_ring_buffer;
+    gct::RingBuffer<std::function<void()>, 256> m_ring_buffer;
     std::mutex m_ring_buffer_mutex;
     std::condition_variable m_wake_condition;
     std::mutex m_wake_condition_mutex;
