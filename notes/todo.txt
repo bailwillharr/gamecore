@@ -1,6 +1,7 @@
 Replace mutable FrameState with immutable FrameInput, Mutable FrameOutput. Split systems between 'simulation' and 'presentation'.
 	Simulation systems cannot modify FrameOutput, they only receive FrameInput as const ref parameter.
 	Presentation systems receive FrameInput const ref, but also receive FrameOutput as a mutable ref parameter.
+Allow for System onUpdate()'s to be run in parallel if they don't modify the same thing, or depend on each other.
 
 
 
