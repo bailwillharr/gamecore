@@ -25,6 +25,8 @@ endif()
 
 set(CMAKE_EXPORT_COMPILE_COMMANDS ON)
 
+find_package(Python3 COMPONENTS Interpreter)
+
 # download CPM.cmake
 file(
   DOWNLOAD
@@ -278,12 +280,12 @@ add_subdirectory(tools/compile_shaders)
 add_subdirectory(tools/package_textures)
 add_subdirectory(tools/package_meshes)
 
-if (UNIX)
+if(Python3_FOUND)
     add_custom_target(
         GamecoreGenerateNameStrings ALL
-        COMMAND scripts/extract_constexpr_names.sh > content/name_strings.txt
+        COMMAND Python3::Interpreter ${CMAKE_SOURCE_DIR}/scripts/extract_constexpr_names.py ${CMAKE_SOURCE_DIR} ${CMAKE_SOURCE_DIR}/content/name_strings.txt
         WORKING_DIRECTORY ${CMAKE_SOURCE_DIR}
-        DEPENDS scripts/extract_constexpr_names.sh
+        DEPENDS ${CMAKE_SOURCE_DIR}/scripts/extract_constexpr_names.py
         COMMENT "Generating name_strings.txt from constexpr names"
         VERBATIM
     )
