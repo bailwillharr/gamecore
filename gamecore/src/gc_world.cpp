@@ -77,15 +77,15 @@ void World::deleteEntity(const Entity entity)
 
 Entity World::findEntity(const Name name)
 {
-    // TODO: this is very unoptimised. It doesn't even early-return once found.
+    // TODO: this is still a linear search.
     // Perhaps cache name->entity mappings
-    Entity found_entity{ENTITY_NONE};
-    forEach<TransformComponent>([&](Entity e, const TransformComponent& t) {
-        if (t.name == name) {
-            found_entity = e;
+    for (Entity entity = 0; entity <= m_max_alive_entity_id && entity < m_entity_signatures.size(); ++entity) {
+        // erased entities have an empty signature so getComponent() returns nullptr for them.
+        if (const TransformComponent* t = getComponent<TransformComponent>(entity); t && t->name == name) {
+            return entity;
         }
-    });
-    return found_entity;
+    }
+    return ENTITY_NONE;
 }
 
 void World::update(FrameState& frame_state)
