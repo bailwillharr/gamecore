@@ -69,7 +69,7 @@ App::App(const AppInitOptions& options)
 #ifdef GC_LOG_FILE_CWD
     gclog::Logger::instance().setLogFile(m_application_directory / "logfile.txt");
 #else
-    Logger::instance().setLogFile(m_save_directory / "logfile.txt");
+    gclog::Logger::instance().setLogFile(m_save_directory / "logfile.txt");
 #endif
 
     GC_INFO("STARTING GAME");
@@ -211,7 +211,7 @@ void App::run()
         const uint64_t last_frame_time_ns = frame_start_stamp_ns - last_frame_start_stamp_ns;
         last_frame_start_stamp_ns = frame_start_stamp_ns;
 
-        if (m_window && m_window->shouldQuit()) {
+        if (m_quit_requested || (m_window && m_window->shouldQuit())) {
             break;
         }
 
@@ -246,12 +246,11 @@ void App::run()
             NetEvent net_ev{};
             frame_state.net_events.clear();
             while (m_net->pollEvents(net_ev)) {
-                switch (net_ev.type.getHash()) {
-                case Name::createConstexpr("shutdown").getHash():
-                    m_window->pushQuitEvent();
-                    break;
-                default:
-                    frame_state.net_events.push_back(net_ev);
+                if (net_ev.kind == NetEventKind::MESSAGE && net_ev.type == Name::createConstexpr("shutdown")) {
+                    requestQuit();
+                }
+                else {
+                    frame_state.net_events.push_back(std::move(net_ev));
                 }
             }
         }
@@ -264,7 +263,7 @@ void App::run()
 
         if (m_debug_ui) {
             m_debug_ui->update(frame_state);
-            renderNetUI(*m_net);
+            renderNetUI(*m_net, m_debug_ui->active);
             m_debug_ui->render();
         }
 
@@ -291,5 +290,7 @@ void App::run()
 
     GC_TRACE("Quitting...");
 }
+
+void App::requestQuit() { m_quit_requested = true; }
 
 } // namespace gc

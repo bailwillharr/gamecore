@@ -1,0 +1,29 @@
+Tests the gamecore networking transport between separate processes.
+
+Run with no arguments to run every scenario. For each one, a server process and two client processes are started on localhost and
+the clients exchange reliable and unreliable messages with the server over a simulated link (packet loss, duplication, latency and
+jitter). The exit code is zero if every scenario passed.
+
+    net_test
+
+The server and client can also be run by hand, for example to test between two machines:
+
+    net_test server --host 0.0.0.0 --port 46960 --clients 1
+    net_test client --host 192.168.1.10 --port 46960 --loss 20 --duplicate 5 --latency 40 --jitter 30
+
+Options:
+    --host ADDRESS      address to listen on (server) or connect to (client). Default 127.0.0.1
+    --port PORT         default 46960
+    --clients N         server only: exit after this many clients have finished. Default 1
+    --messages N        client only: number of reliable (and unreliable) messages to send. Default 300
+    --timeout SECONDS   give up after this long. Default 90
+    --strict            client only: fail if any unreliable message was lost (only makes sense without the simulator)
+    --expect-no-server  client only: pass if the connection attempt fails cleanly
+    --shutdown-server   client only: send the "shutdown" event instead of test messages and pass if the server then reports
+                        that it is shutting down. Also works against dedicated_server
+    --loss PERCENT      link simulator: chance of dropping a packet
+    --duplicate PERCENT link simulator: chance of duplicating a packet
+    --latency MS        link simulator: delay added to every packet
+    --jitter MS         link simulator: random variation of the delay
+
+The link simulator affects every packet the process sends and receives.

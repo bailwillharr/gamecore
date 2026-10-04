@@ -2,14 +2,40 @@ cmake_minimum_required(VERSION 3.25)
 
 project(gamecore_template LANGUAGES CXX VERSION 0.1.0)
 
-set(SRC_FILES
-  "src/main.cpp"
+# The game itself is a library so that the dedicated server can run it too
+set(GAME_SRC_FILES
   "src/game.h"
   "src/game.cpp"
+  "src/arena.h"
+  "src/arena.cpp"
+  "src/bot.h"
+  "src/bot.cpp"
+  "src/hud.h"
+  "src/hud.cpp"
   "src/spin.h"
   "src/spin.cpp"
   "src/mouse_move.h"
   "src/mouse_move.cpp"
+)
+
+add_library(${PROJECT_NAME}_game STATIC ${GAME_SRC_FILES})
+target_include_directories(${PROJECT_NAME}_game PUBLIC src)
+target_link_libraries(${PROJECT_NAME}_game PUBLIC gamecore)
+target_compile_features(${PROJECT_NAME}_game PUBLIC cxx_std_20)
+set_target_properties(${PROJECT_NAME}_game PROPERTIES
+  CXX_STANDARD 20
+  CXX_STANDARD_REQUIRED YES
+  CXX_EXTENSIONS NO
+)
+if(MSVC)
+    target_compile_options(${PROJECT_NAME}_game PRIVATE /W4 /WX)
+endif()
+if(WIN32)
+    target_compile_definitions(${PROJECT_NAME}_game PRIVATE NOMINMAX)
+endif()
+
+set(SRC_FILES
+  "src/main.cpp"
 )
 
 if(WIN32)
@@ -44,7 +70,7 @@ set_target_properties(${PROJECT_NAME} PROPERTIES
   CXX_EXTENSIONS NO
 )
 
-target_link_libraries(${PROJECT_NAME} PRIVATE gamecore)
+target_link_libraries(${PROJECT_NAME} PRIVATE ${PROJECT_NAME}_game)
 
 if(WIN32)
     add_custom_command(

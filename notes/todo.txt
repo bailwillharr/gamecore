@@ -61,9 +61,23 @@ gc::World needs some serious optimisation:
 
 
 
-Improve and optimise networking:
-	There is currently a lot of duplicated code in the NetServer and NetClient, this should be factored out into
-	net_common.h/cpp as much as possible.
+Networking:
+	Packets are authenticated by a secret session token but are not encrypted or signed, so an attacker that can read the
+	traffic between a client and the server can hijack or close the session. Fixing this needs a crypto library (e.g. monocypher
+	for a key exchange + AEAD).
+	Handle a client's address changing mid-session (NAT rebind). Currently packets from the new address are ignored and the
+	session times out.
+	Any host can make the other one quit by sending a "shutdown" event (see App::run()). That's handy for testing but shouldn't
+	stay in the engine.
+
+
+Replication (see replication.txt):
+	The server believes whatever a client says about the transform of the entities it owns. Check it (speed, bounds).
+	Client side prediction, for games where the server should move the players.
+	Lag compensation for hit detection.
+	Interest management, so that clients are only sent the entities near them.
+	Replicated entities can't be children of other replicated entities.
+	Serialising every replicated component every tick to detect changes is simple but won't scale to thousands of entities.
 
 
 

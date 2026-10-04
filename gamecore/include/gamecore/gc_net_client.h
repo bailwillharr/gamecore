@@ -3,84 +3,99 @@
 #include <cstdint>
 
 #include <atomic>
-#include <memory>
+#include <mutex>
+#include <optional>
+#include <span>
 #include <thread>
-#include <variant>
 #include <vector>
 
 #include <asio/awaitable.hpp>
-#include <asio/experimental/channel.hpp>
 #include <asio/io_context.hpp>
 #include <asio/ip/udp.hpp>
 
 #include "gamecore/gc_net_common.h"
-#include "gamecore/gc_net_rto.h"
+#include "gamecore/gc_net_connection.h"
+#include "gamecore/gc_net_socket.h"
 
 namespace gc {
 
 enum class NetClientConnectionStatus { DISCONNECTED, CONNECTING, CONNECTED };
 
-struct NetClientSession {
-    NetSessionToken session_token{0};
-    uint64_t last_receive_timestamp{0ULL};
-    uint64_t last_send_timestamp{0ULL};
-    uint16_t next_seq_num{0};          // post-incremented when sending
-    uint16_t last_ack_num{UINT16_MAX}; // the highest received sequence number. init to 65535
-    std::bitset<32> ack_bits{~0U};     // which of the last 32 server-side sequence numbers have been received. init to all 1s
-    RetransmitTimeoutCalculator rto_calc{};
-
-    struct QueuedPacket {
-        static constexpr uint32_t MAX_ATTEMPTS = 4;
-        uint64_t original_timestamp{};
-        uint64_t last_send_timestamp{};
-        uint32_t attempts{};
-        std::shared_ptr<std::vector<uint8_t>> packet_data{};
-    };
-    std::unordered_map<uint16_t, QueuedPacket> retransmit_queue{}; // indexed by sequence number
-};
-
+// A NetClient can only connect once. Create a new one to connect again.
 class NetClient {
-    struct OutboundMessage {
-        uint16_t payload_type;
-        std::vector<uint8_t> payload;
+    enum class Phase {
+        REQUEST,   // sending connect requests, waiting for a challenge
+        RESPONSE,  // sending challenge responses, waiting to be accepted
+        CONNECTED, // exchanging data
+        CLOSED,
     };
-    struct OutboundRaw { // used only for retransmits
-        std::shared_ptr<std::vector<uint8_t>> packet_data;
+
+    // state that the main thread reads
+    struct SharedState {
+        mutable std::mutex mutex{};
+        NetConnectionStats stats{};
     };
-    using OutboundCommand = std::variant<OutboundMessage, OutboundRaw>;
-    using OutboundChannel = asio::experimental::channel<asio::io_context::executor_type, void(asio::error_code, OutboundCommand)>;
 
-    static constexpr size_t OUTBOUND_QUEUE_MAX_SIZE = 1024;
-
-    asio::ip::udp::endpoint m_server_endpoint{}; // only accessed by main thread
+    SharedState m_shared{};
+    std::atomic<NetClientConnectionStatus> m_status{NetClientConnectionStatus::DISCONNECTED};
+    std::atomic<NetPeerId> m_local_peer_id{NET_PEER_NONE};
+    NetEventQueue m_event_queue{};
+    asio::ip::udp::endpoint m_server_endpoint{}; // not modified once the client thread has started
 
     asio::io_context m_context{};
-    NetEventQueue m_event_queue{};
-    OutboundChannel m_outbound_queue{m_context.get_executor(), OUTBOUND_QUEUE_MAX_SIZE};
-    std::atomic<NetClientConnectionStatus> m_state{};
-
+    NetSocket m_socket{m_context};
     std::jthread m_client_thread{};
-    asio::ip::udp::socket m_socket{m_context}; // only accessed by client thread
-    NetClientSession m_session{};              // only accessed by client thread
+    bool m_started{false}; // only accessed by main thread
+
+    // All these members are only accessed by the client thread
+    Phase m_phase{Phase::REQUEST};
+    uint64_t m_client_nonce{};
+    NetSessionToken m_session_token{0};
+    NetClock::time_point m_connect_start_time{};
+    NetClock::time_point m_last_handshake_send_time{};
+    std::optional<NetConnection> m_connection{};
+    bool m_flush_scheduled{false};
+    std::vector<std::vector<uint8_t>> m_received_messages{}; // scratch buffer
 
 public:
+    NetClient() = default;
+    NetClient(const NetClient&) = delete;
+
     ~NetClient();
 
+    NetClient& operator=(const NetClient&) = delete;
+
+    // Returns false on failure. Otherwise the connection is established in the background, see getConnectionStatus().
     bool connect(const asio::ip::udp::endpoint& endpoint);
+
+    // Tells the server that the client is leaving
     void disconnect();
+
     bool poll(NetEvent& ev);
     NetClientConnectionStatus getConnectionStatus() const;
     asio::ip::udp::endpoint getServerEndpoint() const;
 
-    void sendMessage(uint16_t payload_type, std::vector<uint8_t> payload);
+    // The ID the server assigned to this client. NET_PEER_NONE until connected.
+    NetPeerId getLocalPeerId() const;
+
+    NetConnectionStats getStats() const;
+
+    // Messages sent before the connection is established are discarded
+    void sendMessage(std::vector<uint8_t> message, NetDelivery delivery);
+
+    void setSimConfig(const NetSimConfig& config);
 
 private:
-    // Can be called on the main thread
-    void pushToOutboundQueue(OutboundCommand command);
+    asio::awaitable<void> tickLoop();
 
-    asio::awaitable<void> sendLoop();
-    asio::awaitable<void> receiveLoop();
-    asio::awaitable<void> keepAliveLoop();
+    void onPacket(std::span<const uint8_t> packet, const asio::ip::udp::endpoint& sender);
+    void sendConnectRequest();
+    void sendConnectChallengeResponse();
+    void sendDisconnect(NetDisconnectReason reason);
+    void flush(NetClock::time_point now);
+    void scheduleFlush();
+    void tick();
+    void close(NetDisconnectReason reason, bool notify_server);
 };
 
 } // namespace gc

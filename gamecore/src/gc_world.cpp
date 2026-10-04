@@ -52,7 +52,9 @@ void World::deleteEntity(const Entity entity)
     auto& transform_system = getSystem<TransformSystem>();
 
     // delete children:
-    auto children = transform_system.getChildren(entity);
+    // (a copy, as deleting a child removes it from the list that getChildren() refers to)
+    const auto children_span = transform_system.getChildren(entity);
+    const std::vector<Entity> children(children_span.begin(), children_span.end());
     for (Entity child : children) {
         deleteEntity(child);
     }

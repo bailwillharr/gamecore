@@ -52,6 +52,8 @@ class App {
     std::filesystem::path m_save_directory{};
     std::filesystem::path m_application_directory{};
 
+    bool m_quit_requested{false};
+
 private:
     /* application lifetime is controlled by static variable 'instance' in instance() static method */
     explicit App(const AppInitOptions& options);
@@ -82,6 +84,9 @@ public:
     static App& instance();
 
     void run();
+
+    // Makes run() return at the start of the next frame. Works with or without a window.
+    void requestQuit();
 
     const auto& getSaveDirectory() const { return m_save_directory; }
 };

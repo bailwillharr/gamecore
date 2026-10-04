@@ -4,6 +4,7 @@ namespace gc {
 
 class Net; // forward-dec
 
-void renderNetUI(Net& net);
+// Call every frame. The window is only drawn if show is true, but the graphs keep recording either way.
+void renderNetUI(Net& net, bool show);
 
 } // namespace gc

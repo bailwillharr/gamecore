@@ -1,115 +1,113 @@
 #pragma once
 
+#include <cstdint>
+
+#include <array>
+#include <atomic>
+#include <mutex>
+#include <span>
+#include <thread>
+#include <unordered_map>
+#include <vector>
+
 #include <asio/awaitable.hpp>
-#include <asio/experimental/channel.hpp>
 #include <asio/io_context.hpp>
 #include <asio/ip/udp.hpp>
 
-#include <memory>
-#include <mutex>
-#include <queue>
-#include <thread>
-#include <unordered_map>
-#include <unordered_set>
-#include <variant>
-
-#include <gctemplates/gct_static_vector.h>
-
 #include "gamecore/gc_net_common.h"
-#include "gamecore/gc_net_rto.h"
+#include "gamecore/gc_net_connection.h"
+#include "gamecore/gc_net_socket.h"
 
 namespace gc {
 
-struct NetServerStatus {
-    mutable std::mutex mutex{};
-    asio::ip::udp::endpoint local_endpoint{};
-    bool running = false;
-};
-
-struct NetServerSession {
-    NetSessionToken session_token{};
-    asio::ip::udp::endpoint endpoint{};
-    uint64_t last_receive_timestamp{0ULL};
-    uint64_t last_send_timestamp{0ULL};
-    uint16_t next_seq_num{0};    // post-incremented when sending
-    uint16_t last_ack_num{UINT16_MAX};    // the highest received sequence number. init to 65535
-    std::bitset<32> ack_bits{~0U}; // which of the last 32 client-side sequence numbers have been received. init to all 1s
-    RetransmitTimeoutCalculator rto_calc{};
-
-    struct QueuedPacket {
-        static constexpr uint32_t MAX_ATTEMPTS = 4;
-        uint64_t original_timestamp{};
-        uint64_t last_send_timestamp{};
-        uint32_t attempts{};
-        std::shared_ptr<std::vector<uint8_t>> packet_data{};
-    };
-    std::unordered_map<uint16_t, QueuedPacket> retransmit_queue{}; // indexed by sequence number
-};
-
-struct NetServerActiveSessionsList {
-    mutable std::mutex mut{};
-    std::unordered_set<NetSessionToken> list{};
-};
-
+// A NetServer can only be started once. Create a new one to start again.
 class NetServer {
-    struct OutboundConnectChallenge {
-        asio::ip::udp::endpoint client_endpoint;
-        NetSessionToken session_token; // no session exists yet
-        uint64_t client_nonce;
-    };
-    struct OutboundUnicast {
-        NetSessionToken session_token;
-        uint16_t payload_type;
-        std::vector<uint8_t> payload;
-    };
-    struct OutboundRaw {
-        NetSessionToken session_token;
-        std::shared_ptr<std::vector<uint8_t>> packet_data;
-    };
-    using OutboundCommand = std::variant<OutboundConnectChallenge, OutboundUnicast, OutboundRaw>;
-    using OutboundChannel = asio::experimental::channel<asio::io_context::executor_type, void(asio::error_code, OutboundCommand)>;
+    struct Session {
+        NetPeerId peer_id;
+        NetSessionToken token;
+        asio::ip::udp::endpoint endpoint;
+        NetConnection connection;
 
-    static constexpr size_t OUTBOUND_QUEUE_MAX_SIZE = 1024;
+        Session(NetPeerId id, NetSessionToken session_token, const asio::ip::udp::endpoint& client_endpoint, NetClock::time_point now);
+    };
 
-    NetServerStatus m_server_status{};
+    // state that the main thread reads
+    struct SharedState {
+        mutable std::mutex mutex{};
+        asio::ip::udp::endpoint local_endpoint{};
+        std::vector<NetPeerInfo> peers{};
+    };
+
+    using SessionMap = std::unordered_map<NetSessionToken, Session>;
+
+    static constexpr uint32_t MAX_CLIENTS = 64;
+
+    SharedState m_shared{};
+    std::atomic<bool> m_running{false};
     NetEventQueue m_event_queue{};
 
+    asio::io_context m_context{};
+    NetSocket m_socket{m_context};
     std::jthread m_server_thread{};
-
-    // Used to avoid having to lock m_sessions just to get the list of active sessions
-    NetServerActiveSessionsList m_active_sessions_list{};
+    bool m_started{false}; // only accessed by main thread
 
     // All these members are only accessed by the server thread
-    asio::io_context m_context{};
-    asio::ip::udp::socket m_socket{m_context};
-    OutboundChannel m_outbound_queue{m_context.get_executor(), OUTBOUND_QUEUE_MAX_SIZE};
-    std::unordered_map<NetSessionToken, NetServerSession> m_sessions{};
+    SessionMap m_sessions{};
+    std::unordered_map<NetPeerId, NetSessionToken> m_peer_tokens{};
+    std::unordered_map<NetSessionToken, NetClock::time_point> m_closed_tokens{}; // tokens that can't be used to open a session again, with expiry time
+    std::array<uint64_t, 2> m_secret{};
+    NetPeerId m_next_peer_id{NET_PEER_SERVER + 1};
+    bool m_flush_scheduled{false};
+    NetClock::time_point m_last_publish_time{};
+    std::vector<std::vector<uint8_t>> m_received_messages{}; // scratch buffer
 
 public:
+    NetServer() = default;
+    NetServer(const NetServer&) = delete;
+
     ~NetServer();
 
+    NetServer& operator=(const NetServer&) = delete;
+
     bool start(const asio::ip::udp::endpoint& endpoint);
+
+    // Tells all clients that the server is shutting down
     void stop();
 
     bool isRunning() const;
 
     asio::ip::udp::endpoint getLocalEndpoint() const;
 
-    uint32_t getActiveSessionsCount() const;
-    std::vector<NetSessionToken> getActiveSessionsList() const;
+    uint32_t getPeerCount() const;
+    std::vector<NetPeerInfo> getPeers() const;
 
     bool poll(NetEvent& ev);
 
-    // don't specify a session token for broadcast
-    void sendMessage(uint16_t payload_type, std::vector<uint8_t> payload, NetSessionToken token = 0);
+    // don't specify a peer for broadcast
+    void sendMessage(std::vector<uint8_t> message, NetDelivery delivery, NetPeerId peer = NET_PEER_NONE);
+
+    void disconnectPeer(NetPeerId peer);
+
+    void setSimConfig(const NetSimConfig& config);
 
 private:
-    // Can be called on the main thread
-    void pushToOutboundQueue(OutboundCommand command);
+    asio::awaitable<void> tickLoop();
 
-    asio::awaitable<void> receiveLoop();
-    asio::awaitable<void> sendLoop();
-    asio::awaitable<void> keepAliveLoop();
+    void onPacket(std::span<const uint8_t> packet, const asio::ip::udp::endpoint& sender);
+    void onConnectRequest(ByteReader& reader, const asio::ip::udp::endpoint& sender);
+    void onConnectChallengeResponse(ByteReader& reader, NetSessionToken token, const asio::ip::udp::endpoint& sender);
+    void onData(ByteReader& reader, Session& session);
+
+    Session* findSession(NetSessionToken token, const asio::ip::udp::endpoint& sender);
+    void removeSession(SessionMap::iterator it, NetDisconnectReason reason, bool notify_client);
+    void queueMessage(Session& session, NetDelivery delivery, std::span<const uint8_t> message, std::vector<NetSessionToken>& overflowed);
+    void flushSession(Session& session, NetClock::time_point now);
+    void scheduleFlush();
+    void sendConnectAccept(const Session& session, uint64_t client_nonce);
+    void sendDisconnect(NetSessionToken token, const asio::ip::udp::endpoint& endpoint, NetDisconnectReason reason, bool bypass_simulator);
+    void tick();
+    void publishPeers();
+    void closeAllSessions(NetDisconnectReason reason);
 };
 
 } // namespace gc

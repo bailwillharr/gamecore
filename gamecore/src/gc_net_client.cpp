@@ -1,484 +1,316 @@
 #include "gamecore/gc_net_client.h"
 
-#include <atomic>
-#include <random>
-#include <chrono>
+#include <array>
 
+#include <asio/as_tuple.hpp>
 #include <asio/co_spawn.hpp>
 #include <asio/detached.hpp>
-#include <asio/as_tuple.hpp>
+#include <asio/post.hpp>
 #include <asio/steady_timer.hpp>
-#include <asio/experimental/awaitable_operators.hpp>
+#include <asio/this_coro.hpp>
+#include <asio/use_awaitable.hpp>
 
-#include <SDL3/SDL_timer.h>
+#include <gclog/gclog.h>
 
-#include "gamecore/gc_net_common.h"
 #include "gamecore/gc_assert.h"
-#include "gamecore/gc_abort.h"
 
 namespace gc {
 
-template <class... Ts>
-struct overloaded : Ts... {
-    using Ts::operator()...;
-};
-
-template <class... Ts>
-overloaded(Ts...) -> overloaded<Ts...>;
-
-static uint32_t generateClientNonce()
-{
-    // TODO; use cryptographically secure RNG
-    std::mt19937 rand32(std::random_device{}());
-    return rand32();
-}
-
-static asio::awaitable<bool> checkSend(asio::ip::udp::socket& socket, std::span<const uint8_t> buffer)
-{
-    constexpr auto TOKEN = asio::as_tuple(asio::use_awaitable);
-    asio::error_code ec{};
-    size_t bytes_transferred{};
-    std::tie(ec, bytes_transferred) = co_await socket.async_send(asio::buffer(buffer), 0, TOKEN);
-    if (ec || bytes_transferred < buffer.size()) {
-        GC_ERROR("Failed to send: {}, sent {}/{}", ec.message(), bytes_transferred, buffer.size());
-        co_return false;
-    }
-    else {
-        co_return true;
-    }
-}
-
-static asio::awaitable<size_t> checkReceive(asio::ip::udp::socket& socket, std::span<uint8_t> buffer)
-{
-    constexpr auto TOKEN = asio::as_tuple(asio::use_awaitable);
-    asio::error_code ec{};
-    size_t bytes_transferred{};
-    std::tie(ec, bytes_transferred) = co_await socket.async_receive(asio::buffer(buffer), 0, TOKEN);
-    if (ec) {
-        GC_ERROR("Failed to receive: {}", ec.message());
-        co_return 0;
-    }
-    else {
-        co_return bytes_transferred;
-    }
-}
-
-static asio::awaitable<void> initiateConnection(asio::ip::udp::socket& socket, NetClientSession& out_session)
-{
-    constexpr auto TOKEN = asio::as_tuple(asio::use_awaitable);
-    constexpr int NUM_CONNECT_ATTEMPTS = 6;
-    constexpr auto CONNECT_ATTEMPT_COOLDOWN = std::chrono::milliseconds(40);
-
-    const auto executor = co_await asio::this_coro::executor;
-
-    asio::error_code ec{};
-
-    std::vector<uint8_t> buf(NET_MAX_PACKET_SIZE);
-
-    const auto client_nonce = generateClientNonce();
-
-    uint64_t last_receive_timestamp{};
-    uint64_t last_send_timestamp{};
-
-    NetSessionToken session_token = 0;
-    for (int i = 0; i < NUM_CONNECT_ATTEMPTS; ++i) {
-        NetPacketConnectRequest connect_request{};
-        connect_request.client_nonce = client_nonce;
-        ByteWriter writer(buf);
-        writePacketWithHeader(writer, NetSessionToken{0}, connect_request);
-        last_send_timestamp = SDL_GetTicksNS();
-        bool send_success = co_await checkSend(socket, std::span(buf.begin(), writer.pos()));
-        if (!send_success) {
-            co_return;
-        }
-
-        const size_t bytes_received = co_await checkReceive(socket, buf);
-        ByteReader reader(std::span(buf.begin(), bytes_received));
-        const auto received_header = tryDeserialise<NetPacketHeader>(reader);
-        if (received_header && verifyPacketHeader(*received_header) && received_header->type == NetPacketType::CONNECT_CHALLENGE) {
-            const auto received_challenge = tryDeserialiseExact<NetPacketConnectChallenge>(reader);
-            if (received_challenge && received_challenge->client_nonce == client_nonce) {
-                session_token = received_header->token;
-                last_receive_timestamp = SDL_GetTicksNS();
-                break;
-            }
-        }
-
-        asio::steady_timer timer(executor, CONNECT_ATTEMPT_COOLDOWN);
-        std::tie(ec) = co_await timer.async_wait(TOKEN);
-        if (ec) {
-            GC_ERROR("Timer error: {}", ec.message());
-            co_return;
-        }
-    }
-    if (session_token == 0) {
-        co_return;
-    }
-
-    {
-        NetPacketConnectChallengeResponse challenge_response{};
-        challenge_response.client_nonce = client_nonce;
-        ByteWriter writer(buf);
-        writePacketWithHeader(writer, session_token, challenge_response);
-        for (int i = 0; i < NUM_CONNECT_ATTEMPTS; ++i) {
-            bool send_success = co_await checkSend(socket, std::span(buf.begin(), writer.pos()));
-            if (!send_success) {
-                co_return;
-            }
-        }
-    }
-
-    out_session.session_token = session_token;
-    GC_ASSERT(last_receive_timestamp != 0);
-    out_session.last_receive_timestamp = last_receive_timestamp;
-    GC_ASSERT(last_send_timestamp != 0);
-    out_session.last_send_timestamp = last_send_timestamp;
-}
-
-[[nodiscard]] static std::optional<NetEvent> handleMessage(ByteReader& reader, NetClientSession& session)
-{
-    const auto message = tryDeserialise<NetPacketMessage>(reader);
-    if (!message) {
-        return std::nullopt;
-    }
-
-    // read seq information
-    const int16_t diff = seq_diff(message->seq_num, session.last_ack_num);
-    bool read_message = false;
-    if (diff > 0) {
-        // new sequence number. slide window forward.
-        session.ack_bits <<= diff;
-        session.ack_bits.set(0, true);
-        session.last_ack_num = message->seq_num;
-        read_message = true;
-    }
-    else if (diff > -static_cast<int16_t>(session.ack_bits.size())) {
-        GC_ASSERT(diff <= 0);
-        if (session.ack_bits.test(-diff)) {
-            GC_DEBUG("received packet {} already acknowledged", message->seq_num);
-        }
-        else {
-            // previously missing sequence number, acknowledge it.
-            GC_DEBUG("Received previously missing server message: {}", message->seq_num);
-            session.ack_bits.set(-diff, true);
-            read_message = true;
-        }
-    }
-    // outdated packets (old sequence numbers) are ignored
-    if (!read_message) {
-        // since retransmissions are just copies, there's no need to look at the message's ack info
-        return std::nullopt;
-    }
-
-    // Remove newly acked outbound packets from queue...
-    // uint16_t subtraction underflow is well defined.
-    for (uint16_t i = 0; i < static_cast<uint16_t>(message->ack_bits.size()); ++i) {
-        if (message->ack_bits.test(i)) {
-            uint16_t seq = message->ack_num - i;
-            auto it = session.retransmit_queue.find(seq);
-            if (it != session.retransmit_queue.end()) {
-                if (it->second.attempts == 0) {
-                    const uint64_t rtt_ns = session.last_receive_timestamp - it->second.original_timestamp;
-                    session.rto_calc.recordRTT(std::chrono::nanoseconds(rtt_ns));
-                    GC_TRACE("New RTT: {} ms, RTO: {} ms", static_cast<double>(rtt_ns) / 1.0e6,
-                             static_cast<double>(session.rto_calc.getRTONanoseconds()) / 1.0e6);
-                }
-                session.retransmit_queue.erase(it);
-            }
-        }
-    }
-
-    // read the data...
-    if (reader.remaining() != message->payload_size) {
-        GC_ERROR("Remaining packet size not equal to payload size");
-        return std::nullopt; // malformed packet
-    }
-
-    GC_TRACE("Received {} bytes:", message->payload_size);
-    GC_TRACE("  Message: seq_num: {}, ack_num: {}", message->seq_num, message->ack_num);
-
-    if (reader.remaining() >= sizeof(uint32_t) && message->payload_type == 1) {
-        const uint32_t hash = reader.readU32();
-        NetEvent ev{};
-        ev.type = Name(hash);
-        ev.data.resize(reader.remaining());
-        reader.readBytes(ev.data);
-        return ev;
-    }
-    else {
-        return std::nullopt;
-    }
-}
+static constexpr auto TICK_PERIOD = std::chrono::milliseconds(10);
+static constexpr auto HANDSHAKE_RESEND_PERIOD = std::chrono::milliseconds(250);
+static constexpr auto CONNECT_TIMEOUT = std::chrono::seconds(5);
+static constexpr int DISCONNECT_PACKET_COPIES = 2;
 
 NetClient::~NetClient() { disconnect(); }
 
 bool NetClient::connect(const asio::ip::udp::endpoint& endpoint)
 {
-    disconnect(); // just in case
+    GC_ASSERT(!m_started);
+    if (m_started) {
+        return false;
+    }
 
+    // any local port
+    if (!m_socket.open(asio::ip::udp::endpoint(endpoint.protocol(), 0))) {
+        return false;
+    }
+    m_started = true;
     m_server_endpoint = endpoint;
-
-    asio::error_code ec{};
-    m_socket.open(endpoint.protocol(), ec);
-    if (ec) {
-        GC_ERROR("Failed to open socket: {}", ec.message());
-        return false;
-    }
-    m_socket.connect(endpoint, ec);
-    if (ec) {
-        GC_ERROR("Failed to connect to server endpoint: {}", ec.message());
-        return false;
-    }
     GC_INFO("Connecting to server: {}", endpoint);
 
-    m_client_thread = std::jthread(
-        [](NetClient& self) {
-            self.m_state.store(NetClientConnectionStatus::CONNECTING);
-            self.m_session.session_token = 0;
-            self.m_context.restart();
-            asio::co_spawn(self.m_context, initiateConnection(self.m_socket, self.m_session), asio::detached);
-            self.m_context.run(); // returns when initiateConnection completes
-            if (self.m_session.session_token != 0) {
-                self.m_state.store(NetClientConnectionStatus::CONNECTED);
-                asio::co_spawn(self.m_context, self.sendLoop(), asio::detached);
-                asio::co_spawn(self.m_context, self.receiveLoop(), asio::detached);
-                asio::co_spawn(self.m_context, self.keepAliveLoop(), asio::detached);
-                self.m_context.restart();
-                self.m_context.run();
-            }
-            self.m_state.store(NetClientConnectionStatus::DISCONNECTED);
-        },
-        std::ref(*this));
+    m_socket.start([this](std::span<const uint8_t> packet, const asio::ip::udp::endpoint& sender) { onPacket(packet, sender); },
+                   [this] { close(NetDisconnectReason::SOCKET_FAILED, false); });
+    asio::co_spawn(m_context, tickLoop(), asio::detached);
+    asio::post(m_context, [this] {
+        m_client_nonce = generateNetRandom64();
+        m_connect_start_time = NetClock::now();
+        sendConnectRequest();
+    });
+
+    // Set before the thread starts so that the status is never DISCONNECTED while the connection is in progress
+    m_status.store(NetClientConnectionStatus::CONNECTING);
+    m_client_thread = std::jthread([this] {
+        m_context.run(); // returns when close() stops the context
+        m_status.store(NetClientConnectionStatus::DISCONNECTED);
+    });
 
     return true;
 }
 
 void NetClient::disconnect()
 {
-    asio::error_code ec{};
-    m_context.stop();
-    m_client_thread = {};
-    m_socket.shutdown(asio::ip::udp::socket::shutdown_both, ec);
-    (void)ec; // it errors if the socket hasn't been used at all yet
+    if (m_client_thread.joinable()) {
+        // If the context has already stopped then the connection is already closed and this never runs
+        asio::post(m_context, [this] { close(NetDisconnectReason::LOCAL_REQUEST, true); });
+        m_client_thread.join();
+    }
     m_socket.close();
     GC_ASSERT(getConnectionStatus() == NetClientConnectionStatus::DISCONNECTED);
 }
 
 bool NetClient::poll(NetEvent& ev) { return m_event_queue.pop(ev); }
 
-NetClientConnectionStatus NetClient::getConnectionStatus() const { return m_state.load(); }
+NetClientConnectionStatus NetClient::getConnectionStatus() const { return m_status.load(); }
 
 asio::ip::udp::endpoint NetClient::getServerEndpoint() const { return m_server_endpoint; }
 
-void NetClient::sendMessage(uint16_t payload_type, std::vector<uint8_t> payload)
+NetPeerId NetClient::getLocalPeerId() const { return m_local_peer_id.load(); }
+
+NetConnectionStats NetClient::getStats() const
 {
-    pushToOutboundQueue(OutboundMessage{.payload_type = payload_type, .payload = std::move(payload)});
+    std::scoped_lock lock(m_shared.mutex);
+    return m_shared.stats;
 }
 
-void NetClient::pushToOutboundQueue(OutboundCommand command)
+void NetClient::sendMessage(std::vector<uint8_t> message, NetDelivery delivery)
 {
-    asio::post(m_context, [this, command = std::move(command)] {
-        if (!m_outbound_queue.try_send(asio::error_code{}, std::move(command))) {
-            abortGame("NetClient outbound queue full! Capacity = {}", OUTBOUND_QUEUE_MAX_SIZE);
+    asio::post(m_context, [this, message = std::move(message), delivery] {
+        if (m_phase != Phase::CONNECTED) {
+            return;
+        }
+        if (!m_connection->queueMessage(delivery, message)) {
+            GC_WARN("Server isn't acknowledging reliable messages fast enough");
+            close(NetDisconnectReason::SEND_QUEUE_OVERFLOW, true);
+            return;
+        }
+        scheduleFlush();
+    });
+}
+
+void NetClient::setSimConfig(const NetSimConfig& config) { m_socket.setSimConfig(config); }
+
+asio::awaitable<void> NetClient::tickLoop()
+{
+    constexpr auto TOKEN = asio::as_tuple(asio::use_awaitable);
+    asio::steady_timer timer(co_await asio::this_coro::executor);
+    for (;;) {
+        timer.expires_after(TICK_PERIOD);
+        const auto [ec] = co_await timer.async_wait(TOKEN);
+        if (ec) {
+            co_return;
+        }
+        tick();
+    }
+}
+
+void NetClient::onPacket(std::span<const uint8_t> packet, const asio::ip::udp::endpoint& sender)
+{
+    if (sender != m_server_endpoint || m_phase == Phase::CLOSED) {
+        return;
+    }
+
+    ByteReader reader(packet);
+    const auto header = tryDeserialise<NetPacketHeader>(reader);
+    if (!header || !verifyPacketHeader(*header)) {
+        return;
+    }
+
+    switch (header->type) {
+    case NetPacketType::CONNECT_CHALLENGE: {
+        if (m_phase != Phase::REQUEST) {
+            break;
+        }
+        const auto challenge = tryDeserialiseExact<NetPacketConnectChallenge>(reader);
+        if (challenge && challenge->client_nonce == m_client_nonce) {
+            m_session_token = header->token;
+            m_phase = Phase::RESPONSE;
+            sendConnectChallengeResponse();
+        }
+    } break;
+    case NetPacketType::CONNECT_ACCEPT: {
+        if (m_phase != Phase::RESPONSE || header->token != m_session_token) {
+            break;
+        }
+        const auto accept = tryDeserialiseExact<NetPacketConnectAccept>(reader);
+        if (accept && accept->client_nonce == m_client_nonce) {
+            m_connection.emplace(NetClock::now());
+            m_phase = Phase::CONNECTED;
+            m_local_peer_id.store(accept->peer_id);
+            m_status.store(NetClientConnectionStatus::CONNECTED);
+            GC_INFO("Connected to server as client {}", accept->peer_id);
+
+            NetEvent ev{};
+            ev.kind = NetEventKind::CONNECTED;
+            ev.peer = NET_PEER_SERVER;
+            m_event_queue.push(std::move(ev));
+        }
+    } break;
+    case NetPacketType::DATA: {
+        if (m_phase != Phase::CONNECTED || header->token != m_session_token) {
+            break;
+        }
+        const auto now = NetClock::now();
+        m_received_messages.clear();
+        m_connection->receivePacket(reader, now, m_received_messages);
+        for (auto& message : m_received_messages) {
+            if (auto ev = decodeNetEvent(std::move(message), NET_PEER_SERVER)) {
+                m_event_queue.push(std::move(*ev));
+            }
+        }
+        // sends an acknowledgement straight away if the packet needs one
+        flush(now);
+    } break;
+    case NetPacketType::DISCONNECT: {
+        if (m_phase == Phase::REQUEST || header->token != m_session_token) {
+            break;
+        }
+        const auto disconnect_packet = tryDeserialiseExact<NetPacketDisconnect>(reader);
+        if (!disconnect_packet) {
+            break;
+        }
+        switch (disconnect_packet->reason) {
+        case NetDisconnectReason::TIMED_OUT:
+        case NetDisconnectReason::KICKED:
+        case NetDisconnectReason::SERVER_FULL:
+        case NetDisconnectReason::SERVER_SHUTDOWN:
+        case NetDisconnectReason::SEND_QUEUE_OVERFLOW:
+            close(disconnect_packet->reason, false);
+            break;
+        default:
+            close(NetDisconnectReason::REMOTE_CLOSED, false);
+            break;
+        }
+    } break;
+    default:
+        // the remaining packet types are only sent by clients
+        break;
+    }
+}
+
+void NetClient::sendConnectRequest()
+{
+    std::array<uint8_t, NetPacketHeader::getSerialisedSize() + NetPacketConnectRequest::getSerialisedSize()> buffer{};
+    ByteWriter writer(buffer);
+    writePacketWithHeader(writer, NetSessionToken{0}, NetPacketConnectRequest{.client_nonce = m_client_nonce});
+    m_socket.send(buffer, m_server_endpoint);
+    m_last_handshake_send_time = NetClock::now();
+}
+
+void NetClient::sendConnectChallengeResponse()
+{
+    std::array<uint8_t, NetPacketHeader::getSerialisedSize() + NetPacketConnectChallengeResponse::getSerialisedSize()> buffer{};
+    ByteWriter writer(buffer);
+    writePacketWithHeader(writer, m_session_token, NetPacketConnectChallengeResponse{.client_nonce = m_client_nonce});
+    m_socket.send(buffer, m_server_endpoint);
+    m_last_handshake_send_time = NetClock::now();
+}
+
+// Only used when the client is about to stop, so this can't be delayed by the link simulator
+void NetClient::sendDisconnect(NetDisconnectReason reason)
+{
+    std::array<uint8_t, NetPacketHeader::getSerialisedSize() + NetPacketDisconnect::getSerialisedSize()> buffer{};
+    ByteWriter writer(buffer);
+    writePacketWithHeader(writer, m_session_token, NetPacketDisconnect{.reason = reason});
+    for (int i = 0; i < DISCONNECT_PACKET_COPIES; ++i) {
+        m_socket.sendDirect(buffer, m_server_endpoint);
+    }
+}
+
+void NetClient::flush(NetClock::time_point now)
+{
+    std::array<uint8_t, NET_MAX_PACKET_SIZE> buffer{};
+    for (;;) {
+        ByteWriter writer(buffer);
+        NetPacketHeader::createValid(NetPacketType::DATA, m_session_token).serialise(writer);
+        if (!m_connection->writePacket(writer, now)) {
+            break;
+        }
+        m_socket.send(std::span<const uint8_t>(buffer.data(), writer.pos()), m_server_endpoint);
+    }
+}
+
+// Messages posted from the main thread during the same frame are all queued before this runs, so they share packets.
+void NetClient::scheduleFlush()
+{
+    if (m_flush_scheduled) {
+        return;
+    }
+    m_flush_scheduled = true;
+    asio::post(m_context, [this] {
+        m_flush_scheduled = false;
+        if (m_phase == Phase::CONNECTED) {
+            flush(NetClock::now());
         }
     });
 }
 
-asio::awaitable<void> NetClient::sendLoop()
+// Repeats handshake packets until the server answers. Once connected, checks if the server has timed out, retransmits reliable
+// messages that haven't been acknowledged, sends delayed acknowledgements, and pings the server if the connection is idle.
+void NetClient::tick()
 {
-    constexpr auto TOKEN = asio::as_tuple(asio::use_awaitable);
-    asio::error_code ec{};
+    const auto now = NetClock::now();
 
-    GC_ASSERT(m_socket.is_open());
-
-    OutboundCommand command{};
-    std::array<uint8_t, NET_MAX_PACKET_SIZE> buffer{};
-    ByteWriter writer(buffer);
-    for (;;) {
-        std::tie(ec, command) = co_await m_outbound_queue.async_receive(TOKEN);
-        if (ec) {
-            GC_ERROR("Outbound channel receive error: {}", ec.message());
-            continue;
+    switch (m_phase) {
+    case Phase::REQUEST:
+    case Phase::RESPONSE:
+        if (now - m_connect_start_time > CONNECT_TIMEOUT) {
+            close(NetDisconnectReason::CONNECT_FAILED, false);
         }
-
-        writer.reset();
-        const uint64_t now = SDL_GetTicksNS();
-        std::visit(overloaded{[&](const OutboundMessage& outbound) {
-                                  NetPacketMessage message{};
-                                  message.seq_num = m_session.next_seq_num;
-                                  message.ack_num = m_session.last_ack_num;
-                                  message.ack_bits = m_session.ack_bits;
-                                  message.payload_type = outbound.payload_type;
-                                  message.payload_size = static_cast<uint16_t>(outbound.payload.size());
-                                  writePacketWithHeader(writer, m_session.session_token, message);
-                                  GC_ASSERT(writer.remaining() >= message.payload_size);
-                                  writer.writeBytes(outbound.payload);
-
-                                  NetClientSession::QueuedPacket retransmit_packet{};
-                                  retransmit_packet.original_timestamp = now;
-                                  retransmit_packet.last_send_timestamp = now;
-                                  retransmit_packet.attempts = 0;
-                                  retransmit_packet.packet_data = std::make_shared<std::vector<uint8_t>>(buffer.cbegin(), buffer.cbegin() + writer.pos());
-                                  m_session.retransmit_queue.emplace(message.seq_num, std::move(retransmit_packet));
-
-                                  m_session.last_send_timestamp = now;
-                                  m_session.next_seq_num += 1;
-
-                                  GC_TRACE("Sending message: seq_num: {}, ack_num: {}", message.seq_num, message.ack_num);
-                              },
-                              [&](const OutboundRaw& raw) {
-                                  m_session.last_send_timestamp = now;
-                                  GC_ASSERT(raw.packet_data);
-                                  writer.writeBytes(std::span<const uint8_t>(raw.packet_data->data(), raw.packet_data->size()));
-                              }},
-                   command);
-
-        if (writer.pos() == 0) {
-            continue;
+        else if (now - m_last_handshake_send_time >= HANDSHAKE_RESEND_PERIOD) {
+            if (m_phase == Phase::REQUEST) {
+                sendConnectRequest();
+            }
+            else {
+                sendConnectChallengeResponse();
+            }
         }
-
-        size_t bytes_written{};
-        std::tie(ec, bytes_written) = co_await m_socket.async_send(asio::buffer(buffer.data(), writer.pos()), TOKEN);
-        if (ec) {
-            GC_ERROR("Failed to send from socket: {}", ec.message());
+        break;
+    case Phase::CONNECTED:
+        if (m_connection->hasTimedOut(now)) {
+            close(NetDisconnectReason::TIMED_OUT, true);
         }
-        else if (bytes_written != writer.pos()) {
-            GC_ERROR("Failed to send all data from socket. {}/{} bytes", bytes_written, writer.pos());
+        else {
+            flush(now);
+            m_connection->updateStats(now);
+            std::scoped_lock lock(m_shared.mutex);
+            m_shared.stats = m_connection->getStats();
         }
+        break;
+    case Phase::CLOSED:
+        break;
     }
 }
 
-asio::awaitable<void> NetClient::receiveLoop()
+void NetClient::close(NetDisconnectReason reason, bool notify_server)
 {
-    constexpr auto TOKEN = asio::as_tuple(asio::use_awaitable);
-    const auto executor = co_await asio::this_coro::executor;
-    asio::error_code ec{};
-
-    GC_ASSERT(m_socket.is_open());
-
-    std::array<uint8_t, NET_MAX_PACKET_SIZE> recv_buf{};
-    for (;;) {
-        size_t bytes_read{};
-        std::tie(ec, bytes_read) = co_await m_socket.async_receive(asio::buffer(recv_buf), TOKEN);
-        if (ec) {
-            GC_ERROR("Failed to receive on socket: {}", ec.message());
-            continue;
-        }
-
-        ByteReader reader(std::span(recv_buf.data(), bytes_read));
-
-        const auto header = tryDeserialise<NetPacketHeader>(reader);
-        if (!header || !verifyPacketHeader(*header)) {
-            continue;
-        }
-
-        if (header->type != NetPacketType::MESSAGE || header->token != m_session.session_token) {
-            continue;
-        }
-
-        const uint64_t now = SDL_GetTicksNS();
-
-        m_session.last_receive_timestamp = now;
-
-        if (auto ev = handleMessage(reader, m_session); ev) {
-            m_event_queue.push(*ev);
-        }
+    if (m_phase == Phase::CLOSED) {
+        return;
     }
-}
+    GC_INFO("Disconnected from server: {}", netDisconnectReasonString(reason));
 
-// periodically checks session to see if it has timed out and removes it if so.
-// Also pings the server if currently idle (no data received or sent recently).
-// This lets the server check that the connection is still alive, and tells the client that the server is still active.
-// Also retransmits packets that have not been acked.
-asio::awaitable<void> NetClient::keepAliveLoop()
-{
-    constexpr auto TOKEN = asio::as_tuple(asio::use_awaitable);
-    const auto executor = co_await asio::this_coro::executor;
-    asio::error_code ec{};
-
-    constexpr auto TIME_PERIOD = std::chrono::milliseconds(100); // 10 hz
-    constexpr int64_t TIMEOUT_TIME_NS = 5'000'000'000LL;         // 5 s
-    constexpr int64_t KEEPALIVE_IDLE_TIME_NS = 500'000'000LL;    // 500 ms
-
-    for (;;) {
-        // maybe timer can be reset every iteration instead of reconstructing?
-        asio::steady_timer timer(executor, TIME_PERIOD);
-
-        const int64_t now = SDL_GetTicksNS();
-
-        std::vector<uint16_t> to_retransmit{};
-        for (auto it = m_session.retransmit_queue.begin(); it != m_session.retransmit_queue.end();) {
-            auto& [seq_num, packet] = *it;
-            if (packet.attempts >= packet.MAX_ATTEMPTS || seq_diff(seq_num, m_session.next_seq_num) < -static_cast<int16_t>(m_session.ack_bits.size() * 2)) {
-                GC_WARN("Queued packet {} was never acknowledged and is getting dropped: attempts: {}, age: {} ms", seq_num, packet.attempts,
-                        static_cast<double>(now - packet.original_timestamp) / 1e6);
-                it = m_session.retransmit_queue.erase(it);
-            }
-            else {
-                if (now - packet.last_send_timestamp > static_cast<uint64_t>(m_session.rto_calc.getRTONanoseconds())) {
-                    to_retransmit.push_back(seq_num);
-                }
-                ++it;
-            }
-        }
-
-        for (const uint16_t seq_num : to_retransmit) {
-            auto it = m_session.retransmit_queue.find(seq_num);
-            if (it == m_session.retransmit_queue.end()) {
-                continue; // packet was acked by receiveLoop() during the below co_await
-            }
-            auto& packet = it->second;
-
-            // retransmit
-            packet.last_send_timestamp = now;
-            packet.attempts += 1;
-
-            OutboundCommand command{};
-            command.emplace<OutboundRaw>(packet.packet_data); // increases shared_ptr refcount
-
-            GC_DEBUG("Retransmitting packet with seq_num: {}, attempt: {}", seq_num, packet.attempts);
-
-            std::tie(ec) = co_await m_outbound_queue.async_send(asio::error_code{}, std::move(command), TOKEN);
-            if (ec) {
-                GC_ERROR("Outbound channel send error: {}", ec.message());
-                continue;
-            }
-        }
-
-        {
-            const int64_t time_since_receive = now - static_cast<int64_t>(m_session.last_receive_timestamp);
-            const int64_t time_since_send = now - static_cast<int64_t>(m_session.last_send_timestamp);
-            if (time_since_receive > TIMEOUT_TIME_NS) {
-                GC_WARN("Server timed out");
-                m_context.stop();
-                // Stopping the context is safe to do inside a completion handler.
-                // This coroutine will exit via early return of the below timer.async_wait() call
-            }
-            else {
-                // also sends ping if a packet hasn't been sent since the last receive (to ensure somewhat timely ACKs)
-                if (time_since_receive > KEEPALIVE_IDLE_TIME_NS || time_since_send > KEEPALIVE_IDLE_TIME_NS ||
-                    m_session.last_receive_timestamp > m_session.last_send_timestamp) {
-                    // send keepalive packet with no data
-                    OutboundCommand command{};
-                    auto& message = command.emplace<OutboundMessage>();
-                    message.payload_type = 0;
-                    message.payload = {};
-
-                    std::tie(ec) = co_await m_outbound_queue.async_send(asio::error_code{}, std::move(command), TOKEN);
-                    if (ec) {
-                        GC_ERROR("Outbound channel send error: {}", ec.message());
-                        continue;
-                    }
-                }
-            }
-        }
-
-        std::tie(ec) = co_await timer.async_wait(TOKEN);
-        if (ec) {
-            GC_ERROR("Timer error: {}", ec.message());
-            co_return;
-        }
+    // The server might have created the session even if its accept packet never arrived
+    if (notify_server && m_session_token != 0) {
+        sendDisconnect(reason);
     }
+
+    NetEvent ev{};
+    ev.kind = NetEventKind::DISCONNECTED;
+    ev.peer = NET_PEER_SERVER;
+    ev.reason = reason;
+    m_event_queue.push(std::move(ev));
+
+    m_phase = Phase::CLOSED;
+    m_context.stop(); // Stopping the context is safe to do inside a completion handler.
 }
 
 } // namespace gc

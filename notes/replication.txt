@@ -1,0 +1,72 @@
+# Replication
+
+gc::ReplicationSystem (gc_replication.h) keeps entities in sync between a server and its clients. It sits on top of gc::Net and is
+registered as a normal World system by games that want it. gamecore_template is the example of how to use it.
+
+# The model
+
+- The authority is the server, or the local game when it isn't connected to anything (ReplicationRole::OFFLINE). Game code doesn't
+  need to care which: ReplicationSystem::hasAuthority() is true in both cases. Starting a server while offline keeps the world.
+- Only the authority creates and destroys replicated entities (spawn(), despawn()). Clients that want something to exist ask
+  the server with a normal net event (Net::postEvent()), e.g. "arena_fire" in the example game.
+- Entities are created from archetypes. An archetype is a callback registered under a Name on every host. It is run on every
+  host when the entity is created there, and adds the components that host needs: the simulation components on the authority,
+  a camera and input on the owning client, a model on hosts that render, and so on.
+- Every replicated entity has a ReplicatedComponent with its NetEntityId (the same on every host), archetype and owner.
+  The owner is the NetPeerId of the host that controls the entity, or NET_PEER_NONE.
+- Component types registered with registerComponent() are kept in sync. They need serialise()/deserialise() methods, which only
+  write the fields that matter. Each type has a ReplicationAuthority:
+    SERVER  the server's value is sent to every client
+    OWNER   the owning client's value is sent to the server, which sends it on to the other clients
+  The transform is always replicated. Whether the server or the owner controls it is chosen per archetype.
+  A host ignores state for components it isn't supposed to be told about, so a client can't change what the server controls.
+- ReplicationSystem::getEvents() tells the game when to act: AUTHORITY_STARTED (spawn the world), PEER_JOINED (spawn that
+  player's entities), PEER_LEFT (the entities it owned have been despawned).
+
+# How state is sent
+
+Spawns and despawns are reliable messages. Everything else is unreliable "state" messages, sent at the tick rate (30 Hz by
+default) in both directions:
+
+- Every tick, each host serialises the components it might have to send and compares them with what it serialised last time.
+  A component that changed gets a new version number. Nothing is sent for things that aren't changing.
+- For each remote host, the sender remembers which version of each component that host is known to have. Components where that
+  isn't the current version go into the next state message (oldest first if they don't all fit in one tick's budget).
+- State messages are numbered. Every state message also says which of the other side's recent state messages arrived
+  (the highest number seen and a bitfield for the 32 before it), so the sender finds out whether each thing it sent arrived
+  or was lost. Lost state is sent again, unless it has been replaced by a newer version in the meantime.
+  The result is that every host ends up with the latest value of everything, without resending what is already there.
+- A state message that mentions an entity the receiver hasn't been told about yet (the reliable spawn message can be overtaken)
+  is treated as lost, so its contents are sent again.
+
+# Interpolation
+
+Clients don't snap transforms controlled by another host to the latest received value, as that would look like 30 Hz stutter.
+Instead each state message carries the sender's clock, and the client shows those entities where they were a short time ago
+(the interpolation delay), blending between the two received states either side of that time.
+The delay adapts to the connection: a few ticks, more if state messages arrive irregularly or go missing.
+The cost is that other players and server controlled entities are seen slightly in the past.
+Entities that the local host controls (e.g. the local player) are never interpolated or delayed.
+
+# What isn't there
+
+- Client side prediction for server controlled entities. A client owned entity is trusted to report its own transform, which is
+  simple and responsive but lets a modified client put its player anywhere. The server could check what it is told.
+- Lag compensation. The server tests hits against where it currently thinks everything is.
+- Interest management. Every client is sent every entity.
+- Replicated parent/child relationships. Replicated entities are always root entities. (Their children are local to each host)
+
+# Debugging and testing
+
+The "Replication" debug window (F10 for the mouse) shows the role, every entity, and per-connection statistics.
+
+gamecore_template can run without a window as a bot (--bot), and dedicated_server runs the same game, so a full session can be
+run on one machine. scripts/test_replication.py does that: it starts a server and several bots as separate processes, with
+simulated packet loss, latency and jitter, and checks that the bots see what they should and that every process ends up with
+exactly the same replicated state. See game.h for the command line options.
+
+To try it by hand:
+    dedicated_server
+    gamecore_template --connect 127.0.0.1 --bot      (as many as you like)
+    gamecore_template --connect 127.0.0.1
+or just "gamecore_template --host" and connect to that.

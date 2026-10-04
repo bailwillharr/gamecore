@@ -1,5 +1,7 @@
 #pragma once
 
+#include <cstdint>
+
 #include <algorithm>
 #include <chrono>
 
@@ -29,7 +31,21 @@ private:
 public:
     timer_duration getRTO() const { return std::chrono::duration_cast<timer_duration>(m_rto); }
 
+    // 'attempts' is the number of times the data has already been sent. The timeout doubles with every attempt.
+    timer_duration getRTOWithBackoff(uint32_t attempts) const
+    {
+        const uint32_t shift = std::min(attempts > 0 ? attempts - 1 : 0, 6u);
+        return std::chrono::duration_cast<timer_duration>(std::min(m_rto * static_cast<double>(1u << shift), RTO_MAX));
+    }
+
     int64_t getRTONanoseconds() const { return std::chrono::duration_cast<std::chrono::nanoseconds>(m_rto).count(); }
+
+    double getRTOMilliseconds() const { return m_rto.count() * 1.0e3; }
+
+    // zero until the first RTT is recorded
+    timer_duration getSmoothedRTT() const { return std::chrono::duration_cast<timer_duration>(m_srtt); }
+
+    double getSmoothedRTTMilliseconds() const { return m_srtt.count() * 1.0e3; }
 
     void recordRTT(timer_duration rtt)
     {

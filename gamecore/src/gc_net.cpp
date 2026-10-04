@@ -1,47 +1,16 @@
 #include "gamecore/gc_net.h"
 
-#include <asio/error.hpp>
-#include <asio/io_context.hpp>
-
-#include <asio/awaitable.hpp>
-#include <asio/ip/address_v4.hpp>
-#include <asio/ip/udp.hpp>
-#include <asio/steady_timer.hpp>
-#include <asio/this_coro.hpp>
-#include <asio/use_awaitable.hpp>
-#include <asio/detached.hpp>
-#include <asio/co_spawn.hpp>
-#include <asio/read.hpp>
-#include <asio/read_until.hpp>
-#include <asio/write.hpp>
-#include <asio/as_tuple.hpp>
-#include <asio/streambuf.hpp>
 #include <variant>
 
+#include <asio/error.hpp>
+#include <asio/io_context.hpp>
+#include <asio/ip/udp.hpp>
+
+#include <gclog/gclog.h>
+
 #include "gamecore/gc_assert.h"
-#include "gclog/gclog.h"
-#include "gamecore/gc_net_client.h"
 
 namespace gc {
-
-void NetEventQueue::push(NetEvent event)
-{
-    std::scoped_lock lock(m_mutex);
-    m_queue.push(std::move(event));
-}
-
-bool NetEventQueue::pop(NetEvent& ev)
-{
-    std::scoped_lock lock(m_mutex);
-    if (m_queue.empty()) {
-        return false;
-    }
-    else {
-        ev = m_queue.front();
-        m_queue.pop();
-        return true;
-    }
-}
 
 bool Net::startServer(asio::ip::udp::endpoint endpoint)
 {
@@ -51,7 +20,9 @@ bool Net::startServer(asio::ip::udp::endpoint endpoint)
     }
 
     auto& server = m_server_client.emplace<NetServer>();
+    server.setSimConfig(m_sim_config);
     if (!server.start(std::move(endpoint))) {
+        reset();
         return false;
     }
 
@@ -60,9 +31,15 @@ bool Net::startServer(asio::ip::udp::endpoint endpoint)
 
 void Net::stopServer()
 {
+    if (getServer()) {
+        reset();
+    }
+}
+
+void Net::disconnectPeer(NetPeerId peer)
+{
     if (NetServer* server = getServer()) {
-        server->stop();
-        m_server_client.emplace<std::monostate>();
+        server->disconnectPeer(peer);
     }
 }
 
@@ -74,7 +51,9 @@ bool Net::connectToServer(const asio::ip::udp::endpoint& endpoint)
     }
 
     auto& client = m_server_client.emplace<NetClient>();
+    client.setSimConfig(m_sim_config);
     if (!client.connect(endpoint)) {
+        reset();
         return false;
     }
 
@@ -83,59 +62,18 @@ bool Net::connectToServer(const asio::ip::udp::endpoint& endpoint)
 
 void Net::disconnectFromServer()
 {
-    if (NetClient* client = getClient()) {
-        client->disconnect();
-        m_server_client.emplace<std::monostate>();
+    if (getClient()) {
+        reset();
     }
 }
 
-bool Net::pollEvents(NetEvent& ev)
+NetClientConnectionStatus Net::getClientConnectionStatus() const
 {
-    if (std::holds_alternative<NetServer>(m_server_client)) {
-        NetServer* server = getServer();
-        GC_ASSERT(server);
-        if (server->isRunning()) {
-            return server->poll(ev);
-        }
-        else {
-            m_server_client.emplace<std::monostate>();
-            return false;
-        }
-    }
-    else if (std::holds_alternative<NetClient>(m_server_client)) {
-        NetClient* client = getClient();
-        NetClientConnectionStatus status = client->getConnectionStatus();
-        if (status == NetClientConnectionStatus::CONNECTED) {
-            return client->poll(ev);
-        }
-        else if (status == NetClientConnectionStatus::CONNECTING) {
-            return false;
-        }
-        else { // DISCONNECTED
-            m_server_client.emplace<std::monostate>();
-            return false;
-        }
+    if (const NetClient* client = getClient()) {
+        return client->getConnectionStatus();
     }
     else {
-        return false;
-    }
-}
-
-void Net::postEvent(NetEvent ev, NetSessionToken session_token)
-{
-    if (std::holds_alternative<NetServer>(m_server_client)) {
-        std::vector<uint8_t> buf(4 + ev.data.size());
-        ByteWriter writer(buf);
-        writer.writeU32(ev.type.getHash());
-        writer.writeBytes(ev.data);
-        getServer()->sendMessage(1, std::move(buf), session_token);
-    }
-    else if (std::holds_alternative<NetClient>(m_server_client)) {
-        std::vector<uint8_t> buf(4 + ev.data.size());
-        ByteWriter writer(buf);
-        writer.writeU32(ev.type.getHash());
-        writer.writeBytes(ev.data);
-        getClient()->sendMessage(1, std::move(buf));
+        return NetClientConnectionStatus::DISCONNECTED;
     }
 }
 
@@ -152,39 +90,6 @@ NetMode Net::getMode() const
     }
 }
 
-uint32_t Net::getRemoteCount() const
-{
-    if (std::holds_alternative<NetServer>(m_server_client)) {
-        return getServer()->getActiveSessionsCount();
-    }
-    else if (std::holds_alternative<NetClient>(m_server_client)) {
-        return 1;
-    }
-    else {
-        return 0;
-    }
-}
-
-std::vector<NetSessionToken> Net::getRemoteSessions() const
-{
-    if (std::holds_alternative<NetServer>(m_server_client)) {
-        return getServer()->getActiveSessionsList();
-    }
-    else {
-        return {};
-    }
-}
-
-NetClientConnectionStatus Net::getClientConnectionStatus() const
-{
-    if (const NetClient* client = getClient()) {
-        return client->getConnectionStatus();
-    }
-    else {
-        return NetClientConnectionStatus::DISCONNECTED;
-    }
-}
-
 asio::ip::udp::endpoint Net::getServerEndpoint() const
 {
     if (const NetServer* server = getServer()) {
@@ -197,6 +102,97 @@ asio::ip::udp::endpoint Net::getServerEndpoint() const
         return {};
     }
 }
+
+NetPeerId Net::getLocalPeerId() const
+{
+    if (getServer()) {
+        return NET_PEER_SERVER;
+    }
+    else if (const NetClient* client = getClient()) {
+        return client->getLocalPeerId();
+    }
+    else {
+        return NET_PEER_NONE;
+    }
+}
+
+uint32_t Net::getRemoteCount() const
+{
+    if (const NetServer* server = getServer()) {
+        return server->getPeerCount();
+    }
+    else if (const NetClient* client = getClient()) {
+        return (client->getConnectionStatus() == NetClientConnectionStatus::CONNECTED) ? 1 : 0;
+    }
+    else {
+        return 0;
+    }
+}
+
+std::vector<NetPeerInfo> Net::getPeers() const
+{
+    if (const NetServer* server = getServer()) {
+        return server->getPeers();
+    }
+    else if (const NetClient* client = getClient(); client && client->getConnectionStatus() == NetClientConnectionStatus::CONNECTED) {
+        return {NetPeerInfo{.id = NET_PEER_SERVER, .endpoint = client->getServerEndpoint(), .stats = client->getStats()}};
+    }
+    else {
+        return {};
+    }
+}
+
+NetDisconnectReason Net::getLastDisconnectReason() const { return m_last_disconnect_reason; }
+
+bool Net::pollEvents(NetEvent& ev)
+{
+    bool has_event = false;
+    if (!m_pending_events.empty()) {
+        ev = std::move(m_pending_events.front());
+        m_pending_events.pop_front();
+        has_event = true;
+    }
+    else if (NetServer* server = getServer()) {
+        has_event = server->poll(ev);
+        if (!has_event && !server->isRunning()) {
+            reset(); // the server stopped itself
+        }
+    }
+    else if (NetClient* client = getClient()) {
+        has_event = client->poll(ev);
+        if (!has_event && client->getConnectionStatus() == NetClientConnectionStatus::DISCONNECTED) {
+            reset(); // failed to connect, or the connection was lost
+        }
+    }
+
+    if (has_event && ev.kind == NetEventKind::DISCONNECTED && ev.peer == NET_PEER_SERVER) {
+        m_last_disconnect_reason = ev.reason;
+    }
+    return has_event;
+}
+
+void Net::postEvent(const NetEvent& ev, NetDelivery delivery, NetPeerId peer)
+{
+    if (NetServer* server = getServer()) {
+        server->sendMessage(encodeNetEvent(ev), delivery, peer);
+    }
+    else if (NetClient* client = getClient()) {
+        client->sendMessage(encodeNetEvent(ev), delivery);
+    }
+}
+
+void Net::setSimConfig(const NetSimConfig& config)
+{
+    m_sim_config = config;
+    if (NetServer* server = getServer()) {
+        server->setSimConfig(config);
+    }
+    else if (NetClient* client = getClient()) {
+        client->setSimConfig(config);
+    }
+}
+
+NetSimConfig Net::getSimConfig() const { return m_sim_config; }
 
 std::optional<asio::ip::udp::endpoint> Net::resolve(std::string_view host, std::string_view service)
 {
@@ -214,44 +210,30 @@ std::optional<asio::ip::udp::endpoint> Net::resolve(std::string_view host, std::
     return result.begin()->endpoint();
 }
 
-NetServer* Net::getServer()
-{
-    if (std::holds_alternative<NetServer>(m_server_client)) {
-        return &std::get<NetServer>(m_server_client);
-    }
-    else {
-        return nullptr;
-    }
-}
+NetServer* Net::getServer() { return std::get_if<NetServer>(&m_server_client); }
 
-const NetServer* Net::getServer() const
-{
-    if (std::holds_alternative<NetServer>(m_server_client)) {
-        return &std::get<NetServer>(m_server_client);
-    }
-    else {
-        return nullptr;
-    }
-}
+const NetServer* Net::getServer() const { return std::get_if<NetServer>(&m_server_client); }
 
-NetClient* Net::getClient()
-{
-    if (std::holds_alternative<NetClient>(m_server_client)) {
-        return &std::get<NetClient>(m_server_client);
-    }
-    else {
-        return nullptr;
-    }
-}
+NetClient* Net::getClient() { return std::get_if<NetClient>(&m_server_client); }
 
-const NetClient* Net::getClient() const
+const NetClient* Net::getClient() const { return std::get_if<NetClient>(&m_server_client); }
+
+void Net::reset()
 {
-    if (std::holds_alternative<NetClient>(m_server_client)) {
-        return &std::get<NetClient>(m_server_client);
+    NetEvent ev{};
+    if (NetServer* server = getServer()) {
+        server->stop();
+        while (server->poll(ev)) {
+            m_pending_events.push_back(std::move(ev));
+        }
     }
-    else {
-        return nullptr;
+    else if (NetClient* client = getClient()) {
+        client->disconnect();
+        while (client->poll(ev)) {
+            m_pending_events.push_back(std::move(ev));
+        }
     }
+    m_server_client.emplace<std::monostate>();
 }
 
 } // namespace gc

@@ -12,3 +12,62 @@ Likewise, whether running as a client or a server, it forwards all incoming even
   Net backend (from the server) to keep the local World up to date.
 - Dedicated server -- Net subsystem is in server mode. Input and rendering are DISABLED. The World knows it is the simulation authority. Gameplay code is aware there is no
   actual local player.
+
+# Transport layer
+
+Files:
+- gc_net.h             The interface the rest of the engine uses. Owns either a NetServer or a NetClient.
+- gc_net_server.h      Listens for clients, one session (and one NetConnection) per client.
+- gc_net_client.h      Connects to a server.
+- gc_net_connection.h  Everything that happens once connected (see below). Shared by the server and the client. Does no I/O.
+- gc_net_socket.h      UDP socket with a link simulator in front of it.
+- gc_net_common.h      Packet formats and types shared by all of the above.
+- gc_net_ui.h          Debug UI.
+
+The server and the client each run one thread with an asio io_context. The main thread talks to it by posting work to the
+io_context (sending) and through thread-safe queues/snapshots (events, statistics).
+
+Every packet starts with NetPacketHeader (magic, protocol version, session token, packet type).
+
+Connecting:
+  client -> server  CONNECT_REQUEST             Contains a random nonce. Padded so that the reply is never larger than the request.
+  server -> client  CONNECT_CHALLENGE           Contains a session token: a keyed hash of the client's address, the nonce and the
+                                                time. The server stores nothing at this point.
+  client -> server  CONNECT_CHALLENGE_RESPONSE  Echoes the token, which proves the client can receive at its claimed address.
+                                                The server now creates the session.
+  server -> client  CONNECT_ACCEPT              Contains the NetPeerId assigned to the client.
+The client repeats its last packet every 250 ms until it gets the next one, and gives up after 5 seconds.
+
+Disconnecting:
+  DISCONNECT packets carry a reason and are sent a couple of times as they are not acknowledged. If they are all lost, or the
+  remote host just vanishes, the connection times out after 5 seconds without receiving anything.
+
+Once connected, only DATA packets are sent. Each has a sequence number, the highest sequence number received from the other
+side, a bitfield saying which of the 64 packets before that were received, and zero or more messages.
+- Packets are never retransmitted. Reliable messages that were in a lost packet are sent again in a new packet.
+- Unreliable messages are sent once.
+- Reliable messages are split into fragments of at most one packet. Fragments are numbered and delivered in order, so reliable
+  messages arrive exactly once and in the order they were sent, however large they are (up to NET_MAX_MESSAGE_SIZE).
+- A fragment is resent when the packet carrying it is detected as lost (newer packets were acknowledged and it has been
+  outstanding for longer than a round trip), or when its retransmission timeout expires (RFC 6298, with exponential backoff).
+- A congestion window limits how many fragments can be unacknowledged at once (slow start, then additive increase, halved on loss).
+- Messages queued in the same frame share packets.
+- If nothing has been sent for 500 ms a ping is sent, which keeps the connection alive and the round trip time up to date.
+
+Events:
+  Net::pollEvents() returns messages from remote hosts (NetEventKind::MESSAGE), and also CONNECTED / DISCONNECTED events so that
+  game code can react to hosts joining and leaving. NetEvent::peer says which host an event is about.
+  Net::postEvent() takes a NetDelivery. Use UNRELIABLE for state that is sent continuously (a lost snapshot is replaced by the
+  next one), RELIABLE for things that must arrive.
+
+Not done: encryption, endpoint migration. See todo.txt
+
+Keeping entities in sync is the job of the replication layer, which is built on these events. See replication.txt
+
+
+# Testing
+
+tools/net_test runs a server and clients as separate processes and checks delivery over a simulated bad link. See its README.
+
+The link simulator (NetSimConfig: packet loss, duplication, latency, jitter) is built into the engine, so it can also be turned
+on from the "Network" debug UI window (F10) while running the game. It applies to everything the process sends and receives.
