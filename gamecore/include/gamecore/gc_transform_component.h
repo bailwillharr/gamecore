@@ -1,8 +1,9 @@
 #pragma once
 
-#include <istream>
-#include <ostream>
+#include <bit>
 
+#include "gamecore/gc_byte_reader.h"
+#include "gamecore/gc_byte_writer.h"
 #include "gamecore/gc_ecs.h"
 #include "gamecore/gc_name.h"
 
@@ -73,54 +74,47 @@ public:
 
     TransformComponent& setScale(float scale) { return setScale(glm::vec3(scale, scale, scale)); }
 
-    void serialize(std::ostream& s, uint32_t parent) const
+    // The parent isn't serialised, as Entity handles are only meaningful at runtime. Prefabs store the hierarchy themselves.
+    void serialise(ByteWriter& writer) const
     {
-        s.write(reinterpret_cast<const char*>(&m_position.x), sizeof(float));
-        s.write(reinterpret_cast<const char*>(&m_position.y), sizeof(float));
-        s.write(reinterpret_cast<const char*>(&m_position.z), sizeof(float));
+        writer.writeF32(m_position.x);
+        writer.writeF32(m_position.y);
+        writer.writeF32(m_position.z);
 
-        s.write(reinterpret_cast<const char*>(&m_rotation.x), sizeof(float));
-        s.write(reinterpret_cast<const char*>(&m_rotation.y), sizeof(float));
-        s.write(reinterpret_cast<const char*>(&m_rotation.z), sizeof(float));
-        s.write(reinterpret_cast<const char*>(&m_rotation.w), sizeof(float));
+        writer.writeF32(m_rotation.x);
+        writer.writeF32(m_rotation.y);
+        writer.writeF32(m_rotation.z);
+        writer.writeF32(m_rotation.w);
 
-        s.write(reinterpret_cast<const char*>(&m_scale.x), sizeof(float));
-        s.write(reinterpret_cast<const char*>(&m_scale.y), sizeof(float));
-        s.write(reinterpret_cast<const char*>(&m_scale.z), sizeof(float));
+        writer.writeF32(m_scale.x);
+        writer.writeF32(m_scale.y);
+        writer.writeF32(m_scale.z);
 
-        // Entity handles cannot be serialised
-        s.write(reinterpret_cast<const char*>(&parent), sizeof(uint32_t));
-
-        const uint32_t name_hash = name.getHash();
-        s.write(reinterpret_cast<const char*>(&name_hash), sizeof(uint32_t));
+        writer.writeU32(name.getHash());
     }
 
-    // returned TransformComponent's m_parent is always ENTITY_NONE
-    static TransformComponent deserialize(std::istream& s, uint32_t& parent_out)
+    // The parent is left as it is
+    void deserialise(ByteReader& reader)
     {
-        TransformComponent t{};
+        m_position.x = reader.readF32();
+        m_position.y = reader.readF32();
+        m_position.z = reader.readF32();
 
-        s.read(reinterpret_cast<char*>(&t.m_position.x), sizeof(float));
-        s.read(reinterpret_cast<char*>(&t.m_position.y), sizeof(float));
-        s.read(reinterpret_cast<char*>(&t.m_position.z), sizeof(float));
+        m_rotation.x = reader.readF32();
+        m_rotation.y = reader.readF32();
+        m_rotation.z = reader.readF32();
+        m_rotation.w = reader.readF32();
 
-        s.read(reinterpret_cast<char*>(&t.m_rotation.x), sizeof(float));
-        s.read(reinterpret_cast<char*>(&t.m_rotation.y), sizeof(float));
-        s.read(reinterpret_cast<char*>(&t.m_rotation.z), sizeof(float));
-        s.read(reinterpret_cast<char*>(&t.m_rotation.w), sizeof(float));
+        m_scale.x = reader.readF32();
+        m_scale.y = reader.readF32();
+        m_scale.z = reader.readF32();
 
-        s.read(reinterpret_cast<char*>(&t.m_scale.x), sizeof(float));
-        s.read(reinterpret_cast<char*>(&t.m_scale.y), sizeof(float));
-        s.read(reinterpret_cast<char*>(&t.m_scale.z), sizeof(float));
+        name = Name(reader.readU32());
 
-        s.read(reinterpret_cast<char*>(&parent_out), sizeof(uint32_t));
-
-        uint32_t name_hash{};
-        s.read(reinterpret_cast<char*>(&name_hash), sizeof(uint32_t));
-        t.name = Name(name_hash);
-
-        return t;
+        m_dirty = true;
     }
+
+    static constexpr size_t getSerialisedSize() { return 10 * sizeof(float) + sizeof(uint32_t); }
 };
 
 } // namespace gc

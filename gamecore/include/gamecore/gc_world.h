@@ -3,11 +3,14 @@
 #include "gamecore/gc_ecs.h"
 #include "gamecore/gc_abort.h"
 #include "gamecore/gc_assert.h"
+#include "gamecore/gc_byte_reader.h"
+#include "gamecore/gc_byte_writer.h"
 #include "gamecore/gc_name.h"
 #include "gamecore/gc_frame_state.h"
 
 #include <vector>
 #include <memory>
+#include <optional>
 
 #include <glm/vec3.hpp>
 #include <glm/gtc/quaternion.hpp>
@@ -20,6 +23,10 @@ class World {
     struct ComponentArrayEntry {
         std::unique_ptr<IComponentArray> component_array;
         ComponentArrayType type;
+        // Type erased T::serialise() and T::deserialise(). Null if the component isn't a SerialisableComponent.
+        void (*serialise)(const void* component, ByteWriter& writer);
+        void (*deserialise)(ByteReader& reader, void* component);
+        size_t serialised_size;
     };
 
     std::vector<ComponentArrayEntry> m_component_arrays{};
@@ -58,7 +65,19 @@ public:
         if (component_index != m_component_arrays.size()) {
             gc::abortGame("Attempt to register same component twice!");
         }
-        m_component_arrays.emplace_back(std::make_unique<ComponentArray<T, ArrayType>>(), ArrayType);
+        if (isComponentRegistered(T::NAME)) {
+            // components are looked up by name when loading prefabs
+            gc::abortGame("Attempt to register two components with the same name: {}", Name(T::NAME));
+        }
+        ComponentArrayEntry entry{};
+        entry.component_array = std::make_unique<ComponentArray<T, ArrayType>>();
+        entry.type = ArrayType;
+        if constexpr (SerialisableComponent<T>) {
+            entry.serialise = [](const void* component, ByteWriter& writer) { static_cast<const T*>(component)->serialise(writer); };
+            entry.deserialise = [](ByteReader& reader, void* component) { static_cast<T*>(component)->deserialise(reader); };
+            entry.serialised_size = T::getSerialisedSize();
+        }
+        m_component_arrays.push_back(std::move(entry));
         m_component_names.push_back(T::NAME);
     }
 
@@ -78,16 +97,7 @@ public:
         GC_ASSERT(component_index < static_cast<uint32_t>(m_component_arrays.size()));
         GC_ASSERT(m_component_arrays[component_index].component_array);
 
-        m_component_arrays[component_index].component_array->addComponent(entity);
-
-        if (m_component_arrays[component_index].type == ComponentArrayType::SPARSE) {
-            auto& component_array = static_cast<ComponentArray<T, ComponentArrayType::SPARSE>&>(*(m_component_arrays[component_index].component_array));
-            return component_array.get(entity);
-        }
-        else {
-            auto& component_array = static_cast<ComponentArray<T, ComponentArrayType::DENSE>&>(*(m_component_arrays[component_index].component_array));
-            return component_array.get(entity);
-        }
+        return *static_cast<T*>(m_component_arrays[component_index].component_array->addComponent(entity));
     }
 
     template <ValidComponent T>
@@ -142,6 +152,21 @@ public:
 
     std::vector<Name> getComponentList(Entity entity) const;
 
+    // The functions below work on components by name, without knowing their type. This is how prefabs are loaded and saved.
+
+    bool isComponentRegistered(Name component_name) const;
+
+    // Returns the number of bytes that serialiseComponent() writes and deserialiseComponent() reads.
+    // Empty if the component isn't registered or isn't a SerialisableComponent.
+    std::optional<size_t> getComponentSerialisedSize(Name component_name) const;
+
+    // Returns false, writing nothing, if the component isn't serialisable or the entity doesn't have it.
+    bool serialiseComponent(Entity entity, Name component_name, ByteWriter& writer);
+
+    // Adds the component to the entity if it doesn't have it yet, then sets it from the reader.
+    // Returns false, reading nothing, if the component isn't registered or isn't serialisable.
+    bool deserialiseComponent(Entity entity, Name component_name, ByteReader& reader);
+
     template <ValidDerivedSystem T, typename... Args>
     void registerSystem(Args&&... args)
     {
@@ -174,6 +199,10 @@ public:
             }
         }
     }
+
+private:
+    // returns MAX_COMPONENTS if no component with that name is registered
+    uint32_t findComponentIndex(Name component_name) const;
 };
 
 } // namespace gc

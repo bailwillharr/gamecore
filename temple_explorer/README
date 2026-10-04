@@ -1,0 +1,21 @@
+An example game that loads an entire world from one prefab and lets the player fly around it.
+
+    temple_explorer [PREFAB]
+
+The prefab is "temple.glb", from content/temple.gcpak, unless another prefab's name is given. Any prefab in any of the .gcpak files
+in the content directory can be loaded. To make one from a glTF file:
+
+    gcpak_editor --pack temple.glb --out content/temple.gcpak
+
+Controls:
+    Mouse               look around
+    W A S D             fly forwards, left, backwards, right (forwards is where the camera is looking)
+    Space / E           up
+    Left Ctrl / Q       down
+    Left Shift          fly faster
+    Up / Down arrows    double / halve the flying speed
+    L                   turn the light on the camera on and off (the engine only draws with one light)
+    F10                 show the debug windows and free the mouse
+    Escape              quit
+
+The camera starts in front of the world, on its -Y side, looking in, with a flying speed that suits the size of the world.

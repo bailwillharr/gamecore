@@ -11,12 +11,9 @@
 
 #include <glm/trigonometric.hpp>
 
-#include <stb_image.h>
-
 #include <gclog/gclog.h>
 
 #include <gcpak/gcpak.h>
-#include <gcpak/gcpak_prefab.h>
 
 #include <gamecore/gc_app.h>
 #include <gamecore/gc_window.h>
@@ -31,6 +28,7 @@
 #include <gamecore/gc_resource_manager.h>
 #include <gamecore/gc_gen_mesh.h>
 
+#include "command_line.h"
 #include "editor_system.h"
 
 static void initEditorWorld(gc::App& app, const std::filesystem::path& open_file)
@@ -78,6 +76,14 @@ static void initEditorWorld(gc::App& app, const std::filesystem::path& open_file
 
 int main(int argc, char* argv[])
 {
+    {
+        // Packaging from the command line doesn't need a window, a renderer, or shaders.gcpak (which it is used to create).
+        const std::vector<std::string> args(argv + (argc > 0 ? 1 : 0), argv + argc);
+        if (isCommandLineRequest(args)) {
+            return runCommandLine(args);
+        }
+    }
+
     gc::AppInitOptions options{};
     options.name = "gcpak_editor";
     options.version = "v0.1.0";

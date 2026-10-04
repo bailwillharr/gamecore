@@ -1,9 +1,7 @@
 #pragma once
 
-#include <memory>
-#include <ostream>
-#include <istream>
-
+#include "gamecore/gc_byte_reader.h"
+#include "gamecore/gc_byte_writer.h"
 #include "gamecore/gc_name.h"
 
 namespace gc {
@@ -37,21 +35,21 @@ public:
         return *this;
     }
 
-    void serialize(std::ostream& s) const
+    void serialise(ByteWriter& writer) const
     {
-        s.write(reinterpret_cast<const char*>(&m_visible), sizeof(bool));
-        m_mesh.serialize(s);
-        m_material.serialize(s);
+        writer.writeU8(m_visible ? 1 : 0);
+        writer.writeU32(m_mesh.getHash());
+        writer.writeU32(m_material.getHash());
     }
 
-    static RenderableComponent deserialize(std::istream& s)
+    void deserialise(ByteReader& reader)
     {
-        RenderableComponent r{};
-        s.read(reinterpret_cast<char*>(&r.m_visible), sizeof(bool));
-        r.m_mesh = Name::deserialize(s);
-        r.m_material = Name::deserialize(s);
-        return r;
+        m_visible = reader.readU8() != 0;
+        m_mesh = Name(reader.readU32());
+        m_material = Name(reader.readU32());
     }
+
+    static constexpr size_t getSerialisedSize() { return sizeof(uint8_t) + 2 * sizeof(uint32_t); }
 };
 
 } // namespace gc

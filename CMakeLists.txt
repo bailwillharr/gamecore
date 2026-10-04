@@ -273,13 +273,13 @@ add_subdirectory(gamecore)
 
 add_subdirectory(gamecore_template)
 
+add_subdirectory(temple_explorer)
+
 add_subdirectory(dedicated_server)
 
 add_subdirectory(tools/gcpak_editor)
-add_subdirectory(tools/compile_shaders)
-add_subdirectory(tools/package_textures)
-add_subdirectory(tools/package_meshes)
 add_subdirectory(tools/net_test)
+add_subdirectory(tools/prefab_test)
 
 if(Python3_FOUND)
     add_custom_target(

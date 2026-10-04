@@ -1,33 +1,20 @@
 cmake_minimum_required(VERSION 3.25)
 
-project(gcpak_editor LANGUAGES CXX VERSION 0.1.0)
+project(temple_explorer LANGUAGES CXX VERSION 0.1.0)
 
 set(SRC_FILES
   "src/main.cpp"
-  "src/editor_system.h"
-  "src/editor_system.cpp"
-  "src/asset_compiler.h"
-  "src/asset_compiler.cpp"
-  "src/gltf_compiler.h"
-  "src/gltf_compiler.cpp"
-  "src/command_line.h"
-  "src/command_line.cpp"
+  "src/fly_camera.h"
+  "src/fly_camera.cpp"
 )
 
 if(WIN32)
-    add_executable(${PROJECT_NAME} WIN32
-        ${SRC_FILES}
-        "resource/gcpak_editor.rc"
-    )
+    add_executable(${PROJECT_NAME} WIN32 ${SRC_FILES})
 else()
     add_executable(${PROJECT_NAME} ${SRC_FILES})
 endif()
 
-configure_file(gcpak_editor.h.in gcpak_editor.h @ONLY)
-
 # compiling options:
-
-target_include_directories(${PROJECT_NAME} PRIVATE ${PROJECT_BINARY_DIR})
 
 if(MSVC)
     target_compile_options(${PROJECT_NAME} PRIVATE /W4 /WX)
@@ -48,13 +35,6 @@ set_target_properties(${PROJECT_NAME} PROPERTIES
 
 target_link_libraries(${PROJECT_NAME} PRIVATE gamecore)
 
-# for compiling shaders
-if(LINUX)
-    target_link_libraries(${PROJECT_NAME} PRIVATE shaderc_shared)
-else()
-    target_link_libraries(${PROJECT_NAME} PRIVATE Vulkan::shaderc_combined)
-endif()
-
 if(WIN32)
     add_custom_command(
         TARGET ${PROJECT_NAME} POST_BUILD
@@ -68,6 +48,6 @@ endif()
 add_custom_command(
   TARGET ${PROJECT_NAME} POST_BUILD
   COMMAND ${CMAKE_COMMAND} -E create_symlink
-  ${PROJECT_SOURCE_DIR}/../../content $<TARGET_FILE_DIR:${PROJECT_NAME}>/content
+  ${PROJECT_SOURCE_DIR}/../content $<TARGET_FILE_DIR:${PROJECT_NAME}>/content
   VERBATIM
 )

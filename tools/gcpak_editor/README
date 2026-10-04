@@ -1,31 +1,70 @@
-CURRENTLY BROKEN
+Creates and edits .gcpak files, which are what the engine loads assets from. It compiles source files into assets:
 
-PROPOSED INTERFACE:
+    .vert .frag .comp     GLSL shader, compiled to SPIR-V
+    .png .jpg .jpeg       texture. Either sRGB (colors) or linear (data), see below
+    .obj                  mesh (triangles only, with texture coordinates and normals)
+    .gltf .glb            scene, compiled into a prefab. See below
 
-For now, don't allow removing files. Just delete the .gcpak file and re-add everything.
+Assets are named after the file they came from, including its extension (e.g. "bricks.png"), whatever directory it was in.
+Along with every .gcpak file, a .txt file with the names of the assets is saved. The editor needs it to open the .gcpak file again.
 
-CLI
+A texture asset says whether it is sRGB encoded. Image files are taken to be colors, and so sRGB, unless the file's name
+(without the extension) ends with one of these words after a '-', '_' or '.':
+    normal orm roughness metallic metalness occlusion ao height displacement mask linear
+So "bricks-albedo.png" is sRGB, and "bricks-normal.png" and "floor_orm.png" are linear.
 
-options:
--a add a file
--t override type (SPIRV_SHADER, TEXTURE_RGB_PNG, TEXTURE_RGB_BC7, etc)
--n specify asset name
+THE EDITOR
 
-When overriding the type, file extension checking is done.
-If the file is a .png and BC7 is requested, the texture is compressed.
+    gcpak_editor [FILE.gcpak | SOURCE FILE | DIRECTORY]
 
-Command line usage:
+Press F10 to use the mouse. Package files, source files and directories can also be dropped on the window.
 
-gcpak shaders.gcpak
-Lists contents of shaders.gcpak
+    Open New File                     shows the assets of another package file as well
+    Add Source Files                  compiles the files and adds the resulting assets
+    Add All Source Files In Folder    the same, for every source file in a directory and the directories inside it
+    Save All To Package File          saves every asset that is listed into one .gcpak file
 
-EXAMPLES:
+Select an asset to see what is in it. Textures, meshes and prefabs are drawn. An asset that is added replaces any asset with
+the same name. The editor only loads content/shaders.gcpak itself, so that the other package files can be written to.
 
-gcpak -a terrain.vert shaders.gcpak
-Compiles shader with compile_shaders and adds the compiled shader to shaders.gcpak using:
-  asset type: SPIRV_SHADER
-  asset name: terrain
-Emits a warning if the asset was overwritten.
-Creates the gcpak file if it doesn't already exist.
+FROM THE COMMAND LINE
 
-gcpak 
+No window is opened, so this also works before content/shaders.gcpak exists.
+
+    gcpak_editor --pack PATH... [--out FILE.gcpak] [--append] [--no-recurse]
+    gcpak_editor --list FILE.gcpak
+
+    --pack PATH...      Compile these source files. For a directory, every source file in it. Other files are ignored.
+    --out FILE.gcpak    Where to save. Can be left out when packing a single directory: content/textures is saved to
+                        content/textures.gcpak
+    --append            Keep the assets that are already in the output file. Assets with the same name are replaced.
+                        Without this, the file is overwritten.
+    --no-recurse        Don't look in the directories inside a directory
+    --list FILE.gcpak   Print the assets in a package file
+
+The exit code is zero if every file compiled. The package file is still saved if some didn't.
+(On Windows the editor isn't a console program. Its output shows up in the console it was started from, but the console doesn't
+wait for it to finish unless it is started with "start /wait", or the output is redirected.)
+
+To package the engine's content, from the directory gcpak_editor is in:
+
+    gcpak_editor --pack content/shader_src --out content/shaders.gcpak
+    gcpak_editor --pack content/textures
+    gcpak_editor --pack content/meshes
+
+GLTF FILES
+
+The default scene of a glTF file becomes a prefab, named after the file ("robot.glb"), that gc::loadPrefab() can load.
+Prefabs don't contain resources, so the meshes, materials and textures that the scene uses become assets of their own, named
+"robot.glb/mesh0_0", "robot.glb/material0", "robot.glb/texture0" and so on. They have to be in a package file that the game
+loads, but not necessarily the same one as the prefab.
+
+  - Every node becomes an entity, with the same name, transform and parent. They are all under a root entity (named after the
+    file without its extension) which rotates glTF's Y-up coordinates to the engine's Z-up.
+  - A node with a mesh gets a RenderableComponent. If the mesh has several primitives, each one gets a child entity instead.
+    Only triangle lists are supported. Normals and tangents are generated if the file doesn't have them. A primitive with too
+    many vertices for one mesh asset is split up.
+  - Materials are made from the base color (sRGB), metallic-roughness, occlusion and normal textures (linear). Constant factors
+    are baked into the textures. Emission, transparency, double sided materials and texture transforms aren't supported.
+  - Perspective cameras become CameraComponents that aren't active. Lights (KHR_lights_punctual) become LightComponents.
+  - Animations, skins and morph targets are left out.

@@ -3,6 +3,7 @@
 #include <cstdlib>
 #include <cstring>
 
+#include <array>
 #include <span>
 #include <optional>
 #include <variant>
@@ -34,12 +35,12 @@ struct ResourceTexture {
     static std::optional<ResourceTexture> create(const Content& content_manager, Name name)
     {
         const auto asset = content_manager.findAsset(name);
-        if (asset.data.empty() || asset.type != gcpak::GcpakAssetType::TEXTURE_R8G8B8A8) {
+        // the type of the asset says whether the texture holds colors (sRGB) or data (linear)
+        const bool srgb = (asset.type == gcpak::GcpakAssetType::TEXTURE_R8G8B8A8_SRGB);
+        if (asset.data.empty() || (!srgb && asset.type != gcpak::GcpakAssetType::TEXTURE_R8G8B8A8)) {
             return {};
         }
 
-        const bool srgb = false; // TODO read from asset
-        
         return ResourceTexture(asset.data, srgb);
     }
 };
@@ -51,9 +52,19 @@ struct ResourceMaterial {
 
     static std::optional<ResourceMaterial> create(const Content& content_manager, Name name)
     {
-        (void)content_manager;
-        (void)name;
-        return {};
+        const auto asset = content_manager.findAsset(name);
+        if (asset.type != gcpak::GcpakAssetType::MATERIAL || asset.data.size() != 3 * sizeof(uint32_t)) {
+            return {};
+        }
+
+        std::array<uint32_t, 3> texture_ids{};
+        std::memcpy(texture_ids.data(), asset.data.data(), asset.data.size());
+
+        ResourceMaterial material{};
+        material.base_color_texture = Name(texture_ids[0]);
+        material.orm_texture = Name(texture_ids[1]);
+        material.normal_texture = Name(texture_ids[2]);
+        return material;
     }
 };
 

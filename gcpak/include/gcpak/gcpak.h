@@ -67,10 +67,12 @@ struct GcpakHeader {
 enum class GcpakAssetType : std::uint32_t {
     INVALID = 0,
     SPIRV_SHADER = 1,                           // passed directly into VkShaderModuleCreateInfo
-    TEXTURE_R8G8B8A8 = 2,                       // first 4 bytes is width, second 4 bytes is height, remaining data is just R8G8B8A8
+    TEXTURE_R8G8B8A8 = 2,                       // first 4 bytes is width, second 4 bytes is height, remaining data is just R8G8B8A8.
+                                                // The values are linear: for data such as normal maps, roughness and metallic
     MESH_POS12_NORM12_TANG16_UV8_INDEXED16 = 3, // first 2 bytes is vertex count, followed by vertices, followed by 16 bit indices
     PREFAB = 4,                                 // See gcpak_prefab.h
-
+    MATERIAL = 5, // three asset IDs (uint32_t): base color texture, occlusion-roughness-metallic texture, normal texture. Zero means none
+    TEXTURE_R8G8B8A8_SRGB = 6, // same layout as TEXTURE_R8G8B8A8, but the RGB values are sRGB encoded: for colors (alpha is always linear)
 };
 
 struct GcpakAssetEntry {

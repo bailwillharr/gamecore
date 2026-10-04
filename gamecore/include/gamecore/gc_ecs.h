@@ -3,6 +3,7 @@
 #include <cstdint>
 
 #include <bitset>
+#include <concepts>
 #include <vector>
 #include <limits>
 #include <unordered_map>
@@ -16,12 +17,29 @@ namespace gc {
 class World;       // forward-dec
 class System;      // forward-dec
 struct FrameState; // forward-dec
+class ByteReader;  // forward-dec
+class ByteWriter;  // forward-dec
 
 using Entity = uint32_t;
 
 /* This might seem limiting but it greatly simplifies component management and prevents components from making heap allocations. */
 template <typename T>
 concept ValidComponent = std::is_trivially_copyable_v<T>;
+
+/*
+ * A component that can be written to and read from a byte stream, which is what allows it to be stored in a prefab (see gc_prefab.h).
+ * The World finds out whether a component is serialisable when it is registered. To make a component serialisable, give it:
+ *   void serialise(ByteWriter& writer) const;         // must write exactly getSerialisedSize() bytes
+ *   void deserialise(ByteReader& reader);             // must read exactly getSerialisedSize() bytes
+ *   static constexpr size_t getSerialisedSize();
+ * Never trust the values read by deserialise() to be sensible. Entity handles can't be serialised.
+ */
+template <typename T>
+concept SerialisableComponent = ValidComponent<T> && requires(const T& component, T& mutable_component, ByteWriter& writer, ByteReader& reader) {
+    component.serialise(writer);
+    mutable_component.deserialise(reader);
+    { T::getSerialisedSize() } -> std::convertible_to<size_t>;
+};
 
 template <typename T>
 concept ValidDerivedSystem = std::is_base_of_v<System, T> && !std::is_same_v<System, T>;
@@ -99,8 +117,11 @@ class IComponentArray {
 public:
     virtual ~IComponentArray() = default;
 
-    virtual void addComponent(Entity entity) = 0;
+    // Returns a pointer to the new component, which is default initialised.
+    virtual void* addComponent(Entity entity) = 0;
     virtual void removeComponent(Entity entity) = 0;
+    // Returns a pointer to the entity's component. Same as ComponentArray::get(), for when the type isn't known.
+    virtual void* getRaw(Entity entity) = 0;
 };
 
 /*
@@ -118,7 +139,7 @@ class ComponentArray : public IComponentArray {
     std::vector<uint32_t> m_free_indices{};                             // only used if sparse
 
 public:
-    void addComponent(const Entity entity) override
+    void* addComponent(const Entity entity) override
     {
         GC_ASSERT(entity != ENTITY_NONE);
 
@@ -148,6 +169,7 @@ public:
                 m_component_array[index] = T{};
             }
         }
+        return &m_component_array[index];
     }
 
     void removeComponent(const Entity entity) override
@@ -168,6 +190,8 @@ public:
             // do nothing
         }
     }
+
+    void* getRaw(const Entity entity) override { return &get(entity); }
 
     // These references can be invalidated if addComponent() is called after
     T& get(const Entity entity)

@@ -20,25 +20,15 @@ Use the same ByteReader and ByteWriter classes engine-wide.
 
 
 
-Prefabs
-	Prefabs should support game-defined components.
-	To support this, every component now declares a 'static constexpr gc::Name NAME' field.
-	Every component will also need serialisation and deserialisation functions (THAT ARE TYPE ERASED). I.e.,
-
-	static void serialise(const void* comp, ByteWriter& writer);
-	static void deserialise(ByteReader& reader, void* out);
-	static constexpr size_t getSerialisedSize();
-
-	gc::World will save references to all these functions in the registerComponent() call.
-	This way, the prefab loader can easily get the gc::Name for a component, have no idea what it is, and do:
-
-	world.deserialiseComponent(entity, comp_name, byte_reader)
-
-	and gc::World will figure out the component index for comp_name, get the deserialise() function, and call:
-
-	m_component_arrays[index].addComponent(entity) (which I'll modify to return a reference).
-
-	Then it'll directly deserialise into the memory that the reference points to (taking to care avoid aliasing / alignment problems.)
+Prefabs (see gc_prefab.h, gcpak_prefab.h and tools/prefab_test):
+	Components are found by their NAME when a prefab is loaded, but every World still has to register its components in the same
+	order because getComponentIndex<T>() is global. A World should map component types to its own indices instead.
+	A prefab can't refer to another prefab (nested prefabs). A game component can store a prefab's Name and load it itself.
+	Components can't refer to other entities in the prefab, as Entity handles can't be serialised. Would need the loader to
+	translate prefab entity indices into Entity handles.
+	There is no version number in a serialised component. If its size changes, old prefabs are rejected.
+	gcpak_editor can't view or edit prefabs yet.
+	Most of gamecore_template's components aren't serialisable yet (only SpinComponent is).
 
 
 
@@ -81,6 +71,11 @@ Replication (see replication.txt):
 
 
 
-Asset compilation
-	Get rid of compile_shaders, package_meshes, and package_textures and move all the behaviour into gcpak_editor.
-	gpcak_editor should also take arguments where it can add all assets in a directory into a gcpak file without opening a window.
+Asset compilation (see tools/gcpak_editor/README):
+	gcpak_editor decides whether an image file is an sRGB or a linear texture from its file name. There's no way to override it.
+	Materials are only three textures. glTF's constant factors are baked into textures by gcpak_editor, and emission,
+	transparency and double sided materials are dropped.
+	Mesh assets have 16 bit indices, so gcpak_editor splits big glTF meshes into several. Support 32 bit indices instead.
+	gcpak_editor compiles on the main thread, so the window freezes while a big folder is added.
+	Nothing recompiles assets when their source files change. The build could run gcpak_editor --pack.
+	No animations or skins.

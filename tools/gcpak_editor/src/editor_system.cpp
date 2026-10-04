@@ -16,6 +16,10 @@
 #include <gamecore/gc_renderable_component.h>
 #include <gamecore/gc_resources.h>
 #include <gamecore/gc_gen_mesh.h>
+#include <gamecore/gc_byte_reader.h>
+#include <gamecore/gc_prefab.h>
+#include <gamecore/gc_camera_component.h>
+#include <gamecore/gc_light_component.h>
 
 using namespace gc;
 using namespace gc::literals;
@@ -29,11 +33,15 @@ static std::string getAssetTypeString(gcpak::GcpakAssetType type)
     case GcpakAssetType::SPIRV_SHADER:
         return "Shader";
     case GcpakAssetType::TEXTURE_R8G8B8A8:
-        return "Texture";
+        return "Texture (linear)";
+    case GcpakAssetType::TEXTURE_R8G8B8A8_SRGB:
+        return "Texture (sRGB)";
     case GcpakAssetType::MESH_POS12_NORM12_TANG16_UV8_INDEXED16:
         return "Mesh";
     case GcpakAssetType::PREFAB:
         return "Prefab";
+    case GcpakAssetType::MATERIAL:
+        return "Material";
     default:
         return "(unknown)";
     }
@@ -188,7 +196,7 @@ static AABB getAABBFromMesh(const ResourceMesh& mesh)
     aabb.min.x = std::numeric_limits<float>::max();
     aabb.min.y = aabb.min.x;
     aabb.min.z = aabb.min.x;
-    aabb.max.x = std::numeric_limits<float>::min();
+    aabb.max.x = std::numeric_limits<float>::lowest();
     aabb.max.y = aabb.max.x;
     aabb.max.z = aabb.max.x;
     for (const auto& vertex : mesh.vertices.get()) {
@@ -228,11 +236,87 @@ static void FitAABBToUnitCube(const AABB& box, glm::vec3& out_position, float& o
     out_position = glm::vec3{-center.x, -center.y, -center.z} * out_scale;
 }
 
+static glm::mat4 getLocalMatrix(const TransformComponent& t)
+{
+    glm::mat4 matrix = glm::mat4_cast(t.getRotation());
+    matrix[3] = glm::vec4(t.getPosition(), 1.0f);
+    return glm::scale(matrix, t.getScale());
+}
+
+// The transform of an entity relative to one of its ancestors. (World matrices are only up to date after the TransformSystem has run.)
+static glm::mat4 getMatrixRelativeTo(World& world, Entity entity, Entity ancestor)
+{
+    glm::mat4 matrix{1.0f};
+    while (entity != ENTITY_NONE && entity != ancestor) {
+        const TransformComponent* const t = world.getComponent<TransformComponent>(entity);
+        matrix = getLocalMatrix(*t) * matrix;
+        entity = t->getParent();
+    }
+    return matrix;
+}
+
+struct AssetPrefabInfo {
+    uint32_t entity_count{};
+    std::vector<std::pair<gc::Name, uint32_t>> component_counts{}; // other than transforms
+    bool valid{true};
+};
+
+static AssetPrefabInfo getAssetPrefabInfo(const std::span<const uint8_t> data)
+{
+    AssetPrefabInfo info{};
+    ByteReader reader(data);
+    while (reader.remaining() > 0) {
+        if (reader.remaining() < gcpak::PREFAB_COMPONENT_HEADER_SIZE) {
+            info.valid = false;
+            break;
+        }
+        const gc::Name component_name(reader.readU32());
+        const size_t size = reader.readU32();
+        if (size > reader.remaining()) {
+            info.valid = false;
+            break;
+        }
+        reader.skip(size);
+        if (component_name == TransformComponent::NAME) {
+            ++info.entity_count;
+            continue;
+        }
+        auto it = std::find_if(info.component_counts.begin(), info.component_counts.end(), [&](const auto& pair) { return pair.first == component_name; });
+        if (it == info.component_counts.end()) {
+            info.component_counts.emplace_back(component_name, 1);
+        }
+        else {
+            ++it->second;
+        }
+    }
+    return info;
+}
+
+static std::string getComponentDisplayName(gc::Name component_name)
+{
+    if (component_name == RenderableComponent::NAME) {
+        return "RenderableComponent";
+    }
+    else if (component_name == CameraComponent::NAME) {
+        return "CameraComponent";
+    }
+    else if (component_name == LightComponent::NAME) {
+        return "LightComponent";
+    }
+    else {
+        return component_name.getString(); // only readable if the name happens to be known
+    }
+}
+
 EditorSystem::EditorSystem(World& world, Window& window, gc::ResourceManager& resource_manager, const std::filesystem::path& open_file)
     : System(world), m_window(window), m_resource_manager(resource_manager)
 {
-    if (!open_file.empty()) {
+    if (open_file.extension() == ".gcpak") {
         m_open_files.emplace_back(open_file);
+    }
+    else if (!open_file.empty()) {
+        // a source file, or a directory of them
+        m_pending_sources.push_back(open_file);
     }
 }
 
@@ -249,7 +333,13 @@ void EditorSystem::onUpdate(FrameState& frame_state)
         // terrible hack right here
         // callback needs a null-terminated ARRAY of null-terminated strings
         const std::array<const char*, 2> filelist{drag_drop_path.c_str(), nullptr};
-        openGcpakFileDialogCallback(this, filelist.data(), 0);
+        if (std::filesystem::path(drag_drop_path).extension() == ".gcpak") {
+            openGcpakFileDialogCallback(this, filelist.data(), 0);
+        }
+        else {
+            // a source file, or a directory of them
+            openAssetFileDialogCallback(this, filelist.data(), 0);
+        }
     }
 
     SetNextWindowPosAnchor(ImGuiCond_Always, ImGuiAnchorCorner::BottomRight, ImVec2(0.0f, 0.0f));
@@ -264,15 +354,26 @@ void EditorSystem::onUpdate(FrameState& frame_state)
             SDL_ShowSaveFileDialog(saveGcpakFileDialogCallback, this, m_window.getHandle(), &m_gcpak_filter, 1,
                                    App::instance().getSaveDirectory().string().c_str());
         }
-        if (ImGui::Button("Add Asset")) {
+        ImGui::Separator();
+        // Shaders, textures and meshes are compiled into assets. glTF scenes are compiled into prefabs.
+        if (ImGui::Button("Add Source Files")) {
             SDL_ShowOpenFileDialog(openAssetFileDialogCallback, this, m_window.getHandle(), m_asset_filters.data(), static_cast<int>(m_asset_filters.size()),
                                    NULL, true);
+        }
+        if (ImGui::Button("Add All Source Files In Folder")) {
+            SDL_ShowOpenFolderDialog(openAssetFileDialogCallback, this, m_window.getHandle(), NULL, true);
+        }
+        if (!m_status.empty()) {
+            ImGui::Separator();
+            ImGui::TextUnformatted(m_status.c_str());
         }
     }
     ImGui::End();
 
     {
         std::unique_lock assets_lock(m_assets_mutex);
+
+        processPendingSources();
 
         // reload files from disk
         if (m_rescan.exchange(false, std::memory_order_relaxed)) {
@@ -397,11 +498,12 @@ void EditorSystem::onUpdate(FrameState& frame_state)
                 resetPreviewEntity();
 
                 switch (asset.asset.type) {
-                case gcpak::GcpakAssetType::TEXTURE_R8G8B8A8: {
+                case gcpak::GcpakAssetType::TEXTURE_R8G8B8A8:
+                case gcpak::GcpakAssetType::TEXTURE_R8G8B8A8_SRGB: {
 
                     ResourceTexture new_texture{};
                     new_texture.data = asset.asset.data;
-                    new_texture.srgb = true;
+                    new_texture.srgb = (asset.asset.type == gcpak::GcpakAssetType::TEXTURE_R8G8B8A8_SRGB);
                     const gc::Name new_texture_name = m_resource_manager.add<ResourceTexture>(std::move(new_texture));
 
                     ResourceMaterial new_material{};
@@ -434,6 +536,9 @@ void EditorSystem::onUpdate(FrameState& frame_state)
                     m_preview_transform->setPosition(position);
                     m_preview_transform->setScale(scale);
                 } break;
+                case gcpak::GcpakAssetType::PREFAB:
+                    showPrefabPreview(asset.asset);
+                    break;
                 default:
                     break;
                 }
@@ -448,7 +553,11 @@ void EditorSystem::onUpdate(FrameState& frame_state)
 
     static float angle = 0.0f;
     angle += static_cast<float>(frame_state.delta_time);
-    m_preview_transform->setRotation(glm::angleAxis(angle, glm::vec3(0.0f, 0.0f, 1.0f)));
+    // (looked up every time, as pointers to components don't survive entities being created)
+    m_world.getComponent<TransformComponent>(m_preview_entity)->setRotation(glm::angleAxis(angle, glm::vec3(0.0f, 0.0f, 1.0f)));
+    if (m_prefab_pivot != ENTITY_NONE) {
+        m_world.getComponent<TransformComponent>(m_prefab_pivot)->setRotation(glm::angleAxis(angle, glm::vec3(0.0f, 0.0f, 1.0f)));
+    }
 }
 
 // This can be called on a different thread. On Windows 10, it is.
@@ -498,11 +607,186 @@ void SDLCALL EditorSystem::openAssetFileDialogCallback(void* userdata, const cha
         return;
     }
 
+    // Compiling is left to the main thread, in processPendingSources()
+    std::unique_lock lock(self->m_pending_sources_mutex);
+    for (const char* const* file_path_ptr = filelist; *file_path_ptr; ++file_path_ptr) {
+        self->m_pending_sources.emplace_back(*file_path_ptr);
+    }
+}
+
+void EditorSystem::processPendingSources()
+{
+    std::vector<std::filesystem::path> sources{};
     {
-        std::unique_lock lock(self->m_open_files_mutex);
+        std::unique_lock lock(m_pending_sources_mutex);
+        sources.swap(m_pending_sources);
+    }
+    if (sources.empty()) {
+        return;
     }
 
-    self->m_rescan.store(true, std::memory_order_relaxed);
+    std::vector<Asset> compiled{};
+    CompileStats total{};
+    for (const auto& source : sources) {
+        const CompileStats stats = compilePath(source, true, compiled);
+        total.files_compiled += stats.files_compiled;
+        total.files_failed += stats.files_failed;
+    }
+
+    // the selection refers to the lists that are about to change
+    m_selected_asset_it = {};
+    m_asset_being_previewed = nullptr;
+
+    uint32_t replaced{};
+    for (Asset& asset : compiled) {
+        const uint32_t id = getAssetId(asset);
+        for (auto& category : m_assets) {
+            replaced += static_cast<uint32_t>(std::erase_if(category.second.assets, [id](const EditorAsset& existing) { return getAssetId(existing.asset) == id; }));
+        }
+        EditorAsset editor_asset{};
+        editor_asset.asset = std::move(asset);
+        editor_asset.from_file = &m_unsaved_file;
+        m_assets[editor_asset.asset.type].assets.push_back(std::move(editor_asset));
+    }
+
+    m_status = std::format("Compiled {} file{}: {} asset{} ({} replaced)", total.files_compiled, total.files_compiled == 1 ? "" : "s", compiled.size(),
+                           compiled.size() == 1 ? "" : "s", replaced);
+    if (total.files_failed > 0) {
+        m_status += std::format("\n{} file{} failed. See the log", total.files_failed, total.files_failed == 1 ? "" : "s");
+    }
+}
+
+const Asset* EditorSystem::findAsset(gcpak::GcpakAssetType type, uint32_t id)
+{
+    const auto it = m_assets.find(type);
+    if (it == m_assets.end()) {
+        return nullptr;
+    }
+    for (const EditorAsset& editor_asset : it->second.assets) {
+        if (getAssetId(editor_asset.asset) == id) {
+            return &editor_asset.asset;
+        }
+    }
+    return nullptr;
+}
+
+const Asset* EditorSystem::findTextureAsset(uint32_t id)
+{
+    const Asset* const asset = findAsset(gcpak::GcpakAssetType::TEXTURE_R8G8B8A8_SRGB, id);
+    return asset ? asset : findAsset(gcpak::GcpakAssetType::TEXTURE_R8G8B8A8, id);
+}
+
+// The prefab's resources aren't in the content that the engine has loaded, they are assets in the editor. So for every mesh,
+// material and texture that the prefab uses, a resource with the same name is made from the asset.
+void EditorSystem::showPrefabPreview(const Asset& prefab)
+{
+    // Spins about the centre of the prefab: the pivot is rotated and scaled, and the offset moves the prefab's centre onto the pivot.
+    m_prefab_pivot = m_world.createEntity("prefab_preview"_name, ENTITY_NONE, glm::vec3{0.0f, 5.0f, 0.0f});
+    const Entity offset = m_world.createEntity("prefab_preview_offset"_name, m_prefab_pivot);
+
+    std::vector<Entity> entities{};
+    if (loadPrefab(prefab.data, m_world, offset, &entities) == ENTITY_NONE) {
+        m_status = "Failed to load the prefab. See the log";
+        clearPrefabPreview();
+        return;
+    }
+
+    AABB bounds{glm::vec3{std::numeric_limits<float>::max()}, glm::vec3{std::numeric_limits<float>::lowest()}};
+    bool has_bounds = false;
+    for (const Entity entity : entities) {
+        const RenderableComponent* const renderable = m_world.getComponent<RenderableComponent>(entity);
+        if (!renderable || renderable->m_mesh.empty()) {
+            continue;
+        }
+        const Name mesh_name = renderable->m_mesh;
+        const Name material_name = renderable->m_material;
+        const Asset* const mesh_asset = findAsset(gcpak::GcpakAssetType::MESH_POS12_NORM12_TANG16_UV8_INDEXED16, mesh_name.getHash());
+        if (!mesh_asset) {
+            GC_WARN("Prefab {} uses a mesh that isn't open in the editor: {}", prefab.name, mesh_name);
+            continue;
+        }
+
+        ResourceMesh mesh = createMeshFromData(mesh_asset->data);
+        const AABB mesh_bounds = getAABBFromMesh(mesh);
+        if (!m_resource_manager.add<ResourceMesh>(std::move(mesh), mesh_name).empty()) {
+            m_prefab_meshes.push_back(mesh_name);
+        }
+        addPrefabPreviewMaterial(material_name);
+
+        const glm::mat4 matrix = getMatrixRelativeTo(m_world, entity, offset);
+        for (int corner = 0; corner < 8; ++corner) {
+            const glm::vec3 local{(corner & 1) ? mesh_bounds.max.x : mesh_bounds.min.x, (corner & 2) ? mesh_bounds.max.y : mesh_bounds.min.y,
+                                  (corner & 4) ? mesh_bounds.max.z : mesh_bounds.min.z};
+            const glm::vec3 point = glm::vec3(matrix * glm::vec4(local, 1.0f));
+            bounds.min = glm::min(bounds.min, point);
+            bounds.max = glm::max(bounds.max, point);
+            has_bounds = true;
+        }
+    }
+
+    if (has_bounds) {
+        const glm::vec3 size = bounds.max - bounds.min;
+        const float largest = glm::max(size.x, glm::max(size.y, size.z));
+        if (largest > 0.0f) {
+            m_world.getComponent<TransformComponent>(m_prefab_pivot)->setScale(2.0f / largest);
+        }
+        m_world.getComponent<TransformComponent>(offset)->setPosition(-0.5f * (bounds.min + bounds.max));
+    }
+}
+
+void EditorSystem::addPrefabPreviewMaterial(Name material_name)
+{
+    if (material_name.empty()) {
+        return;
+    }
+    const Asset* const material_asset = findAsset(gcpak::GcpakAssetType::MATERIAL, material_name.getHash());
+    if (!material_asset || material_asset->data.size() != 3 * sizeof(uint32_t)) {
+        return;
+    }
+    std::array<uint32_t, 3> texture_ids{};
+    std::memcpy(texture_ids.data(), material_asset->data.data(), material_asset->data.size());
+
+    for (size_t i = 0; i < texture_ids.size(); ++i) {
+        if (texture_ids[i] == 0) {
+            continue;
+        }
+        const Asset* const texture_asset = findTextureAsset(texture_ids[i]);
+        if (!texture_asset) {
+            continue;
+        }
+        const bool srgb = (texture_asset->type == gcpak::GcpakAssetType::TEXTURE_R8G8B8A8_SRGB);
+        if (!m_resource_manager.add<ResourceTexture>(ResourceTexture(texture_asset->data, srgb), Name(texture_ids[i])).empty()) {
+            m_prefab_textures.push_back(Name(texture_ids[i]));
+        }
+    }
+
+    ResourceMaterial material{};
+    material.base_color_texture = Name(texture_ids[0]);
+    material.orm_texture = Name(texture_ids[1]);
+    material.normal_texture = Name(texture_ids[2]);
+    if (!m_resource_manager.add<ResourceMaterial>(std::move(material), material_name).empty()) {
+        m_prefab_materials.push_back(material_name);
+    }
+}
+
+void EditorSystem::clearPrefabPreview()
+{
+    if (m_prefab_pivot != ENTITY_NONE) {
+        m_world.deleteEntity(m_prefab_pivot); // and everything under it
+        m_prefab_pivot = ENTITY_NONE;
+    }
+    for (const Name name : m_prefab_meshes) {
+        m_resource_manager.deleteResource<ResourceMesh>(name);
+    }
+    for (const Name name : m_prefab_materials) {
+        m_resource_manager.deleteResource<ResourceMaterial>(name);
+    }
+    for (const Name name : m_prefab_textures) {
+        m_resource_manager.deleteResource<ResourceTexture>(name);
+    }
+    m_prefab_meshes.clear();
+    m_prefab_materials.clear();
+    m_prefab_textures.clear();
 }
 
 void SDLCALL EditorSystem::saveGcpakFileDialogCallback(void* userdata, const char* const* filelist, int filter)
@@ -557,10 +841,16 @@ void EditorSystem::showSelectedAssetInfoUI()
         ImGui::Text("Hash: %#x", asset.asset.hash);
         ImGui::Text("Data Size: %s", bytesToHumanReadable(asset.asset.data.size()).c_str());
         ImGui::Text("Type: %s", getAssetTypeString(asset.asset.type).c_str());
-        ImGui::Text("From file: %s", asset.from_file->path.filename().string().c_str()); // FML
+        if (asset.from_file->path.empty()) {
+            ImGui::Text("From file: (not saved yet)");
+        }
+        else {
+            ImGui::Text("From file: %s", asset.from_file->path.filename().string().c_str()); // FML
+        }
 
         switch (asset.asset.type) {
-        case gcpak::GcpakAssetType::TEXTURE_R8G8B8A8: {
+        case gcpak::GcpakAssetType::TEXTURE_R8G8B8A8:
+        case gcpak::GcpakAssetType::TEXTURE_R8G8B8A8_SRGB: {
             auto info = getAssetTextureInfo(asset.asset.data);
             ImGui::Text("Width: %u, Height: %u", info.width, info.height);
         } break;
@@ -568,6 +858,37 @@ void EditorSystem::showSelectedAssetInfoUI()
             auto info = getAssetMeshInfo(asset.asset.data);
             ImGui::Text("Vertices: %d, Triangles: %d", info.vertex_count, info.index_count / 3);
         } break;
+        case gcpak::GcpakAssetType::MATERIAL: {
+            if (asset.asset.data.size() == 3 * sizeof(uint32_t)) {
+                std::array<uint32_t, 3> texture_ids{};
+                std::memcpy(texture_ids.data(), asset.asset.data.data(), asset.asset.data.size());
+                const std::array<const char*, 3> labels{"Base color", "Occlusion-roughness-metallic", "Normal"};
+                for (size_t i = 0; i < texture_ids.size(); ++i) {
+                    const Asset* const texture = findTextureAsset(texture_ids[i]);
+                    if (texture_ids[i] == 0) {
+                        ImGui::Text("%s: (none)", labels[i]);
+                    }
+                    else if (texture && !texture->name.empty()) {
+                        ImGui::Text("%s: %s", labels[i], texture->name.c_str());
+                    }
+                    else {
+                        ImGui::Text("%s: %#x", labels[i], texture_ids[i]);
+                    }
+                }
+            }
+        } break;
+        case gcpak::GcpakAssetType::PREFAB: {
+            const auto info = getAssetPrefabInfo(asset.asset.data);
+            ImGui::Text("Entities: %u", info.entity_count);
+            for (const auto& [component_name, count] : info.component_counts) {
+                ImGui::Text("%s: %u", getComponentDisplayName(component_name).c_str(), count);
+            }
+            if (!info.valid) {
+                ImGui::Text("The prefab is corrupt");
+            }
+        } break;
+        default:
+            break;
         }
 
         if (ImGui::Button("Remove")) {
@@ -581,6 +902,12 @@ void EditorSystem::showSelectedAssetInfoUI()
 
 void EditorSystem::resetPreviewEntity()
 {
+    clearPrefabPreview();
+
+    // pointers to components don't survive entities being created, which previewing a prefab does
+    m_preview_transform = m_world.getComponent<TransformComponent>(m_preview_entity);
+    m_preview_renderable = m_world.getComponent<RenderableComponent>(m_preview_entity);
+
     if (!m_preview_renderable->m_material.empty()) {
         const ResourceMaterial* material = m_resource_manager.get<ResourceMaterial>(m_preview_renderable->m_material);
         if (material) {

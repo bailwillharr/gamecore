@@ -1,0 +1,11 @@
+Tests prefabs: the format, saving them into a .gcpak file, and loading them into a World.
+
+    prefab_test [DIRECTORY]
+
+Three prefabs are built by hand with gc::PrefabWriter (a single entity, a small hierarchy, and an entire world with several root
+entities) and saved into prefab_test.gcpak in DIRECTORY. If no directory is given, a directory in the system's temporary directory
+is used. The file is left behind afterwards.
+
+The file is then opened with gc::Content, as a game would, and the prefabs are loaded into Worlds and checked. This also covers
+components defined outside of the engine, components that the World doesn't know about, saving a World back into a prefab, and
+corrupt prefab data. No window is opened. The exit code is zero if every check passed.
