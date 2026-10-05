@@ -25,15 +25,18 @@ Lights:
 	Cull lights per object or use clustered shading.
 	No spot lights. Only one directional light.
 
-Shadows (see ShadowMapComponent and tools/gcpak_editor/src/shadow_baker.h):
-	Only the directional light casts shadows, and only from a shadow map that gcpak_editor baked for a glTF scene. Things that
-	move, or that aren't in the prefab, don't cast shadows. Point lights don't cast any.
+Shadows (see ShadowMapComponent and tools/gcpak_editor/src/prefab_shadow_baker.h):
+	Only the directional light casts shadows, and only from a shadow map that gcpak_editor baked for a prefab (when it compiles a
+	glTF scene, or for any other prefab with --bake-shadows). Things that move, or that aren't in the prefab, don't cast shadows.
+	Point lights don't cast any.
 	One shadow map per world. One shadow map covers the whole prefab, so a big world gets big texels (cascades would fix that).
 	Alpha blended materials cast all or nothing shadows (cut at an alpha of 0.5), as there is only one depth per texel.
 	The baker reads the nearest texel of the full size texture for alpha tests, so the shadows of fine cut outs are harder
 	edged than what is drawn.
 	The baker is single threaded and rasterises every triangle on the CPU.
-	There is no way to bake the shadows of a prefab that wasn't made from a glTF file.
+	What doesn't cast a shadow is chosen by entity name on the command line (--no-cast). A component, or a flag on
+	RenderableComponent, would keep that with the prefab instead.
+	Shadows can only be baked from the command line, not in the editor's window.
 
 
 
@@ -46,7 +49,8 @@ Collisions (see gc_collision_system.h and tools/collision_test):
 	in one go would.
 	Each mesh's triangles are copied and sorted into a tree the first time a collider uses it, on the main thread.
 	Queries see the world as of the CollisionSystem's last update.
-	gamecore_template doesn't use it yet.
+	gamecore_template doesn't use it yet. ember_court does: its character controller (ember_court/src/character.cpp) is what a
+	physics system would replace.
 
 Use the same ByteReader and ByteWriter classes engine-wide.
 	No more NetByteReader for network stuff, and also stream usage for file stuff.
@@ -63,6 +67,8 @@ Prefabs (see gc_prefab.h, gcpak_prefab.h and tools/prefab_test):
 	There is no version number in a serialised component. If its size changes, old prefabs are rejected.
 	gcpak_editor can't view or edit prefabs yet.
 	Most of gamecore_template's components aren't serialisable yet (only SpinComponent is).
+	Prefabs made by code (ember_court/mapgen) have entity names that the debug UI can't show, as only asset names are saved
+	next to a .gcpak file.
 
 
 

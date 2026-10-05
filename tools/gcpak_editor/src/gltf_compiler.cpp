@@ -33,10 +33,8 @@
 #include <gamecore/gc_light_component.h>
 #include <gamecore/gc_prefab.h>
 #include <gamecore/gc_renderable_component.h>
-#include <gamecore/gc_shadow_map_component.h>
-#include <gamecore/gc_stopwatch.h>
 
-#include "shadow_baker.h"
+#include "prefab_shadow_baker.h"
 
 namespace tg = tinygltf;
 
@@ -83,13 +81,7 @@ class GltfCompiler {
 
     gc::PrefabWriter m_prefab{};
 
-    // For baking the directional light's shadow map, see bakeShadows()
-    std::vector<glm::mat4> m_entity_matrices{};                       // of every entity in the prefab, in prefab space
-    std::unordered_map<gc::Name, size_t> m_mesh_assets{};             // where each mesh asset is in m_assets
-    std::unordered_map<gc::Name, size_t> m_texture_assets{};          // where each texture asset is in m_assets
-    std::unordered_map<gc::Name, gc::ResourceMaterial> m_material_resources{}; // what each material asset was made from
-    std::vector<std::pair<Draw, glm::mat4>> m_shadow_casters{};       // everything that is drawn, and where
-    std::optional<glm::vec3> m_direction_to_light{};                  // of the directional light, in prefab space
+    std::unordered_map<gc::Name, size_t> m_texture_assets{}; // where each texture asset is in m_assets
 
 public:
     GltfCompiler(const tg::Model& model, const std::filesystem::path& path)
@@ -140,15 +132,14 @@ public:
         // glTF uses the Y-up convention, so everything goes under an entity that rotates it to Z-up
         const glm::quat root_rotation{glm::one_over_root_two<float>(), glm::one_over_root_two<float>(), 0.0f, 0.0f};
         const uint32_t root = m_prefab.beginEntity(gc::Name(path.stem().string()), gcpak::PREFAB_NO_PARENT, glm::vec3{0.0f, 0.0f, 0.0f}, root_rotation);
-        m_entity_matrices.push_back(glm::mat4_cast(root_rotation));
         for (const int node_index : root_nodes) {
             addNode(node_index, root, 0);
         }
 
-        bakeShadows();
-
-        const auto prefab_data = m_prefab.getData();
-        m_assets.push_back(makeAsset(m_name, std::vector<uint8_t>(prefab_data.begin(), prefab_data.end()), gcpak::GcpakAssetType::PREFAB));
+        const auto prefab_span = m_prefab.getData();
+        std::vector<uint8_t> prefab_data(prefab_span.begin(), prefab_span.end());
+        bakeShadows(prefab_data);
+        m_assets.push_back(makeAsset(m_name, std::move(prefab_data), gcpak::GcpakAssetType::PREFAB));
 
         GC_DEBUG("{}: {} entities", m_name, m_prefab.getEntityCount());
         for (Asset& asset : m_assets) {
@@ -507,7 +498,6 @@ private:
         const std::string asset_name = (material_index >= 0) ? std::format("{}/material{}", m_name, material_index) : std::format("{}/material_default", m_name);
         m_assets.push_back(makeAsset(asset_name, makeMaterialData(resource), gcpak::GcpakAssetType::MATERIAL));
         const gc::Name name(asset_name);
-        m_material_resources.emplace(name, resource);
         m_materials.emplace(material_index, name);
         return name;
     }
@@ -741,7 +731,6 @@ private:
                        std::vector<Draw>& draws)
     {
         const auto addPart = [&](std::span<const gc::MeshVertex> part_vertices, std::span<const uint16_t> part_indices, const std::string& part_name) {
-            m_mesh_assets.emplace(gc::Name(part_name), m_assets.size());
             m_assets.push_back(makeAsset(part_name, makeMeshData(part_vertices, part_indices), gcpak::GcpakAssetType::MESH_POS12_NORM12_TANG16_UV8_INDEXED16));
             draws.push_back(Draw{gc::Name(part_name), material});
         };
@@ -839,53 +828,21 @@ private:
 
     // If the scene has a directional light, bakes the shadows that the scene's meshes cast in it. The shadow map becomes an asset,
     // and the prefab gets another root entity with a ShadowMapComponent that uses it. The engine draws those shadows wherever the
-    // prefab is put, as long as the light isn't turned.
-    void bakeShadows()
+    // prefab is put, as long as the light isn't turned. This is the same bake that any other prefab can be given.
+    void bakeShadows(std::vector<uint8_t>& prefab_data)
     {
-        if (!m_direction_to_light || m_shadow_casters.empty()) {
-            return;
+        std::unordered_map<gc::Name, size_t> asset_indices{};
+        for (size_t i = 0; i < m_assets.size(); ++i) {
+            asset_indices.emplace(gc::Name(getAssetId(m_assets[i])), i);
         }
-
-        gc::Stopwatch stopwatch{};
-        std::vector<ShadowCaster> casters{};
-        casters.reserve(m_shadow_casters.size());
-        for (const auto& [draw, matrix] : m_shadow_casters) {
-            ShadowCaster caster{};
-            caster.mesh_data = m_assets[m_mesh_assets.at(draw.mesh)].data;
-            caster.matrix = matrix;
-
-            // The holes of alpha tested materials don't cast shadows. Alpha blended materials can't cast partial shadows, as a
-            // shadow map only has one depth, so they cast a full shadow where they are mostly opaque and none elsewhere.
-            const gc::ResourceMaterial& material = m_material_resources.at(draw.material);
-            if (material.blend_mode != gc::MaterialBlendMode::NONE) {
-                caster.alpha_cutoff = (material.blend_mode == gc::MaterialBlendMode::ALPHA_TEST) ? material.alpha_cutoff : 0.5f;
-                caster.alpha = material.base_color.a;
-                if (const auto it = m_texture_assets.find(material.base_color_texture); it != m_texture_assets.end()) {
-                    caster.alpha_texture_data = m_assets[it->second].data;
-                }
-            }
-            casters.push_back(caster);
+        const AssetLookup find_asset = [&](gc::Name id) -> const Asset* {
+            const auto it = asset_indices.find(id);
+            return (it != asset_indices.end()) ? &m_assets[it->second] : nullptr;
+        };
+        Asset shadow_map{};
+        if (bakePrefabShadows(m_name, prefab_data, find_asset, PrefabShadowOptions{}, shadow_map) == PrefabShadowResult::BAKED) {
+            m_assets.push_back(std::move(shadow_map));
         }
-        const std::optional<BakedShadowMap> shadow_map = bakeShadowMap(casters, *m_direction_to_light);
-        if (!shadow_map) {
-            return;
-        }
-
-        const std::string asset_name = std::format("{}/shadowmap", m_name);
-        m_assets.push_back(makeAsset(asset_name, makeShadowMapData(*shadow_map), gcpak::GcpakAssetType::SHADOW_MAP_R16));
-
-        // Surfaces are moved off themselves by a couple of texels before they are looked up, and a little towards the light: by
-        // the depth that a texel covers on a surface at 45 degrees to the light, plus what is lost by storing depths in 16 bits.
-        const float normal_bias = 2.0f * shadow_map->texel_size;
-        const float depth_bias = shadow_map->texel_size / shadow_map->depth_range + 4.0f / 65535.0f;
-
-        // A root with no transform of its own, so the shadow map's matrix is from prefab space
-        m_prefab.beginEntity(gc::Name("shadow_map"));
-        m_entity_matrices.push_back(glm::mat4{1.0f});
-        m_prefab.addComponent(gc::ShadowMapComponent{}.setShadowMap(gc::Name(asset_name)).setMatrix(shadow_map->matrix).setBias(normal_bias, depth_bias));
-
-        GC_INFO("{}: baked a {}x{} shadow map of {} triangles in {}. Its texels are {:.3f} m wide", m_name, shadow_map->resolution,
-                shadow_map->resolution, shadow_map->triangle_count, stopwatch, shadow_map->texel_size);
     }
 
     void addNode(int node_index, uint32_t parent, int depth)
@@ -936,18 +893,6 @@ private:
 
         const uint32_t entity = m_prefab.beginEntity(gc::Name(node_name), parent, position, rotation, scale);
 
-        // where the entity is in the prefab, for baking shadows
-        glm::mat4 local_matrix = glm::mat4_cast(rotation);
-        local_matrix[0] *= scale.x;
-        local_matrix[1] *= scale.y;
-        local_matrix[2] *= scale.z;
-        local_matrix[3] = glm::vec4(position, 1.0f);
-        const glm::mat4 entity_matrix = m_entity_matrices[parent] * local_matrix;
-        m_entity_matrices.push_back(entity_matrix);
-        for (const Draw& draw : draws) {
-            m_shadow_casters.emplace_back(draw, entity_matrix);
-        }
-
         if (draws.size() == 1) {
             m_prefab.addComponent(gc::RenderableComponent{}.setMesh(draws[0].mesh).setMaterial(draws[0].material));
             // what is drawn is also what is solid
@@ -974,12 +919,8 @@ private:
             // glTF lights shine along their -Z axis, as the engine's do.
             gc::LightComponent component{};
             if (light.type == "directional") {
+                // If there are several directional lights, the engine uses the last one.
                 component.setType(gc::LightType::DIRECTIONAL);
-                // The light's +Z axis points towards it. If there are several directional lights, the engine uses the last one.
-                const glm::vec3 z_axis{entity_matrix[2]};
-                if (glm::dot(z_axis, z_axis) > 0.0f) {
-                    m_direction_to_light = glm::normalize(z_axis);
-                }
             }
             else {
                 component.setType(gc::LightType::POINT);
@@ -1000,7 +941,6 @@ private:
             // an entity can only have one renderable
             for (size_t i = 0; i < draws.size(); ++i) {
                 m_prefab.beginEntity(gc::Name(std::format("{}_mesh{}", node_name, i)), entity);
-                m_entity_matrices.push_back(entity_matrix);
                 m_prefab.addComponent(gc::RenderableComponent{}.setMesh(draws[i].mesh).setMaterial(draws[i].material));
                 m_prefab.addComponent(gc::ColliderComponent{}.setMesh(draws[i].mesh));
             }

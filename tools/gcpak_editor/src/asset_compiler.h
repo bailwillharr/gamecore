@@ -13,6 +13,7 @@
 
 #include <gcpak/gcpak.h>
 
+#include <gamecore/gc_asset_data.h>
 #include <gamecore/gc_mesh_vertex.h>
 #include <gamecore/gc_name.h>
 #include <gamecore/gc_resources.h>
@@ -65,8 +66,7 @@ uint32_t getAssetId(const Asset& asset);
 
 Asset makeAsset(const std::string& name, std::vector<uint8_t> data, gcpak::GcpakAssetType type);
 
-// The binary formats of assets. See gcpak.h
-std::vector<uint8_t> makeTextureData(uint32_t width, uint32_t height, std::span<const uint8_t> rgba);
-std::vector<uint8_t> makeMeshData(std::span<const gc::MeshVertex> vertices, std::span<const uint16_t> indices);
-// The constants of 'material' are used in place of the textures that it doesn't name
-std::vector<uint8_t> makeMaterialData(const gc::ResourceMaterial& material);
+// The binary formats of assets are made by the engine. See gc_asset_data.h
+using gc::makeMaterialData;
+using gc::makeMeshData;
+using gc::makeTextureData;

@@ -1,7 +1,8 @@
 # Replication
 
 gc::ReplicationSystem (gc_replication.h) keeps entities in sync between a server and its clients. It sits on top of gc::Net and is
-registered as a normal World system by games that want it. gamecore_template is the example of how to use it.
+registered as a normal World system by games that want it. gamecore_template is the example of how to use it. ember_court uses
+it the same way, in a world that is loaded from a prefab and has collisions.
 
 # The model
 
@@ -64,6 +65,7 @@ gamecore_template can run without a window as a bot (--bot), and dedicated_serve
 run on one machine. scripts/test_replication.py does that: it starts a server and several bots as separate processes, with
 simulated packet loss, latency and jitter, and checks that the bots see what they should and that every process ends up with
 exactly the same replicated state. See game.h for the command line options.
+"scripts/test_replication.py --game ember_court" does the same with ember_court (whose dedicated server is "ember_court --server").
 
 To try it by hand:
     dedicated_server

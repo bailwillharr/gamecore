@@ -12,6 +12,8 @@ set(SRC_FILES
   "src/gltf_compiler.cpp"
   "src/shadow_baker.h"
   "src/shadow_baker.cpp"
+  "src/prefab_shadow_baker.h"
+  "src/prefab_shadow_baker.cpp"
   "src/command_line.h"
   "src/command_line.cpp"
 )

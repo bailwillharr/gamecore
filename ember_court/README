@@ -1,0 +1,89 @@
+Ember Court: a small multiplayer game that shows what the engine can do.
+
+Players run around a walled court at sunset, collect embers for points and throw fire bolts at each other and at the sentinels
+that patrol it. It plays offline, hosts a game for others to join, joins one, or runs as a dedicated server.
+
+    ember_court                         play alone. A server can be started or joined later (F10, Windows > Network)
+    ember_court --host [port]           play, and let other players join
+    ember_court --connect address[:port]
+    ember_court --server [port]         dedicated server: no window and no player of its own
+    ember_court --connect address --bot      a computer controlled player, without a window. As many as you like
+
+See src/game.h for the rest of the options (they are the same as gamecore_template's).
+
+Controls:
+    Mouse               look around. Left button: throw a fire bolt
+    W A S D             walk
+    Space               jump (high enough to get onto a crate)
+    F10                 show the debug windows and free the mouse
+    F11                 full screen
+    Escape              quit
+
+Scoring: an ember is 1 point, hitting a sentinel is 2, burning another player is 3. Green pickups heal.
+
+THE MAP
+
+The whole map is one prefab, "ember_court.map", in content/ember_court.gcpak. Nothing about the map is in the game's code: the
+game registers its components and systems, calls gc::loadPrefab() once, and that is the world. The prefab has:
+
+    the court           every wall, floor, ramp and crate: a RenderableComponent, and a ColliderComponent with the same mesh
+    materials           one of every kind the renderer has: all three textures, a color texture only, no textures, see-through
+                        glass (alpha blended), a grating with holes (alpha tested), and things that glow (emissive)
+    the sky             a huge sphere seen from the inside, with an emissive texture
+    lights              the sun (directional), the sky (ambient), and lamps and a fire (point lights), in lux and candela
+    a camera            looks over the court when there is no player to look through
+    baked shadows       a ShadowMapComponent: see below
+    where things go     spawn points, pickup spawners and the sentinels' patrol routes. These are components of the game's own
+                        (src/components.h), stored in the prefab by name like the engine's, and read by MatchSystem::readMap()
+    a spinning beacon   a decoration with the game's SpinComponent on it
+
+Nobody modelled it. It is made by a program, ember_court_mapgen (mapgen/main.cpp), which builds the prefab with gc::PrefabWriter
+and makes the meshes, materials and two of the textures itself. The other textures are in content/textures.gcpak: assets are
+found by name, whichever package file they are in.
+
+The engine only draws shadows that were baked into a shadow map beforehand. gcpak_editor can bake one for any prefab that has a
+directional light, so making the map takes two steps:
+
+    ember_court_mapgen content/ember_court.gcpak
+    gcpak_editor --bake-shadows ember_court.map content/ember_court.gcpak --no-cast sky --no-cast beacon
+
+(The sky and the beacon are left out as the sky isn't really there, and a baked shadow can't turn with the beacon. See
+tools/gcpak_editor/README.) The build does both steps: the ember_court_map target, which ember_court depends on. The map is made
+again when the map generator or gcpak_editor changes. content/shaders.gcpak, textures.gcpak and meshes.gcpak have to be there
+already, as for the other games (see tools/gcpak_editor/README).
+
+To change the map, change mapgen/main.cpp and build. To see the prefab, open content/ember_court.gcpak in gcpak_editor.
+
+WHAT IT SHOWS
+
+    Prefabs             the map (above). Game components in a prefab: components.h
+    Baked shadows       of everything in the map, including the holes in the grating. Players and other things that move are
+                        shadowed by the map but cast no shadows themselves: the engine has no dynamic shadows
+    Rendering           textured, plain, emissive, alpha tested and alpha blended materials. Meshes and materials that are made
+                        when the game starts rather than loaded (createGameResources() in match.cpp). Automatic instancing
+                        (the pillars and crates)
+    Lights              a directional, an ambient and several point lights in the map, and point lights that move: every fire
+                        bolt, pickup and sentinel has one. The camera's exposure is set to suit the evening
+    Collisions          the CollisionSystem only answers questions, so the game has its own character controller on top of
+                        its sphere queries (character.cpp). Ray casts stop fire bolts at walls (match.cpp) and tell bots what
+                        they can see (bot.cpp). It all works without a window, on the server
+    Replication         players are owned and moved by their clients, with health and scores decided by the server. Bolts,
+                        pickups and sentinels are spawned and moved by the server, and interpolated on clients. See match.h
+    Net events          asking to throw a bolt, being told where to respawn, hit markers (unreliable) and the kill feed
+    The ECS             the game is components and systems registered with the World: game.cpp
+    Debug UI            the HUD is drawn with ImGui. F10 shows the engine's own windows
+
+Each host loads the map for itself, so the server never sends it. A dedicated server loads it too: it needs the colliders.
+
+TESTING
+
+    python scripts/test_replication.py --game ember_court
+
+runs a server and several bots as separate processes, with simulated packet loss and latency, and checks that the bots see what
+they should and that every process ends up with the same state. See notes/replication.txt.
+
+WHAT ISN'T THERE
+
+Bots don't plan routes, so they only go for pickups that are on their level, and get round things by trying another direction.
+Clients are trusted to say where their own player is (see notes/replication.txt), so the server doesn't run the character
+controller for them. Players don't block each other. The other players are all the same model, in different colors.

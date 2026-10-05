@@ -47,6 +47,7 @@ set(SRC_FILES
   "src/gc_replication.cpp"
   "src/gc_byte_reader.cpp"
   "src/gc_byte_writer.cpp"
+  "src/gc_asset_data.cpp"
 )
 
 # Public API includes
@@ -114,6 +115,7 @@ set(INCLUDE_FILES
   "include/gamecore/gc_net_rto.h"
   "include/gamecore/gc_byte_reader.h"
   "include/gamecore/gc_byte_writer.h"
+  "include/gamecore/gc_asset_data.h"
 )
 
 # gamecore is a static library

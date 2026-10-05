@@ -11,9 +11,11 @@ There are two kinds of scenario:
  - converge:  everyone plays for a while and then stops changing anything (--test-freeze). A few seconds later every process
               logs a digest of all of its replicated state. They must all be the same.
 
-The server is either dedicated_server, or another bot that hosts the game (which tests a server that has a player of its own).
+The server is either a dedicated server, or another bot that hosts the game (which tests a server that has a player of its own).
 
-usage: test_replication.py [build directory]      (default: out/build/x64-debug-windows or out/build/x64-debug-linux)
+usage: test_replication.py [--game NAME] [build directory]
+    --game NAME        gamecore_template (the default, with dedicated_server as its dedicated server) or ember_court
+    build directory    default: out/build/x64-debug-windows or out/build/x64-debug-linux
 """
 
 import os
@@ -44,9 +46,29 @@ SCENARIOS = [
 ]
 
 
-def find_build_dir():
-    if len(sys.argv) > 1:
-        return os.path.abspath(sys.argv[1])
+# For each game: the directory and name of the client, and the command line of a dedicated server (the port is added to it).
+# The games take the same options (see their game.h).
+GAMES = {
+    "gamecore_template": (("gamecore_template", "gamecore_template"), ("dedicated_server", "dedicated_server", [])),
+    "ember_court": (("ember_court", "ember_court"), ("ember_court", "ember_court", ["--server"])),
+}
+
+
+def parse_args():
+    args = sys.argv[1:]
+    game = "gamecore_template"
+    if "--game" in args:
+        i = args.index("--game")
+        if i + 1 >= len(args) or args[i + 1] not in GAMES:
+            sys.exit(f"--game needs one of: {', '.join(GAMES)}")
+        game = args[i + 1]
+        del args[i:i + 2]
+    return game, (args[0] if args else None)
+
+
+def find_build_dir(given):
+    if given:
+        return os.path.abspath(given)
     preset = "x64-debug-windows" if os.name == "nt" else "x64-debug-linux"
     return os.path.join(REPO, "out", "build", preset)
 
@@ -68,9 +90,10 @@ def find_digest(lines):
     return None
 
 
-def run_scenario(build_dir, log_dir, index, name, kind, bot_hosts, sim_args):
-    server_exe = os.path.join(build_dir, "dedicated_server", "dedicated_server" + EXE)
-    client_exe = os.path.join(build_dir, "gamecore_template", "gamecore_template" + EXE)
+def run_scenario(game, build_dir, log_dir, index, name, kind, bot_hosts, sim_args):
+    (client_dir, client_name), (server_dir, server_name, server_options) = GAMES[game]
+    server_exe = os.path.join(build_dir, server_dir, server_name + EXE)
+    client_exe = os.path.join(build_dir, client_dir, client_name + EXE)
     port = str(BASE_PORT + index)
     test_args = ["--test"] if kind == "play" else ["--test-freeze", FREEZE_TIME]
 
@@ -80,7 +103,7 @@ def run_scenario(build_dir, log_dir, index, name, kind, bot_hosts, sim_args):
     if bot_hosts:
         server_args = [client_exe, "--host", port, "--bot"]
     else:
-        server_args = [server_exe, port]
+        server_args = [server_exe] + server_options + [port]
     server_args += ["--exit-when-empty", "--log", server_log]
     if kind == "converge":
         server_args += test_args
@@ -133,12 +156,14 @@ def run_scenario(build_dir, log_dir, index, name, kind, bot_hosts, sim_args):
 
 
 def main():
-    build_dir = find_build_dir()
+    game, given_build_dir = parse_args()
+    build_dir = find_build_dir(given_build_dir)
     log_dir = tempfile.mkdtemp(prefix="gamecore_replication_test_")
+    print(f"game: {game}")
     print(f"build directory: {build_dir}")
     print(f"logs: {log_dir}")
 
-    results = [run_scenario(build_dir, log_dir, i, *scenario) for i, scenario in enumerate(SCENARIOS)]
+    results = [run_scenario(game, build_dir, log_dir, i, *scenario) for i, scenario in enumerate(SCENARIOS)]
 
     print("ALL SCENARIOS PASSED" if all(results) else "SOME SCENARIOS FAILED")
     return 0 if all(results) else 1

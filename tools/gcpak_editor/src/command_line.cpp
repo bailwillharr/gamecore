@@ -5,9 +5,11 @@
 #include <cstdio>
 #include <cstdlib>
 
+#include <charconv>
 #include <filesystem>
 #include <format>
 #include <system_error>
+#include <unordered_map>
 #include <vector>
 
 #ifdef _WIN32
@@ -24,6 +26,7 @@
 #include <gamecore/gc_units.h>
 
 #include "asset_compiler.h"
+#include "prefab_shadow_baker.h"
 
 static const char* const USAGE =
     "usage:\n"
@@ -32,6 +35,8 @@ static const char* const USAGE =
     "  gcpak_editor --pack PATH... [--out FILE.gcpak] [--append] [--no-recurse]\n"
     "                                    compile source files, or every source file in a directory, into a package file\n"
     "  gcpak_editor --list FILE.gcpak    list the assets in a package file\n"
+    "  gcpak_editor --bake-shadows PREFAB FILE.gcpak... [--resolution N] [--no-cast ENTITY]...\n"
+    "                                    bake the shadow map of a prefab that is in one of the package files\n"
     "See README for more.";
 
 static const char* getAssetTypeName(gcpak::GcpakAssetType type)
@@ -164,17 +169,102 @@ static int pack(const std::vector<std::filesystem::path>& inputs, std::filesyste
     return (total.files_failed == 0) ? EXIT_SUCCESS : EXIT_FAILURE;
 }
 
+// Bakes the shadow map of a prefab that is already in a package file, and saves that file again with the shadow map in it.
+// The first input is the name of the prefab. The rest are package files: the prefab is in one of them, and the meshes,
+// materials and textures that it uses can be in any of them.
+static int bakeShadows(const std::vector<std::filesystem::path>& inputs, const PrefabShadowOptions& options)
+{
+    if (inputs.size() < 2) {
+        print("--bake-shadows needs the name of a prefab and at least one package file\n{}", USAGE);
+        return EXIT_FAILURE;
+    }
+    const std::string prefab_name = inputs[0].string();
+    const gc::Name prefab_id(gc::crc32_impl(prefab_name.c_str()));
+
+    struct Package {
+        std::filesystem::path path{};
+        std::vector<Asset> assets{};
+    };
+    std::vector<Package> packages{};
+    for (size_t i = 1; i < inputs.size(); ++i) {
+        gcpak::GcpakCreator creator{};
+        std::error_code ec{};
+        if (!creator.loadFile(inputs[i], ec)) {
+            print("Failed to load {} (or the .txt file that goes with it): {}", inputs[i].string(), ec.message());
+            return EXIT_FAILURE;
+        }
+        packages.push_back(Package{inputs[i], std::vector<Asset>(creator.getAssets().begin(), creator.getAssets().end())});
+    }
+
+    // If an asset is in several of the files, the first one is used
+    Package* prefab_package{};
+    Asset* prefab{};
+    std::unordered_map<gc::Name, const Asset*> assets_by_id{};
+    for (Package& package : packages) {
+        for (Asset& asset : package.assets) {
+            const gc::Name id(getAssetId(asset));
+            if (assets_by_id.try_emplace(id, &asset).second && id == prefab_id && asset.type == gcpak::GcpakAssetType::PREFAB) {
+                prefab_package = &package;
+                prefab = &asset;
+            }
+        }
+    }
+    if (!prefab) {
+        print("There is no prefab named {} in the package file{}", prefab_name, packages.size() == 1 ? "" : "s");
+        return EXIT_FAILURE;
+    }
+
+    const AssetLookup find_asset = [&](gc::Name id) -> const Asset* {
+        const auto it = assets_by_id.find(id);
+        return (it != assets_by_id.end()) ? it->second : nullptr;
+    };
+    Asset shadow_map{};
+    switch (bakePrefabShadows(prefab_name, prefab->data, find_asset, options, shadow_map)) {
+    case PrefabShadowResult::BAKED:
+        break;
+    case PrefabShadowResult::NO_LIGHT:
+        print("{} has no directional light, so it has no shadows to bake", prefab_name);
+        return EXIT_FAILURE;
+    case PrefabShadowResult::NO_CASTERS:
+        print("Nothing in {} casts a shadow. Are its meshes in the package files that were given?", prefab_name);
+        return EXIT_FAILURE;
+    case PrefabShadowResult::CORRUPT:
+        print("{} is corrupt", prefab_name);
+        return EXIT_FAILURE;
+    }
+
+    const std::string shadow_map_name = shadow_map.name;
+    const size_t shadow_map_size = shadow_map.data.size();
+    CompileStats stats{};
+    std::vector<Asset> new_assets{};
+    new_assets.push_back(std::move(shadow_map));
+    mergeAssets(prefab_package->assets, std::move(new_assets), stats); // (the pointers into the package's assets are no use after this)
+
+    gcpak::GcpakCreator creator{};
+    for (const Asset& asset : prefab_package->assets) {
+        creator.addAsset(asset);
+    }
+    if (!creator.saveFile(prefab_package->path)) {
+        print("Failed to save {}", prefab_package->path.string());
+        return EXIT_FAILURE;
+    }
+    print("Baked {} ({}) and saved it and {} to {}", shadow_map_name, gc::bytesToHumanReadable(shadow_map_size), prefab_name,
+          prefab_package->path.string());
+    return EXIT_SUCCESS;
+}
+
 bool isCommandLineRequest(std::span<const std::string> args) { return !args.empty() && args[0].starts_with("-"); }
 
 int runCommandLine(std::span<const std::string> args)
 {
     attachToParentConsole();
 
-    enum class Mode { NONE, PACK, LIST } mode{Mode::NONE};
+    enum class Mode { NONE, PACK, LIST, BAKE_SHADOWS } mode{Mode::NONE};
     std::vector<std::filesystem::path> inputs{};
     std::filesystem::path output{};
     bool append{false};
     bool recursive{true};
+    PrefabShadowOptions shadow_options{};
 
     for (size_t i = 0; i < args.size(); ++i) {
         const std::string& arg = args[i];
@@ -183,6 +273,27 @@ int runCommandLine(std::span<const std::string> args)
         }
         else if (arg == "--list") {
             mode = Mode::LIST;
+        }
+        else if (arg == "--bake-shadows") {
+            mode = Mode::BAKE_SHADOWS;
+        }
+        else if (arg == "--resolution") {
+            // the size of the shadow map, in texels. A 16384x16384 shadow map is 512 MB
+            const std::string value = (i + 1 < args.size()) ? args[++i] : std::string{};
+            uint32_t resolution{};
+            const char* const last = value.data() + value.size();
+            if (value.empty() || std::from_chars(value.data(), last, resolution).ptr != last || resolution < 16 || resolution > 16384) {
+                print("{} needs a number from 16 to 16384\n{}", arg, USAGE);
+                return EXIT_FAILURE;
+            }
+            shadow_options.resolution = resolution;
+        }
+        else if (arg == "--no-cast") {
+            if (i + 1 >= args.size()) {
+                print("{} needs the name of an entity\n{}", arg, USAGE);
+                return EXIT_FAILURE;
+            }
+            shadow_options.excluded_entities.emplace_back(gc::crc32_impl(args[++i].c_str()));
         }
         else if (arg == "--out" || arg == "-o") {
             if (i + 1 >= args.size()) {
@@ -219,6 +330,8 @@ int runCommandLine(std::span<const std::string> args)
             return EXIT_FAILURE;
         }
         return listFile(inputs[0]);
+    case Mode::BAKE_SHADOWS:
+        return bakeShadows(inputs, shadow_options);
     default:
         print("{}", USAGE);
         return EXIT_FAILURE;
