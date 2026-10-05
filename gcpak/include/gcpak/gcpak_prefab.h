@@ -42,7 +42,8 @@ namespace gcpak {
 // 0051-0054 parent index = 0
 // 0055-0080 Serialised TransformComponent
 // 0081-0084 name_hash = "LightComponent"
-// 0085-0088 size = 0
+// 0085-0088 size = 21
+// 0089-009D Serialised LightComponent
 
 static_assert(std::numeric_limits<float>::is_iec559);
 static_assert(sizeof(float) == 4);

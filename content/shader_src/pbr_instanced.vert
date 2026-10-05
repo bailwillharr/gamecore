@@ -16,10 +16,11 @@ layout(location = 5) in vec4 model_matrix_col1;
 layout(location = 6) in vec4 model_matrix_col2;
 layout(location = 7) in vec4 model_matrix_col3;
 
+// in world space
 layout(location = 0) out Vertex {
     vec3 position;
-    vec3 eye_position;
-    vec3 light_direction;
+    vec3 normal;
+    vec4 tangent; // w is the handedness of the bitangent
     vec2 texcoord;
 } vout;
 
@@ -30,16 +31,10 @@ void main() {
 
     mat3 normal_matrix = mat3(world_transform);
 
-    vec3 N = normalize(normal_matrix * in_normal);
-    vec3 T = normalize(normal_matrix * in_tangent.xyz);
-    T = normalize(T - dot(T, N) * N); // re-orthogonalise tangent
-    vec3 B = cross(N, T) * in_tangent.w;
-
-    mat3 world_to_tangent_space = transpose(mat3(T, B, N));
-
-    vout.position = world_to_tangent_space * vec3(world_position);
-    vout.eye_position = world_to_tangent_space * frame_uniform_buffer.camera_position;
-    vout.light_direction = world_to_tangent_space * vec3(1.0, 1.0, 1.0);
+    vout.position = vec3(world_position);
+    vout.normal = normalize(normal_matrix * in_normal);
+    // Not normalised, as only materials with a normal map use it and the fragment shader has to normalise it anyway
+    vout.tangent = vec4(normal_matrix * in_tangent.xyz, in_tangent.w);
     vout.texcoord = in_uv;
 
     gl_Position = frame_uniform_buffer.projection * frame_uniform_buffer.view * world_position;

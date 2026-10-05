@@ -235,7 +235,7 @@ static void renderTestControls(Net& net, NetMode mode)
     }
 }
 
-void renderNetUI(Net& net, bool show)
+void renderNetUI(Net& net, bool* open)
 {
     static std::unordered_map<NetPeerId, PeerHistory> s_histories{};
     static NetPeerId s_selected_peer{NET_PEER_NONE};
@@ -254,13 +254,13 @@ void renderNetUI(Net& net, bool show)
         std::erase_if(s_histories, [](const auto& entry) { return !entry.second.seen; });
     }
 
-    if (!show) {
+    if (!open) {
         return;
     }
 
-    ImGui::SetNextWindowPos(ImVec2(20.0f, 140.0f), ImGuiCond_FirstUseEver);
+    ImGui::SetNextWindowPos(ImVec2(20.0f, 40.0f), ImGuiCond_FirstUseEver);
     ImGui::SetNextWindowSize(ImVec2(500.0f, 430.0f), ImGuiCond_FirstUseEver);
-    if (ImGui::Begin("Network")) {
+    if (ImGui::Begin("Network", open)) {
         const char* mode_str{};
         switch (mode) {
         case NetMode::DISCONNECTED:

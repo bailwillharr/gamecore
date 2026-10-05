@@ -27,6 +27,7 @@
 #include "gamecore/gc_resource_manager.h"
 #include "gamecore/gc_net.h"
 #include "gamecore/gc_net_ui.h"
+#include "gamecore/gc_world_ui.h"
 
 namespace gc {
 
@@ -222,7 +223,10 @@ void App::run()
         frame_state.average_frame_time = std::accumulate(delta_times.cbegin(), delta_times.cend(), 0.0) / static_cast<double>(delta_times.size());
 
         if (m_window) {
-            frame_state.window_state = &m_window->processEvents([debug_ui = this->m_debug_ui.get()](SDL_Event& ev) { debug_ui->windowEventInterceptor(ev); });
+            // whether the mouse was captured at the end of the last frame
+            const bool mouse_captured = frame_state.window_state && frame_state.window_state->getIsMouseCaptured();
+            frame_state.window_state = &m_window->processEvents(
+                [debug_ui = this->m_debug_ui.get(), mouse_captured](SDL_Event& ev) { debug_ui->windowEventInterceptor(ev, mouse_captured); });
             {
                 if (frame_state.window_state->getKeyDown(SDL_SCANCODE_ESCAPE)) {
                     m_window->pushQuitEvent();
@@ -234,7 +238,14 @@ void App::run()
                 }
                 if (frame_state.window_state->getKeyPress(SDL_SCANCODE_F10)) {
                     m_debug_ui->active = !m_debug_ui->active;
-                    m_window->setMouseCaptured(!m_debug_ui->active);
+                    // The debug UI needs the cursor. Give the mouse back afterwards, but only to a game that had it.
+                    if (m_debug_ui->active) {
+                        m_recapture_mouse = frame_state.window_state->getIsMouseCaptured();
+                        m_window->setMouseCaptured(false);
+                    }
+                    else if (m_recapture_mouse) {
+                        m_window->setMouseCaptured(true);
+                    }
                 }
             }
         }
@@ -262,8 +273,9 @@ void App::run()
         m_world->update(frame_state);
 
         if (m_debug_ui) {
+            renderWorldUI(*m_world, m_debug_ui->getWindowOpen("World"));
+            renderNetUI(*m_net, m_debug_ui->getWindowOpen("Network"));
             m_debug_ui->update(frame_state);
-            renderNetUI(*m_net, m_debug_ui->active);
             m_debug_ui->render();
         }
 

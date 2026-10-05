@@ -28,10 +28,15 @@
 #include <gclog/gclog.h>
 
 #include <gamecore/gc_camera_component.h>
+#include <gamecore/gc_collider_component.h>
 #include <gamecore/gc_gen_tangents.h>
 #include <gamecore/gc_light_component.h>
 #include <gamecore/gc_prefab.h>
 #include <gamecore/gc_renderable_component.h>
+#include <gamecore/gc_shadow_map_component.h>
+#include <gamecore/gc_stopwatch.h>
+
+#include "shadow_baker.h"
 
 namespace tg = tinygltf;
 
@@ -77,6 +82,14 @@ class GltfCompiler {
     std::vector<bool> m_nodes_visited{};
 
     gc::PrefabWriter m_prefab{};
+
+    // For baking the directional light's shadow map, see bakeShadows()
+    std::vector<glm::mat4> m_entity_matrices{};                       // of every entity in the prefab, in prefab space
+    std::unordered_map<gc::Name, size_t> m_mesh_assets{};             // where each mesh asset is in m_assets
+    std::unordered_map<gc::Name, size_t> m_texture_assets{};          // where each texture asset is in m_assets
+    std::unordered_map<gc::Name, gc::ResourceMaterial> m_material_resources{}; // what each material asset was made from
+    std::vector<std::pair<Draw, glm::mat4>> m_shadow_casters{};       // everything that is drawn, and where
+    std::optional<glm::vec3> m_direction_to_light{};                  // of the directional light, in prefab space
 
 public:
     GltfCompiler(const tg::Model& model, const std::filesystem::path& path)
@@ -125,12 +138,14 @@ public:
         }
 
         // glTF uses the Y-up convention, so everything goes under an entity that rotates it to Z-up
-        const uint32_t root =
-            m_prefab.beginEntity(gc::Name(path.stem().string()), gcpak::PREFAB_NO_PARENT, glm::vec3{0.0f, 0.0f, 0.0f},
-                                 glm::quat{glm::one_over_root_two<float>(), glm::one_over_root_two<float>(), 0.0f, 0.0f});
+        const glm::quat root_rotation{glm::one_over_root_two<float>(), glm::one_over_root_two<float>(), 0.0f, 0.0f};
+        const uint32_t root = m_prefab.beginEntity(gc::Name(path.stem().string()), gcpak::PREFAB_NO_PARENT, glm::vec3{0.0f, 0.0f, 0.0f}, root_rotation);
+        m_entity_matrices.push_back(glm::mat4_cast(root_rotation));
         for (const int node_index : root_nodes) {
             addNode(node_index, root, 0);
         }
+
+        bakeShadows();
 
         const auto prefab_data = m_prefab.getData();
         m_assets.push_back(makeAsset(m_name, std::vector<uint8_t>(prefab_data.begin(), prefab_data.end()), gcpak::GcpakAssetType::PREFAB));
@@ -246,6 +261,7 @@ private:
         }
         const Pixels pixels = make_pixels();
         const std::string asset_name = std::format("{}/texture{}", m_name, m_textures.size());
+        m_texture_assets.emplace(gc::Name(asset_name), m_assets.size());
         m_assets.push_back(makeAsset(asset_name, makeTextureData(pixels.width, pixels.height, pixels.rgba),
                                      srgb ? gcpak::GcpakAssetType::TEXTURE_R8G8B8A8_SRGB : gcpak::GcpakAssetType::TEXTURE_R8G8B8A8));
         const gc::Name name(asset_name);
@@ -253,8 +269,9 @@ private:
         return name;
     }
 
-    // The engine's materials have no constant factors, so they are baked into the textures. Without a texture, the factor becomes
-    // a single pixel.
+    // The engine uses a material's constants in place of a texture, not together with one, so a texture has the factors baked
+    // into it. Without a texture there is nothing to bake: these return an empty name and the factors become the material's
+    // constants (see getMaterial()), which lets the engine draw it without sampling that texture.
     gc::Name getBaseColorTexture(const tg::Material& material)
     {
         const auto& pbr = material.pbrMetallicRoughness;
@@ -262,19 +279,15 @@ private:
                                           getFactor(pbr.baseColorFactor, 3)};
         const bool has_factor = factor != std::array<float, 4>{1.0f, 1.0f, 1.0f, 1.0f};
         const int image_index = getTextureImageIndex(material.name, "base color", pbr.baseColorTexture.index, pbr.baseColorTexture.texCoord);
+        if (image_index < 0) {
+            return {};
+        }
 
         const std::string description = std::format("base {} {} {} {} {}", image_index, factor[0], factor[1], factor[2], factor[3]);
         return getTexture(description, true, [&]() {
-            Pixels pixels{};
-            if (image_index < 0) {
-                // the factor is a linear color, textures hold sRGB colors
-                pixels.width = 1;
-                pixels.height = 1;
-                pixels.rgba = {toByte(linearToSrgb(factor[0])), toByte(linearToSrgb(factor[1])), toByte(linearToSrgb(factor[2])), toByte(factor[3])};
-                return pixels;
-            }
-            pixels = *getImage(image_index);
+            Pixels pixels = *getImage(image_index);
             if (has_factor) {
+                // the factor is a linear color, textures hold sRGB colors
                 std::array<std::array<uint8_t, 256>, 4> tables{};
                 for (int value = 0; value < 256; ++value) {
                     const float c = static_cast<float>(value) / 255.0f;
@@ -311,17 +324,15 @@ private:
             }
         }
 
+        if (mr_image_index < 0 && occlusion_image_index < 0) {
+            return {};
+        }
+
         const std::string description = std::format("orm {} {} {} {}", mr_image_index, occlusion_image_index, roughness, metallic);
         return getTexture(description, false, [&]() {
             Pixels pixels{};
             const Pixels* const mr = getImage(mr_image_index);
             const Pixels* const occlusion = getImage(occlusion_image_index);
-            if (!mr && !occlusion) {
-                pixels.width = 1;
-                pixels.height = 1;
-                pixels.rgba = {255, toByte(roughness), toByte(metallic), 255};
-                return pixels;
-            }
             const Pixels& size_source = mr ? *mr : *occlusion;
             pixels.width = size_source.width;
             pixels.height = size_source.height;
@@ -336,7 +347,7 @@ private:
         });
     }
 
-    // empty if the material has no normal map, which makes the engine use a flat one
+    // empty if the material has no normal map, which makes the engine use the mesh's normals
     gc::Name getNormalTexture(const tg::Material& material)
     {
         const int image_index = getTextureImageIndex(material.name, "normal", material.normalTexture.index, material.normalTexture.texCoord);
@@ -349,9 +360,74 @@ private:
         return getTexture(std::format("normal {}", image_index), false, [&]() { return *getImage(image_index); });
     }
 
+    // Empty if the material has no emissive texture: its emission is then a constant (see getMaterial()).
+    // The emissive factor isn't baked into the texture, as it can be more than 1 (with KHR_materials_emissive_strength).
+    gc::Name getEmissiveTexture(const tg::Material& material)
+    {
+        const int image_index = getTextureImageIndex(material.name, "emissive", material.emissiveTexture.index, material.emissiveTexture.texCoord);
+        if (image_index < 0) {
+            return {};
+        }
+        return getTexture(std::format("emissive {}", image_index), true, [&]() { return *getImage(image_index); });
+    }
+
     //
     // Materials
     //
+
+    // alphas from here up count as opaque (textures are 8 bit, and compression leaves alphas of 254 in solid areas)
+    static constexpr float OPAQUE_ALPHA = 250.0f / 255.0f;
+    // alphas between these are neither a hole nor solid
+    static constexpr float HOLE_ALPHA = 16.0f / 255.0f;
+    // A BLEND material is drawn as a cut out instead if less of its texture than this is partly transparent...
+    static constexpr float MAX_PARTIAL_ALPHA_FOR_CUT_OUT = 0.25f;
+    // ...or if at least this much of it is holes
+    static constexpr float MIN_HOLES_FOR_CUT_OUT = 0.1f;
+
+    struct AlphaStats {
+        float min{1.0f};              // the lowest alpha
+        float partial_fraction{0.0f}; // how much of it is partly transparent: between HOLE_ALPHA and OPAQUE_ALPHA
+        float hole_fraction{0.0f};    // how much of it is (almost) fully transparent: up to HOLE_ALPHA
+    };
+    std::unordered_map<gc::Name, AlphaStats> m_alpha_stats{}; // of base color textures that have been looked at
+
+    // What the alpha of a material is like: of its base color texture, or of its constant if it doesn't have one
+    AlphaStats getAlphaStats(const gc::ResourceMaterial& resource)
+    {
+        const auto asset_it = m_texture_assets.find(resource.base_color_texture);
+        if (asset_it == m_texture_assets.end()) {
+            AlphaStats stats{};
+            stats.min = resource.base_color.a;
+            stats.partial_fraction = (resource.base_color.a > HOLE_ALPHA && resource.base_color.a < OPAQUE_ALPHA) ? 1.0f : 0.0f;
+            // (a material that is entirely a hole isn't a cut out: it is nothing. Leave it as the file has it)
+            return stats;
+        }
+        if (const auto it = m_alpha_stats.find(resource.base_color_texture); it != m_alpha_stats.end()) {
+            return it->second;
+        }
+
+        // the asset is a width, a height, and then RGBA texels
+        const std::vector<uint8_t>& data = m_assets[asset_it->second].data;
+        const size_t texel_count = (data.size() - 2 * sizeof(uint32_t)) / 4;
+        const uint8_t* const texels = data.data() + 2 * sizeof(uint32_t);
+        uint8_t min_alpha = 255;
+        size_t partial_count = 0;
+        size_t hole_count = 0;
+        const uint8_t hole = static_cast<uint8_t>(HOLE_ALPHA * 255.0f);
+        const uint8_t opaque = static_cast<uint8_t>(OPAQUE_ALPHA * 255.0f);
+        for (size_t i = 0; i < texel_count; ++i) {
+            const uint8_t alpha = texels[i * 4 + 3];
+            min_alpha = std::min(min_alpha, alpha);
+            partial_count += (alpha > hole && alpha < opaque) ? 1 : 0;
+            hole_count += (alpha <= hole) ? 1 : 0;
+        }
+        AlphaStats stats{};
+        stats.min = static_cast<float>(min_alpha) / 255.0f;
+        stats.partial_fraction = (texel_count > 0) ? static_cast<float>(partial_count) / static_cast<float>(texel_count) : 0.0f;
+        stats.hole_fraction = (texel_count > 0) ? static_cast<float>(hole_count) / static_cast<float>(texel_count) : 0.0f;
+        m_alpha_stats.emplace(resource.base_color_texture, stats);
+        return stats;
+    }
 
     gc::Name getMaterial(int material_index)
     {
@@ -366,21 +442,72 @@ private:
         static const tg::Material s_default_material{};
         const tg::Material& material = (material_index >= 0) ? m_model.materials[material_index] : s_default_material;
 
-        if (material.alphaMode != "OPAQUE") {
-            GC_WARN("{}: material '{}' uses alpha mode {}. Transparency isn't supported, so it will be opaque", m_name, material.name, material.alphaMode);
+
+        const auto& pbr = material.pbrMetallicRoughness;
+        gc::ResourceMaterial resource{};
+        resource.base_color_texture = getBaseColorTexture(material);
+        resource.orm_texture = getOrmTexture(material);
+        resource.normal_texture = getNormalTexture(material);
+        // only used for the textures that the material doesn't have
+        resource.base_color = {getFactor(pbr.baseColorFactor, 0), getFactor(pbr.baseColorFactor, 1), getFactor(pbr.baseColorFactor, 2),
+                               getFactor(pbr.baseColorFactor, 3)};
+        resource.roughness = glm::clamp(static_cast<float>(pbr.roughnessFactor), 0.0f, 1.0f);
+        resource.metallic = glm::clamp(static_cast<float>(pbr.metallicFactor), 0.0f, 1.0f);
+
+        // Emission: the emissive texture (or white) times the emissive factor, times the strength if the file has one.
+        // A material whose factor is black doesn't glow, whatever its texture is, so it isn't given the texture.
+        float emissive_strength = 1.0f;
+        if (const auto it = material.extensions.find("KHR_materials_emissive_strength"); it != material.extensions.end()) {
+            if (it->second.Has("emissiveStrength") && it->second.Get("emissiveStrength").IsNumber()) {
+                emissive_strength = glm::max(static_cast<float>(it->second.Get("emissiveStrength").GetNumberAsDouble()), 0.0f);
+            }
         }
-        if (material.emissiveTexture.index >= 0 ||
-            std::any_of(material.emissiveFactor.begin(), material.emissiveFactor.end(), [](double factor) { return factor != 0.0; })) {
-            GC_WARN("{}: material '{}' is emissive, which isn't supported", m_name, material.name);
+        for (int channel = 0; channel < 3; ++channel) {
+            const float factor = (static_cast<size_t>(channel) < material.emissiveFactor.size()) ? static_cast<float>(material.emissiveFactor[channel]) : 0.0f;
+            resource.emissive[channel] = glm::max(factor, 0.0f) * emissive_strength;
+        }
+        if (resource.emissive != glm::vec3{0.0f, 0.0f, 0.0f}) {
+            resource.emissive_texture = getEmissiveTexture(material);
+        }
+        // glTF's alpha modes are the engine's blend modes. The alpha is the base color's: the texture's (which has the factor's
+        // alpha baked into it), or the factor's if there is no texture.
+        if (material.alphaMode == "MASK") {
+            resource.blend_mode = gc::MaterialBlendMode::ALPHA_TEST;
+            resource.alpha_cutoff = glm::clamp(static_cast<float>(material.alphaCutoff), 0.0f, 1.0f);
+        }
+        else if (material.alphaMode == "BLEND") {
+            resource.blend_mode = gc::MaterialBlendMode::ALPHA_BLEND;
+        }
+        else if (material.alphaMode != "OPAQUE") {
+            GC_WARN("{}: material '{}' uses the unknown alpha mode {}, so it will be opaque", m_name, material.name, material.alphaMode);
         }
 
-        const gc::Name base_color = getBaseColorTexture(material);
-        const gc::Name orm = getOrmTexture(material);
-        const gc::Name normal = getNormalTexture(material);
+        // Don't take the file's word for it. Exporters (Blender, for one) mark a material as BLEND whenever anything is connected
+        // to its alpha, even if the texture has no transparency at all, and blended materials are costly: they can't write depth,
+        // so they are only sorted by the distance of each object, which looks badly wrong for solid things. So look at the alpha
+        // that the material really has, and use the cheapest mode that draws it correctly.
+        if (resource.blend_mode != gc::MaterialBlendMode::NONE) {
+            const AlphaStats alpha = getAlphaStats(resource);
+            const float opaque_above = (resource.blend_mode == gc::MaterialBlendMode::ALPHA_TEST) ? resource.alpha_cutoff : OPAQUE_ALPHA;
+            if (alpha.min >= opaque_above) {
+                GC_DEBUG("{}: material '{}' is {} but has no transparency, so it will be opaque", m_name, material.name, material.alphaMode);
+                resource.blend_mode = gc::MaterialBlendMode::NONE;
+            }
+            else if (resource.blend_mode == gc::MaterialBlendMode::ALPHA_BLEND &&
+                     (alpha.partial_fraction < MAX_PARTIAL_ALPHA_FOR_CUT_OUT || alpha.hole_fraction >= MIN_HOLES_FOR_CUT_OUT)) {
+                // Nearly all of it is either solid or a hole, as fences are, or a lot of it is holes, as leaves are (their
+                // textures are mostly empty, with soft edges). Something see-through, like glass, has neither.
+                GC_INFO("{}: material '{}' is BLEND but its alpha is a cut out ({:.0f}% holes, {:.0f}% partly transparent), so it will be alpha tested",
+                        m_name, material.name, alpha.hole_fraction * 100.0f, alpha.partial_fraction * 100.0f);
+                resource.blend_mode = gc::MaterialBlendMode::ALPHA_TEST;
+                resource.alpha_cutoff = 0.5f;
+            }
+        }
 
         const std::string asset_name = (material_index >= 0) ? std::format("{}/material{}", m_name, material_index) : std::format("{}/material_default", m_name);
-        m_assets.push_back(makeAsset(asset_name, makeMaterialData(base_color, orm, normal), gcpak::GcpakAssetType::MATERIAL));
+        m_assets.push_back(makeAsset(asset_name, makeMaterialData(resource), gcpak::GcpakAssetType::MATERIAL));
         const gc::Name name(asset_name);
+        m_material_resources.emplace(name, resource);
         m_materials.emplace(material_index, name);
         return name;
     }
@@ -614,6 +741,7 @@ private:
                        std::vector<Draw>& draws)
     {
         const auto addPart = [&](std::span<const gc::MeshVertex> part_vertices, std::span<const uint16_t> part_indices, const std::string& part_name) {
+            m_mesh_assets.emplace(gc::Name(part_name), m_assets.size());
             m_assets.push_back(makeAsset(part_name, makeMeshData(part_vertices, part_indices), gcpak::GcpakAssetType::MESH_POS12_NORM12_TANG16_UV8_INDEXED16));
             draws.push_back(Draw{gc::Name(part_name), material});
         };
@@ -709,6 +837,57 @@ private:
         rotation = glm::normalize(glm::quat_cast(glm::mat3(transform)));
     }
 
+    // If the scene has a directional light, bakes the shadows that the scene's meshes cast in it. The shadow map becomes an asset,
+    // and the prefab gets another root entity with a ShadowMapComponent that uses it. The engine draws those shadows wherever the
+    // prefab is put, as long as the light isn't turned.
+    void bakeShadows()
+    {
+        if (!m_direction_to_light || m_shadow_casters.empty()) {
+            return;
+        }
+
+        gc::Stopwatch stopwatch{};
+        std::vector<ShadowCaster> casters{};
+        casters.reserve(m_shadow_casters.size());
+        for (const auto& [draw, matrix] : m_shadow_casters) {
+            ShadowCaster caster{};
+            caster.mesh_data = m_assets[m_mesh_assets.at(draw.mesh)].data;
+            caster.matrix = matrix;
+
+            // The holes of alpha tested materials don't cast shadows. Alpha blended materials can't cast partial shadows, as a
+            // shadow map only has one depth, so they cast a full shadow where they are mostly opaque and none elsewhere.
+            const gc::ResourceMaterial& material = m_material_resources.at(draw.material);
+            if (material.blend_mode != gc::MaterialBlendMode::NONE) {
+                caster.alpha_cutoff = (material.blend_mode == gc::MaterialBlendMode::ALPHA_TEST) ? material.alpha_cutoff : 0.5f;
+                caster.alpha = material.base_color.a;
+                if (const auto it = m_texture_assets.find(material.base_color_texture); it != m_texture_assets.end()) {
+                    caster.alpha_texture_data = m_assets[it->second].data;
+                }
+            }
+            casters.push_back(caster);
+        }
+        const std::optional<BakedShadowMap> shadow_map = bakeShadowMap(casters, *m_direction_to_light);
+        if (!shadow_map) {
+            return;
+        }
+
+        const std::string asset_name = std::format("{}/shadowmap", m_name);
+        m_assets.push_back(makeAsset(asset_name, makeShadowMapData(*shadow_map), gcpak::GcpakAssetType::SHADOW_MAP_R16));
+
+        // Surfaces are moved off themselves by a couple of texels before they are looked up, and a little towards the light: by
+        // the depth that a texel covers on a surface at 45 degrees to the light, plus what is lost by storing depths in 16 bits.
+        const float normal_bias = 2.0f * shadow_map->texel_size;
+        const float depth_bias = shadow_map->texel_size / shadow_map->depth_range + 4.0f / 65535.0f;
+
+        // A root with no transform of its own, so the shadow map's matrix is from prefab space
+        m_prefab.beginEntity(gc::Name("shadow_map"));
+        m_entity_matrices.push_back(glm::mat4{1.0f});
+        m_prefab.addComponent(gc::ShadowMapComponent{}.setShadowMap(gc::Name(asset_name)).setMatrix(shadow_map->matrix).setBias(normal_bias, depth_bias));
+
+        GC_INFO("{}: baked a {}x{} shadow map of {} triangles in {}. Its texels are {:.3f} m wide", m_name, shadow_map->resolution,
+                shadow_map->resolution, shadow_map->triangle_count, stopwatch, shadow_map->texel_size);
+    }
+
     void addNode(int node_index, uint32_t parent, int depth)
     {
         if (node_index < 0 || node_index >= static_cast<int>(m_model.nodes.size())) {
@@ -757,8 +936,22 @@ private:
 
         const uint32_t entity = m_prefab.beginEntity(gc::Name(node_name), parent, position, rotation, scale);
 
+        // where the entity is in the prefab, for baking shadows
+        glm::mat4 local_matrix = glm::mat4_cast(rotation);
+        local_matrix[0] *= scale.x;
+        local_matrix[1] *= scale.y;
+        local_matrix[2] *= scale.z;
+        local_matrix[3] = glm::vec4(position, 1.0f);
+        const glm::mat4 entity_matrix = m_entity_matrices[parent] * local_matrix;
+        m_entity_matrices.push_back(entity_matrix);
+        for (const Draw& draw : draws) {
+            m_shadow_casters.emplace_back(draw, entity_matrix);
+        }
+
         if (draws.size() == 1) {
             m_prefab.addComponent(gc::RenderableComponent{}.setMesh(draws[0].mesh).setMaterial(draws[0].material));
+            // what is drawn is also what is solid
+            m_prefab.addComponent(gc::ColliderComponent{}.setMesh(draws[0].mesh));
         }
 
         if (node.camera >= 0 && node.camera < static_cast<int>(m_model.cameras.size())) {
@@ -776,15 +969,40 @@ private:
             }
         }
 
-        if (node.light >= 0) {
-            m_prefab.addComponent(gc::LightComponent{});
+        if (node.light >= 0 && node.light < static_cast<int>(m_model.lights.size())) {
+            const tg::Light& light = m_model.lights[node.light];
+            // glTF lights shine along their -Z axis, as the engine's do.
+            gc::LightComponent component{};
+            if (light.type == "directional") {
+                component.setType(gc::LightType::DIRECTIONAL);
+                // The light's +Z axis points towards it. If there are several directional lights, the engine uses the last one.
+                const glm::vec3 z_axis{entity_matrix[2]};
+                if (glm::dot(z_axis, z_axis) > 0.0f) {
+                    m_direction_to_light = glm::normalize(z_axis);
+                }
+            }
+            else {
+                component.setType(gc::LightType::POINT);
+                if (light.type != "point") {
+                    GC_WARN("{}: the light of node '{}' is a {} light, which isn't supported, so it becomes a point light", m_name, node_name, light.type);
+                }
+            }
+            component.setColor({getFactor(light.color, 0), getFactor(light.color, 1), getFactor(light.color, 2)});
+            // The engine uses glTF's units: lux for directional lights and candela for point lights. As the glTF specification
+            // says, the scale of the node (and of its parents) doesn't change how bright the light is.
+            component.setIntensity(glm::max(static_cast<float>(light.intensity), 0.0f));
+            // a glTF light without a range has no limit, which is what zero means to the engine
+            component.setRange(light.range > 0.0 ? static_cast<float>(light.range) : 0.0f);
+            m_prefab.addComponent(component);
         }
 
         if (draws.size() > 1) {
             // an entity can only have one renderable
             for (size_t i = 0; i < draws.size(); ++i) {
                 m_prefab.beginEntity(gc::Name(std::format("{}_mesh{}", node_name, i)), entity);
+                m_entity_matrices.push_back(entity_matrix);
                 m_prefab.addComponent(gc::RenderableComponent{}.setMesh(draws[i].mesh).setMaterial(draws[i].material));
+                m_prefab.addComponent(gc::ColliderComponent{}.setMesh(draws[i].mesh));
             }
         }
 

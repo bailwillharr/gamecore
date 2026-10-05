@@ -61,10 +61,23 @@ loads, but not necessarily the same one as the prefab.
 
   - Every node becomes an entity, with the same name, transform and parent. They are all under a root entity (named after the
     file without its extension) which rotates glTF's Y-up coordinates to the engine's Z-up.
-  - A node with a mesh gets a RenderableComponent. If the mesh has several primitives, each one gets a child entity instead.
+  - A node with a mesh gets a RenderableComponent, and a ColliderComponent with the same mesh, so that it is solid. If the mesh has several primitives, each one gets a child entity instead.
     Only triangle lists are supported. Normals and tangents are generated if the file doesn't have them. A primitive with too
     many vertices for one mesh asset is split up.
   - Materials are made from the base color (sRGB), metallic-roughness, occlusion and normal textures (linear). Constant factors
-    are baked into the textures. Emission, transparency, double sided materials and texture transforms aren't supported.
-  - Perspective cameras become CameraComponents that aren't active. Lights (KHR_lights_punctual) become LightComponents.
+    are baked into the textures. A material without a texture gets no texture asset for it: the factors are stored in the
+    material and the engine draws it with a simpler shader. The alpha modes become the engine's blend modes: MASK is alpha tested (cut
+    out) and BLEND is alpha blended (see-through). The file's alpha mode is checked against the alpha that the material really
+    has, as exporters often mark solid materials as BLEND: a material with no transparency is made opaque, and a BLEND material
+    whose alpha is a cut out is made alpha tested: one where less than a quarter of the texture is partly transparent (fences),
+    or where at least a tenth of it is holes (leaves, whose textures are mostly empty with soft edges). Emission is the emissive texture multiplied by the emissive factor (and by
+    KHR_materials_emissive_strength, if the file has it). Double sided materials and texture transforms aren't supported.
+  - Perspective cameras become CameraComponents that aren't active. Lights (KHR_lights_punctual) become LightComponents:
+    directional and point lights, with their color, range and intensity. The engine uses glTF's physical units (lux and
+    candela), so nothing is converted. A light without a range has no limit. Spot lights become point lights.
+  - If the scene has a directional light, the shadows that the scene's meshes cast in it are baked into a shadow map: an asset
+    named "robot.glb/shadowmap" (4096x4096, 32 MB), used by a ShadowMapComponent on an extra root entity of the prefab named
+    "shadow_map". The engine draws those shadows on everything, but only the prefab's own meshes cast them, and only for the
+    direction the light had in the file. The holes of alpha tested materials don't cast
+    shadows. Alpha blended materials cast a full shadow where their alpha is at least 0.5 and none elsewhere.
   - Animations, skins and morph targets are left out.

@@ -102,7 +102,11 @@ ArenaSystem::ArenaSystem(gc::World& world, gc::Net& net, gc::ReplicationSystem& 
                     world.addComponent<BotComponent>(entity);
                 }
                 else if (!config.headless) {
-                    world.addComponent<gc::CameraComponent>(entity).setFOV(glm::radians(45.0f)).setNearPlane(0.1f).setActive(true);
+                    world.addComponent<gc::CameraComponent>(entity)
+                        .setFOV(glm::radians(45.0f))
+                        .setNearPlane(0.1f)
+                        .setActive(true)
+                        .setExposure(CAMERA_EXPOSURE_EV100);
                     world.addComponent<MouseMoveComponent>(entity).setMoveSpeed(10.0f).setAcceleration(100.0f).setDeceleration(100.0f).setSensitivity(3e-3f);
                 }
             }
@@ -161,7 +165,11 @@ ArenaSystem::ArenaSystem(gc::World& world, gc::Net& net, gc::ReplicationSystem& 
         const glm::vec3 position{0.0f, -30.0f, 15.0f};
         m_spectator_camera = m_world.createEntity(gc::Name::createConstexpr("spectator_camera"), gc::ENTITY_NONE, position,
                                                   glm::quatLookAt(glm::normalize(-position), glm::vec3{0.0f, 0.0f, 1.0f}));
-        m_world.addComponent<gc::CameraComponent>(m_spectator_camera).setFOV(glm::radians(45.0f)).setNearPlane(0.1f).setActive(true);
+        m_world.addComponent<gc::CameraComponent>(m_spectator_camera)
+            .setFOV(glm::radians(45.0f))
+            .setNearPlane(0.1f)
+            .setActive(true)
+            .setExposure(CAMERA_EXPOSURE_EV100);
     }
 }
 

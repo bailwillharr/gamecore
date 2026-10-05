@@ -1,5 +1,7 @@
 #pragma once
 
+#include <string>
+
 #include <glm/gtc/constants.hpp>
 #include <glm/vec3.hpp>
 
@@ -17,7 +19,12 @@ struct FlyCameraComponent {
     glm::vec3 velocity{};               // m/s, world space
     float yaw{0.0f};                    // about the Z axis. Zero looks along +Y
     float pitch{glm::half_pi<float>()}; // about the X axis. Zero looks straight down, pi looks straight up
+    bool collide{true};                 // the camera is a sphere that can't go through the world's colliders (C turns it off)
+    float radius{0.4f};                 // of that sphere, in metres
 };
+
+// Puts the point light that the player can turn on and off (L) on the camera entity. Add its CameraComponent first.
+void addHeadlamp(gc::World& world, gc::Entity entity);
 
 class FlyCameraSystem : public gc::System {
 public:
@@ -25,6 +32,7 @@ public:
 
 private:
     bool m_framed{false};
+    std::string m_looking_at{}; // what is in the middle of the screen, for the help text
 
 public:
     explicit FlyCameraSystem(gc::World& world);
@@ -36,4 +44,8 @@ private:
     void frameWorld();
 
     void showHelp(const FlyCameraComponent& camera, const glm::vec3& position, bool headlamp);
+
+    // Returns where a camera that wants to be at 'position' can be: outside of everything solid. Stops 'velocity' going into what
+    // it touches.
+    glm::vec3 collideWithWorld(const FlyCameraComponent& camera, gc::Entity entity, glm::vec3 position, glm::vec3& velocity);
 };

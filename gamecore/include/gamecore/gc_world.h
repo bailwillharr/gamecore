@@ -57,6 +57,9 @@ public:
     // returns ENTITY_NONE on failure
     Entity findEntity(Name name);
 
+    // False if the entity was deleted, or was never created. An entity's ID is used again after it is deleted.
+    bool isEntityAlive(Entity entity) const;
+
     // Create a ComponentArray for the given component
     template <ValidComponent T, ComponentArrayType ArrayType>
     void registerComponent()

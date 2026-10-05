@@ -2,34 +2,88 @@
 
 #include <array>
 
+#include <glm/mat4x4.hpp>
+#include <glm/vec3.hpp>
+#include <glm/vec4.hpp>
+
 #include "gamecore/gc_assert.h"
+#include "gamecore/gc_material_blend_mode.h"
 #include "gamecore/gc_vulkan_common.h"
 #include "gamecore/gc_render_texture.h"
 
 namespace gc {
 
+// Which textures a material has. Every combination is drawn with its own pipeline, whose fragment shader only samples those
+// textures. A material doesn't store a pipeline, only the features it wants.
+using MaterialFeatures = uint32_t;
+constexpr MaterialFeatures MATERIAL_FEATURE_BASE_COLOR_TEXTURE = 1 << 0;
+constexpr MaterialFeatures MATERIAL_FEATURE_ORM_TEXTURE = 1 << 1;
+constexpr MaterialFeatures MATERIAL_FEATURE_NORMAL_TEXTURE = 1 << 2;
+constexpr MaterialFeatures MATERIAL_FEATURE_EMISSIVE_TEXTURE = 1 << 3;
+constexpr uint32_t MATERIAL_FEATURE_COUNT = 4;
+constexpr uint32_t MATERIAL_FEATURE_COMBINATIONS = 1 << MATERIAL_FEATURE_COUNT;
+
+// There is a pipeline for every combination of features and blend mode, as the blend mode changes both the shader (testing or
+// keeping the alpha) and how the result is written (blending, depth writes).
+constexpr uint32_t MATERIAL_PIPELINE_VARIANTS = MATERIAL_FEATURE_COMBINATIONS * MATERIAL_BLEND_MODE_COUNT;
+
+// where a material's pipeline is in an array of the variants
+constexpr uint32_t getMaterialPipelineVariant(MaterialFeatures features, MaterialBlendMode blend_mode)
+{
+    return static_cast<uint32_t>(blend_mode) * MATERIAL_FEATURE_COMBINATIONS + features;
+}
+
+// What is used in place of the textures that a material doesn't have. Without a normal texture, the mesh's normals are used.
+// This is the fragment shader's push constant block.
+struct MaterialConstants {
+    glm::vec4 base_color{1.0f, 1.0f, 1.0f, 1.0f}; // linear
+    float roughness = 0.5f;
+    float metallic = 0.0f;
+    float alpha_cutoff = 0.5f; // only for MaterialBlendMode::ALPHA_TEST
+    float padding = 0.0f;      // the shader's vec3 that follows is aligned to 16 bytes
+    // The light that the material gives off itself. Unlike the others, this isn't used in place of the emissive texture: the
+    // texture is multiplied by it. Black for materials that don't glow.
+    glm::vec3 emissive{0.0f, 0.0f, 0.0f};
+};
+
+// The vertex shader's push constants (the world matrix) come first
+constexpr uint32_t MATERIAL_CONSTANTS_PUSH_CONSTANT_OFFSET = sizeof(glm::mat4);
+
 class RenderMaterial {
     RenderTexture& m_base_color_texture;
     RenderTexture& m_occlusion_roughness_metallic_texture;
     RenderTexture& m_normal_texture;
+    RenderTexture& m_emissive_texture;
 
     GPUDescriptorSet m_descriptor_set;
+
+    MaterialFeatures m_features;
+    MaterialBlendMode m_blend_mode;
+    MaterialConstants m_constants;
 
     uint64_t m_last_used_frame = 0;
 
 public:
     // takes exclusive ownership of the descriptor set (will free it)
+    // All four textures are needed, as the descriptor set has to be complete. One that isn't in 'features' is never sampled, so
+    // it can be any texture.
     RenderMaterial(VkDevice device, GPUDescriptorSet&& descriptor_set, RenderTexture& base_color_texture, RenderTexture& occlusion_roughness_metallic_texture,
-                   RenderTexture& normal_texture)
+                   RenderTexture& normal_texture, RenderTexture& emissive_texture, MaterialFeatures features, MaterialBlendMode blend_mode,
+                   const MaterialConstants& constants)
         : m_base_color_texture(base_color_texture),
           m_occlusion_roughness_metallic_texture(occlusion_roughness_metallic_texture),
           m_normal_texture(normal_texture),
-          m_descriptor_set(std::move(descriptor_set))
+          m_emissive_texture(emissive_texture),
+          m_descriptor_set(std::move(descriptor_set)),
+          m_features(features),
+          m_blend_mode(blend_mode),
+          m_constants(constants)
     {
+        GC_ASSERT(features < MATERIAL_FEATURE_COMBINATIONS);
         GC_ASSERT(device);
 
-        std::array<VkDescriptorImageInfo, 3> descriptor_image_infos{};
-        std::array<VkWriteDescriptorSet, 3> writes{};
+        std::array<VkDescriptorImageInfo, 4> descriptor_image_infos{};
+        std::array<VkWriteDescriptorSet, 4> writes{};
 
         descriptor_image_infos[0].imageView = m_base_color_texture.getImageView();
         descriptor_image_infos[0].imageLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
@@ -61,6 +115,16 @@ public:
         writes[2].descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
         writes[2].pImageInfo = &descriptor_image_infos[2];
 
+        descriptor_image_infos[3].imageView = m_emissive_texture.getImageView();
+        descriptor_image_infos[3].imageLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
+        writes[3].sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
+        writes[3].dstSet = m_descriptor_set.getHandle();
+        writes[3].dstBinding = 3;
+        writes[3].dstArrayElement = 0;
+        writes[3].descriptorCount = 1;
+        writes[3].descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
+        writes[3].pImageInfo = &descriptor_image_infos[3];
+
         vkUpdateDescriptorSets(device, static_cast<uint32_t>(writes.size()), writes.data(), 0, nullptr);
 
         GC_TRACE("Created RenderMaterial");
@@ -70,7 +134,7 @@ public:
 
     ~RenderMaterial() { GC_TRACE("Destroying RenderMaterial..."); }
 
-    // Binds descriptor sets. Check isUploaded() first
+    // Binds descriptor sets and sets the material's constants. Check isUploaded() first
     void bind(VkCommandBuffer cmd, VkPipelineLayout pipeline_layout, VkSemaphore timeline_semaphore, uint64_t signal_value)
     {
         GC_ASSERT(cmd);
@@ -81,9 +145,12 @@ public:
         m_base_color_texture.useResource(timeline_semaphore, signal_value);
         m_occlusion_roughness_metallic_texture.useResource(timeline_semaphore, signal_value);
         m_normal_texture.useResource(timeline_semaphore, signal_value);
+        m_emissive_texture.useResource(timeline_semaphore, signal_value);
 
         const VkDescriptorSet handle = m_descriptor_set.getHandle();
         vkCmdBindDescriptorSets(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, pipeline_layout, 1, 1, &handle, 0, nullptr);
+        vkCmdPushConstants(cmd, pipeline_layout, VK_SHADER_STAGE_FRAGMENT_BIT, MATERIAL_CONSTANTS_PUSH_CONSTANT_OFFSET, sizeof(MaterialConstants),
+                           &m_constants);
     }
 
     // Checks that all textures for this material are uploaded
@@ -98,14 +165,22 @@ public:
         if (!m_normal_texture.isUploaded()) {
             return false;
         }
+        if (!m_emissive_texture.isUploaded()) {
+            return false;
+        }
         return true;
     }
+
+    MaterialFeatures getFeatures() const { return m_features; }
+    MaterialBlendMode getBlendMode() const { return m_blend_mode; }
+    uint32_t getPipelineVariant() const { return getMaterialPipelineVariant(m_features, m_blend_mode); }
 
     void waitForUpload() const
     {
         m_base_color_texture.waitForUpload();
         m_occlusion_roughness_metallic_texture.waitForUpload();
         m_normal_texture.waitForUpload();
+        m_emissive_texture.waitForUpload();
     }
 
     uint64_t getLastUsedFrame() const { return m_last_used_frame; }

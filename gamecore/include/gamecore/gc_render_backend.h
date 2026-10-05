@@ -21,6 +21,7 @@
 #pragma once
 
 #include <array>
+#include <memory>
 #include <span>
 
 #include <glm/vec2.hpp>
@@ -39,6 +40,7 @@
 #include "gamecore/gc_mesh_vertex.h"
 #include "gamecore/gc_render_material.h"
 #include "gamecore/gc_render_buffer.h"
+#include "gamecore/gc_render_shadow_map.h"
 
 struct SDL_Window; // forward-dec
 
@@ -73,12 +75,20 @@ class RenderBackend {
     VkDescriptorPool m_main_descriptor_pool{};
     VkDescriptorSetLayout m_frame_set_layout{};
     VkDescriptorSetLayout m_material_set_layout{};
+    VkDescriptorSetLayout m_shadow_set_layout{};
+    VkSampler m_shadow_sampler{};
 
     // pipeline layout for most 3D rendering
-    VkPipelineLayout m_main_pipeline_layout{};
-    VkPipelineLayout m_instancing_pipeline_layout{};
-    std::unique_ptr<GPUPipeline> m_main_pipeline;
-    std::unique_ptr<GPUPipeline> m_instancing_pipeline;
+    VkPipelineLayout m_world_pipeline_layout{};
+
+    // The shaders that draw the world, see setWorldShaders()
+    VkShaderModule m_single_draw_vertex_module{};
+    VkShaderModule m_instanced_vertex_module{};
+    VkShaderModule m_fragment_module{};
+
+    // Pipeline variants, indexed by getMaterialPipelineVariant(). One is made the first time a material that needs it is drawn.
+    std::array<std::unique_ptr<GPUPipeline>, MATERIAL_PIPELINE_VARIANTS> m_main_pipelines{};
+    std::array<std::unique_ptr<GPUPipeline>, MATERIAL_PIPELINE_VARIANTS> m_instancing_pipelines{};
 
     VkSampleCountFlagBits m_msaa_samples{};
 
@@ -124,6 +134,9 @@ class RenderBackend {
     
     std::unique_ptr<GPUDescriptorSet> m_frame_uniform_buffer_set{}; // permanently points to m_frame_uniform_buffer
 
+    // A single texel that shadows nothing. Bound when the world has no shadow map, as the shaders always read one.
+    std::unique_ptr<RenderShadowMap> m_no_shadow_map{};
+
 #ifdef TRACY_ENABLE
     struct TracyVulkanContext {
         VkCommandPool pool;
@@ -150,18 +163,23 @@ public:
     /* Destroys any GPU resources that have been added to the delete queue and are not in use */
     void cleanupGPUResources();
 
-private:
-    GPUPipeline createPipeline(std::span<const uint8_t> vertex_spv, std::span<const uint8_t> fragment_spv,
-                               const VkPipelineVertexInputStateCreateInfo& vertex_input_state, VkPipelineLayout pipeline_layout);
-
-public:
-    void createMainPipeline(std::span<const uint8_t> vertex_spv, std::span<const uint8_t> fragment_spv);
-    void createInstancingPipeline(std::span<const uint8_t> vertex_spv, std::span<const uint8_t> fragment_spv);
+    // Sets the shaders that the world is drawn with: a vertex shader for single draws (world matrix in a push constant), one for
+    // instanced draws (world matrix in vertex attributes) and the fragment shader they share. Call once, before the first frame.
+    // The pipelines are made from these later, one for each combination of MaterialFeatures that gets drawn. The fragment shader
+    // is told which features it has through specialization constants 0, 1, 2... (one bool per feature, in the order they are
+    // declared), so that it only samples the textures the material has, and the blend mode through the next one (an int, the value
+    // of the MaterialBlendMode). A shader without those constants is the same in every pipeline.
+    void setWorldShaders(std::span<const uint8_t> single_draw_vertex_spv, std::span<const uint8_t> instanced_vertex_spv,
+                         std::span<const uint8_t> fragment_spv);
 
     RenderTexture createTexture(std::span<const uint8_t> r8g8b8a8_pak, bool srgb);
     RenderTexture createCubeTexture(std::array<std::span<const uint8_t>, 6> r8g8b8a8_paks, bool srgb);
+    // r16_pak is the data of a SHADOW_MAP_R16 asset
+    RenderShadowMap createShadowMap(std::span<const uint8_t> r16_pak);
     RenderMesh createMesh(std::span<const MeshVertex> vertices, std::span<const uint16_t> indices);
-    RenderMaterial createMaterial(RenderTexture& base_color, RenderTexture& orm, RenderTexture& normal);
+    // A texture that isn't in 'features' is never sampled, but one still has to be given (any will do).
+    RenderMaterial createMaterial(RenderTexture& base_color, RenderTexture& orm, RenderTexture& normal, RenderTexture& emissive, MaterialFeatures features,
+                                  MaterialBlendMode blend_mode, const MaterialConstants& constants);
 
     RenderBackendInfo getInfo() const
     {
@@ -183,6 +201,18 @@ public:
     void waitIdle(); // waits for all Vulkan queues to finish
 
 private:
+    // pak is a width, a height, and then the texels
+    RenderTexture createTextureFromPak(std::span<const uint8_t> pak, VkFormat image_format, uint32_t bytes_per_texel, bool generate_mips);
+
+    GPUPipeline createPipeline(VkShaderModule vertex_module, VkShaderModule fragment_module, uint32_t variant,
+                               const VkPipelineVertexInputStateCreateInfo& vertex_input_state);
+    // variant is from getMaterialPipelineVariant()
+    GPUPipeline createMainPipeline(uint32_t variant);
+    GPUPipeline createInstancingPipeline(uint32_t variant);
+
+    // Makes the pipeline variants that are needed to draw this, if they don't exist yet
+    void createMissingPipelines(const WorldDrawData& world_draw_data);
+
     void recreateFramesInFlightResources();
 
     // Call this when the swapchain is resized

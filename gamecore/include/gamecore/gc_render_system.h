@@ -1,5 +1,6 @@
 #pragma once
 
+#include <memory>
 #include <unordered_map>
 #include <tuple>
 #include <vector>
@@ -9,6 +10,7 @@
 #include "gamecore/gc_ecs.h"
 #include "gamecore/gc_name.h"
 #include "gamecore/gc_render_object_manager.h"
+#include "gamecore/gc_render_shadow_map.h"
 
 namespace gc {
 
@@ -29,7 +31,14 @@ private:
         }
     };
 
+    ResourceManager& m_resource_manager;
+    RenderBackend& m_render_backend;
+
     RenderObjectManager m_render_object_manager;
+
+    // The shadow map of the world's ShadowMapComponent. It is kept until a different one is wanted.
+    Name m_shadow_map_name{};
+    std::unique_ptr<RenderShadowMap> m_shadow_map{}; // null if m_shadow_map_name couldn't be loaded
     std::unordered_map<std::pair<RenderMesh*, RenderMaterial*>, std::vector<glm::mat4>, MeshMaterialPairHash> m_instance_groups;
 
 public:

@@ -338,7 +338,7 @@ private:
     void processAcks(Link& link, uint32_t ack_seq, uint32_t ack_bits);
     void sendStates(Link& link);
 
-    void renderDebugUI();
+    void renderDebugUI(bool* open);
 };
 
 } // namespace gc

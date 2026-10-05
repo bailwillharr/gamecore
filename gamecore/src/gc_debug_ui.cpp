@@ -3,6 +3,7 @@
 #include <cmath>
 
 #include <filesystem>
+#include <format>
 
 #include <imgui.h>
 #include <backends/imgui_impl_sdl3.h>
@@ -113,12 +114,54 @@ void DebugUI::update(FrameState& frame_state)
     ZoneScoped;
 
     if (this->active) {
-        ImGui::Begin("Debug UI", nullptr);
-        ImGui::Text("Average frame time: %.3f ms (%d fps)", frame_state.average_frame_time * 1000.0,
-                    static_cast<int>(std::round(1.0 / frame_state.average_frame_time)));
-        ImGui::Checkbox("Disable world rendering", &m_clear_draw_data);
-        ImGui::Checkbox("Show ImGui Demo", &m_show_demo);
-        ImGui::End();
+        // Everything is reached from one bar along the top, rather than each thing having a window that is always open
+        if (ImGui::BeginMainMenuBar()) {
+            if (ImGui::BeginMenu("Windows")) {
+                for (DebugWindow& window : m_windows) {
+                    ImGui::MenuItem(window.name.c_str(), nullptr, &window.open);
+                }
+                ImGui::MenuItem("ImGui Demo", nullptr, &m_show_demo);
+                ImGui::Separator();
+                if (ImGui::MenuItem("Close All")) {
+                    for (DebugWindow& window : m_windows) {
+                        window.open = false;
+                    }
+                    m_show_demo = false;
+                }
+                ImGui::EndMenu();
+            }
+            if (ImGui::BeginMenu("Render")) {
+                ImGui::MenuItem("Disable world rendering", nullptr, &m_clear_draw_data);
+                ImGui::Separator();
+                // these change what the world asked for, see below
+                ImGui::MenuItem("Ambient light", nullptr, &m_ambient_light);
+                ImGui::BeginDisabled(!m_ambient_light);
+                ImGui::SetNextItemWidth(160.0f);
+                ImGui::SliderFloat("Ambient scale", &m_ambient_light_scale, 0.0f, 4.0f, "x%.2f");
+                ImGui::EndDisabled();
+                ImGui::MenuItem("Shadows", nullptr, &m_shadows);
+                ImGui::SetNextItemWidth(160.0f);
+                ImGui::SliderFloat("Exposure", &m_exposure_compensation, -8.0f, 8.0f, "%+.1f EV");
+                if (ImGui::MenuItem("Reset")) {
+                    m_ambient_light = true;
+                    m_ambient_light_scale = 1.0f;
+                    m_shadows = true;
+                    m_exposure_compensation = 0.0f;
+                }
+                ImGui::EndMenu();
+            }
+
+            // on the right hand side
+            const std::string stats = std::format("{:.2f} ms ({} fps)   F10: hide", frame_state.average_frame_time * 1000.0,
+                                                  static_cast<int>(std::round(1.0 / frame_state.average_frame_time)));
+            const float stats_x = ImGui::GetWindowWidth() - ImGui::CalcTextSize(stats.c_str()).x - ImGui::GetStyle().ItemSpacing.x;
+            if (stats_x > ImGui::GetCursorPosX()) {
+                ImGui::SetCursorPosX(stats_x);
+            }
+            ImGui::TextUnformatted(stats.c_str());
+
+            ImGui::EndMainMenuBar();
+        }
 
         if (m_show_demo) {
             ImGui::ShowDemoWindow(&m_show_demo);
@@ -128,11 +171,33 @@ void DebugUI::update(FrameState& frame_state)
     if (m_clear_draw_data) {
         frame_state.draw_data.reset();
     }
+
+    // The Render menu's settings stay in force while the debug UI is hidden
+    frame_state.draw_data.setAmbientLight(m_ambient_light ? frame_state.draw_data.getAmbientLight() * m_ambient_light_scale : glm::vec3{0.0f, 0.0f, 0.0f});
+    if (!m_shadows) {
+        frame_state.draw_data.setShadowMap(nullptr);
+    }
+    frame_state.draw_data.setExposure(frame_state.draw_data.getExposure() * std::exp2(m_exposure_compensation));
 }
 
-void DebugUI::windowEventInterceptor(SDL_Event& ev)
+bool* DebugUI::getWindowOpen(const char* name)
 {
-    if (!active) {
+    DebugWindow* window = nullptr;
+    for (DebugWindow& w : m_windows) {
+        if (w.name == name) {
+            window = &w;
+            break;
+        }
+    }
+    if (!window) {
+        window = &m_windows.emplace_back(name, false);
+    }
+    return (this->active && window->open) ? &window->open : nullptr;
+}
+
+void DebugUI::windowEventInterceptor(SDL_Event& ev, bool mouse_captured)
+{
+    if (mouse_captured) {
         return;
     }
 
@@ -140,7 +205,8 @@ void DebugUI::windowEventInterceptor(SDL_Event& ev)
 
     // cancel inputs that ImGui wants to intercept by setting ev.type to zero
     const ImGuiIO& io = ImGui::GetIO();
-    if (io.WantCaptureKeyboard && (ev.type == SDL_EVENT_KEY_DOWN || ev.type == SDL_EVENT_KEY_UP)) {
+    // (F10 always gets through, so that the debug UI can be hidden while typing in one of its text boxes)
+    if (io.WantCaptureKeyboard && (ev.type == SDL_EVENT_KEY_DOWN || ev.type == SDL_EVENT_KEY_UP) && ev.key.scancode != SDL_SCANCODE_F10) {
         ev.type = 0;
     }
     if (io.WantCaptureMouse && (ev.type == SDL_EVENT_MOUSE_BUTTON_DOWN || ev.type == SDL_EVENT_MOUSE_BUTTON_UP || ev.type == SDL_EVENT_MOUSE_MOTION ||

@@ -24,6 +24,7 @@
 #include <gamecore/gc_renderable_component.h>
 #include <gamecore/gc_replication.h>
 #include <gamecore/gc_resource_manager.h>
+#include <gamecore/gc_shadow_map_component.h>
 #include <gamecore/gc_transform_component.h>
 #include <gamecore/gc_window.h>
 #include <gamecore/gc_world.h>
@@ -144,6 +145,10 @@ Options parseCommandLine(std::span<const char* const> args)
 
 bool isHeadless(const Options& options) { return options.mode == GameMode::DEDICATED_SERVER || options.bot; }
 
+// Lights are in physical units. The sun is low and dim (lux), so that the lamp in the room can be seen next to it.
+// The cameras' exposure has to suit it, see CAMERA_EXPOSURE_EV100 in arena.h
+static constexpr float SUN_ILLUMINANCE = 400.0f;
+
 static void createPipelines(gc::App& app)
 {
     gc::Content& content = app.content();
@@ -155,8 +160,7 @@ static void createPipelines(gc::App& app)
             gc::abortGame("Failed to find shaders");
         }
     }
-    app.renderBackend().createMainPipeline(single_draw_vert.data, frag.data);
-    app.renderBackend().createInstancingPipeline(instanced_vert.data, frag.data);
+    app.renderBackend().setWorldShaders(single_draw_vert.data, instanced_vert.data, frag.data);
 }
 
 // The parts of the world that never change. Every host makes its own copy, so none of it needs replicating.
@@ -191,8 +195,21 @@ static void createScenery(gc::App& app)
     resource_manager.add<gc::ResourceMesh>(gc::genCubeMesh(), "cube"_name);
 
     {
+        // Lights shine along their -Z axis, as cameras look. This one shines down from above +X +Y.
+        const auto sun = world.createEntity("sun"_name);
+        world.getComponent<gc::TransformComponent>(sun)->setRotation(
+            glm::quatLookAt(glm::normalize(glm::vec3{-1.0f, -1.0f, -1.0f}), glm::vec3{0.0f, 0.0f, 1.0f}));
+        world.addComponent<gc::LightComponent>(sun).setType(gc::LightType::DIRECTIONAL).setIntensity(SUN_ILLUMINANCE);
+    }
+    {
+        // the sky: a tenth of the sun
+        const auto sky = world.createEntity("sky"_name);
+        world.addComponent<gc::LightComponent>(sky).setType(gc::LightType::AMBIENT).setIntensity(0.1f * SUN_ILLUMINANCE);
+    }
+    {
+        // a lamp in the room in the middle of the arena
         const auto light = world.createEntity("light"_name, gc::ENTITY_NONE, {0.0f, 0.0f, 3.0f});
-        world.addComponent<gc::LightComponent>(light);
+        world.addComponent<gc::LightComponent>(light).setColor({1.0f, 0.8f, 0.5f}).setIntensity(1000.0f).setRange(12.0f); // candela
     }
     {
         const auto floor = world.createEntity("floor"_name);
@@ -285,6 +302,7 @@ int buildAndStartGame(gc::App& app, const Options& options)
     world.registerComponent<gc::RenderableComponent, gc::ComponentArrayType::DENSE>();
     world.registerComponent<gc::CameraComponent, gc::ComponentArrayType::SPARSE>();
     world.registerComponent<gc::LightComponent, gc::ComponentArrayType::SPARSE>();
+    world.registerComponent<gc::ShadowMapComponent, gc::ComponentArrayType::SPARSE>();
     world.registerComponent<SpinComponent, gc::ComponentArrayType::SPARSE>();
     world.registerComponent<MouseMoveComponent, gc::ComponentArrayType::SPARSE>();
     world.registerComponent<PlayerComponent, gc::ComponentArrayType::SPARSE>();

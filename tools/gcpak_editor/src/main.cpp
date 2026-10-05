@@ -22,6 +22,8 @@
 #include <gamecore/gc_renderable_component.h>
 #include <gamecore/gc_camera_component.h>
 #include <gamecore/gc_light_component.h>
+#include <gamecore/gc_shadow_map_component.h>
+#include <gamecore/gc_collider_component.h>
 #include <gamecore/gc_render_system.h>
 #include <gamecore/gc_camera_system.h>
 #include <gamecore/gc_light_system.h>
@@ -52,13 +54,14 @@ static void initEditorWorld(gc::App& app, const std::filesystem::path& open_file
         if (vert_instanced.data.empty() || vert_instanced.type != gcpak::GcpakAssetType::SPIRV_SHADER) {
             abortGame("Could not find editor_instanced.vert");
         }
-        render_backend.createMainPipeline(vert.data, frag.data);
-        render_backend.createInstancingPipeline(vert_instanced.data, frag.data);
+        render_backend.setWorldShaders(vert.data, vert_instanced.data, frag.data);
     }
 
     world.registerComponent<gc::RenderableComponent, gc::ComponentArrayType::DENSE>();
     world.registerComponent<gc::CameraComponent, gc::ComponentArrayType::SPARSE>();
     world.registerComponent<gc::LightComponent, gc::ComponentArrayType::SPARSE>();
+    world.registerComponent<gc::ShadowMapComponent, gc::ComponentArrayType::SPARSE>();
+    world.registerComponent<gc::ColliderComponent, gc::ComponentArrayType::SPARSE>(); // only so that prefabs with colliders load quietly
 
     world.registerSystem<gc::RenderSystem>(resource_manager, render_backend);
     world.registerSystem<gc::CameraSystem>();

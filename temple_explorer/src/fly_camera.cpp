@@ -2,8 +2,10 @@
 
 #include <cmath>
 
+#include <format>
 #include <limits>
 #include <unordered_map>
+#include <vector>
 
 #include <glm/common.hpp>
 #include <glm/geometric.hpp>
@@ -14,6 +16,8 @@
 #include <tracy/Tracy.hpp>
 
 #include <gamecore/gc_app.h>
+#include <gamecore/gc_camera_component.h>
+#include <gamecore/gc_collision_system.h>
 #include <gamecore/gc_frame_state.h>
 #include <gamecore/gc_light_component.h>
 #include <gamecore/gc_renderable_component.h>
@@ -22,6 +26,17 @@
 #include <gamecore/gc_transform_component.h>
 #include <gamecore/gc_window.h>
 #include <gamecore/gc_world.h>
+
+void addHeadlamp(gc::World& world, gc::Entity entity)
+{
+    // Worlds can be as bright as day or as dim as a cave, and a lamp of any one strength would be blinding or invisible in most
+    // of them. Make it as strong as the camera's exposure expects: a surface 5 metres away is lit as well as the world's main
+    // light would light it (see CameraComponent::setExposure()).
+    const gc::CameraComponent* const camera = world.getComponent<gc::CameraComponent>(entity);
+    const float illuminance = 3.0f * std::exp2(camera ? camera->getExposure() : 15.0f); // lux
+    const float intensity = illuminance * 5.0f * 5.0f;                                  // candela
+    world.addComponent<gc::LightComponent>(entity).setType(gc::LightType::POINT).setColor({1.0f, 0.9f, 0.75f}).setIntensity(intensity).setRange(40.0f);
+}
 
 FlyCameraSystem::FlyCameraSystem(gc::World& world) : gc::System(world) {}
 
@@ -64,6 +79,7 @@ void FlyCameraSystem::onUpdate(gc::FrameState& frame_state)
     }
 
     const bool toggle_headlamp = input.getKeyPress(SDL_SCANCODE_L);
+    const bool toggle_collide = input.getKeyPress(SDL_SCANCODE_C);
     gc::Entity headlamp_entity = gc::ENTITY_NONE;
 
     m_world.forEach<gc::TransformComponent, FlyCameraComponent>([&](gc::Entity entity, gc::TransformComponent& t, FlyCameraComponent& camera) {
@@ -86,28 +102,73 @@ void FlyCameraSystem::onUpdate(gc::FrameState& frame_state)
         const float blend = (camera.smoothing_time > 0.0f) ? 1.0f - std::exp(-delta_time / camera.smoothing_time) : 1.0f;
         camera.velocity += (wanted_velocity - camera.velocity) * blend;
 
+        if (toggle_collide) {
+            camera.collide = !camera.collide;
+        }
+        glm::vec3 position = t.getPosition() + camera.velocity * delta_time;
+        if (camera.collide) {
+            position = collideWithWorld(camera, entity, position, camera.velocity);
+        }
+
         t.setRotation(rotation);
-        t.setPosition(t.getPosition() + camera.velocity * delta_time);
+        t.setPosition(position);
+
+        // what the camera is looking at
+        const gc::RaycastHit hit = m_world.getSystem<gc::CollisionSystem>().raycast(gc::Ray{position, forward}, 10000.0f, entity);
+        if (hit.hit) {
+            const gc::TransformComponent* const hit_transform = m_world.getComponent<gc::TransformComponent>(hit.entity);
+            m_looking_at = std::format("{} ({:.1f} m)", hit_transform ? hit_transform->name.getString() : "?", hit.distance);
+        }
+        else {
+            m_looking_at = "nothing";
+        }
 
         headlamp_entity = entity;
     });
 
     if (headlamp_entity != gc::ENTITY_NONE) {
-        // The engine draws with one light: the last one it finds. The camera is created after the world is loaded, so a light on
-        // the camera is used instead of any that the world has.
+        // The headlamp is a point light on the camera, on top of whatever lights the world has
         bool headlamp = m_world.getComponent<gc::LightComponent>(headlamp_entity) != nullptr;
         if (toggle_headlamp) {
             if (headlamp) {
                 m_world.removeComponent<gc::LightComponent>(headlamp_entity);
             }
             else {
-                m_world.addComponent<gc::LightComponent>(headlamp_entity);
+                addHeadlamp(m_world, headlamp_entity);
             }
             headlamp = !headlamp;
         }
         showHelp(*m_world.getComponent<FlyCameraComponent>(headlamp_entity), m_world.getComponent<gc::TransformComponent>(headlamp_entity)->getPosition(),
                  headlamp);
     }
+}
+
+glm::vec3 FlyCameraSystem::collideWithWorld(const FlyCameraComponent& camera, gc::Entity entity, glm::vec3 position, glm::vec3& velocity)
+{
+    const gc::CollisionSystem& collision = m_world.getSystem<gc::CollisionSystem>();
+
+    // Move out of the deepest contact, then look again, as that can push the camera into something else (in a corner).
+    std::vector<gc::SphereContact> contacts{};
+    for (int iteration = 0; iteration < 4; ++iteration) {
+        contacts.clear();
+        collision.overlapSphere(position, camera.radius, contacts, entity);
+        const gc::SphereContact* deepest = nullptr;
+        for (const gc::SphereContact& contact : contacts) {
+            if (!deepest || contact.depth > deepest->depth) {
+                deepest = &contact;
+            }
+        }
+        if (!deepest) {
+            break;
+        }
+        position += deepest->normal * deepest->depth;
+        // keep the part of the velocity that slides along the surface
+        const float into_surface = glm::dot(velocity, deepest->normal);
+        if (into_surface < 0.0f) {
+            velocity -= deepest->normal * into_surface;
+        }
+    }
+    return position;
 }
 
 void FlyCameraSystem::frameWorld()
@@ -176,12 +237,16 @@ void FlyCameraSystem::showHelp(const FlyCameraComponent& camera, const glm::vec3
     }
     constexpr ImGuiWindowFlags FLAGS = ImGuiWindowFlags_NoDecoration | ImGuiWindowFlags_AlwaysAutoResize | ImGuiWindowFlags_NoSavedSettings |
                                        ImGuiWindowFlags_NoFocusOnAppearing | ImGuiWindowFlags_NoNav | ImGuiWindowFlags_NoMove | ImGuiWindowFlags_NoInputs;
-    ImGui::SetNextWindowPos(ImVec2(10.0f, 10.0f), ImGuiCond_Always);
+    // the work area starts below the debug menu bar, when that is shown (F10)
+    const ImVec2 work_pos = ImGui::GetMainViewport()->WorkPos;
+    ImGui::SetNextWindowPos(ImVec2(work_pos.x + 10.0f, work_pos.y + 10.0f), ImGuiCond_Always);
     ImGui::SetNextWindowBgAlpha(0.5f);
     if (ImGui::Begin("Fly camera", nullptr, FLAGS)) {
         ImGui::TextUnformatted("Mouse: look   WASD: fly   Space/E: up   Ctrl/Q: down   Shift: fast");
-        ImGui::TextUnformatted("Up/Down arrows: change speed   L: headlamp   F10: debug windows   Esc: quit");
-        ImGui::Text("Position: %.1f %.1f %.1f   Speed: %.2f m/s   Headlamp: %s", position.x, position.y, position.z, camera.speed, headlamp ? "on" : "off");
+        ImGui::TextUnformatted("Up/Down arrows: change speed   L: headlamp   C: collisions   F10: debug windows   Esc: quit");
+        ImGui::Text("Position: %.1f %.1f %.1f   Speed: %.2f m/s   Headlamp: %s   Collisions: %s", position.x, position.y, position.z, camera.speed,
+                    headlamp ? "on" : "off", camera.collide ? "on" : "off");
+        ImGui::Text("Looking at: %s", m_looking_at.c_str());
     }
     ImGui::End();
 }

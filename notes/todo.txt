@@ -5,14 +5,48 @@ Allow for System onUpdate()'s to be run in parallel if they don't modify the sam
 
 
 
-Pipeline variants
-	If a given material doesn't use a normal map, for example, it shouldn't sample a normal texture in the fragment shader.
-	Use multiple pipelines instead or maybe just use null descriptors.
-	Either way, don't store pipeline in material, just what features are wanted, such as:
-	 - use normal map
-	 - constant roughness vs roughness map
+Pipeline variants (done: see MaterialFeatures and RenderBackend::setWorldShaders()):
+	A variant is still given a (fallback) texture for the slots it doesn't sample, as every variant uses the same descriptor set layout.
+	Draws aren't sorted by pipeline, so the pipeline can be rebound more often than needed.
+	A variant is compiled the first time it is drawn, which can cause a hitch.
+
+Blend modes (see MaterialBlendMode):
+	Alpha blended draws are sorted by the distance of their entity's origin, not per triangle, and don't write depth. Big or
+	intersecting see-through meshes can be drawn in the wrong order.
+	Alpha tested edges are hard: no alpha to coverage.
+	Materials are single sided, so cut out leaves can't be seen from behind.
+
+Emission:
+	Emissive materials glow but don't light anything, and there is no bloom, so they can't look brighter than white.
+	Emission is added after the exposure, so it isn't in physical units like the lights are: 1 is about a lit white surface.
+
+Lights:
+	Every fragment loops over every point light in the world (at most WorldDrawData::MAX_POINT_LIGHTS, the rest are dropped).
+	Cull lights per object or use clustered shading.
+	No spot lights. Only one directional light.
+
+Shadows (see ShadowMapComponent and tools/gcpak_editor/src/shadow_baker.h):
+	Only the directional light casts shadows, and only from a shadow map that gcpak_editor baked for a glTF scene. Things that
+	move, or that aren't in the prefab, don't cast shadows. Point lights don't cast any.
+	One shadow map per world. One shadow map covers the whole prefab, so a big world gets big texels (cascades would fix that).
+	Alpha blended materials cast all or nothing shadows (cut at an alpha of 0.5), as there is only one depth per texel.
+	The baker reads the nearest texel of the full size texture for alpha tests, so the shadows of fine cut outs are harder
+	edged than what is drawn.
+	The baker is single threaded and rasterises every triangle on the CPU.
+	There is no way to bake the shadows of a prefab that wasn't made from a glTF file.
 
 
+
+Collisions (see gc_collision_system.h and tools/collision_test):
+	The system only answers queries (ray casts, sphere overlaps, box queries). There is no collider against collider test, and
+	nothing is moved: no physics.
+	A collider is always a triangle mesh. Simple shapes (boxes, spheres, capsules) would be cheaper for things that move.
+	No swept queries, so something fast and small can pass through a thin wall between two frames.
+	The broad phase tree is never rebalanced. Adding a whole world's colliders one at a time gives a deeper tree than building it
+	in one go would.
+	Each mesh's triangles are copied and sorted into a tree the first time a collider uses it, on the main thread.
+	Queries see the world as of the CollisionSystem's last update.
+	gamecore_template doesn't use it yet.
 
 Use the same ByteReader and ByteWriter classes engine-wide.
 	No more NetByteReader for network stuff, and also stream usage for file stuff.
@@ -73,8 +107,8 @@ Replication (see replication.txt):
 
 Asset compilation (see tools/gcpak_editor/README):
 	gcpak_editor decides whether an image file is an sRGB or a linear texture from its file name. There's no way to override it.
-	Materials are only three textures. glTF's constant factors are baked into textures by gcpak_editor, and emission,
-	transparency and double sided materials are dropped.
+	glTF's constant factors are baked into textures by gcpak_editor when there is a texture (a material's constants replace a
+	texture, they don't scale it), and double sided materials are dropped.
 	Mesh assets have 16 bit indices, so gcpak_editor splits big glTF meshes into several. Support 32 bit indices instead.
 	gcpak_editor compiles on the main thread, so the window freezes while a big folder is added.
 	Nothing recompiles assets when their source files change. The build could run gcpak_editor --pack.

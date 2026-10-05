@@ -27,6 +27,7 @@ class RenderObjectManager {
         gc::Name base_color_texture;
         gc::Name orm_texture;
         gc::Name normal_texture;
+        gc::Name emissive_texture;
     };
     std::unordered_map<Name, MaterialEntry> m_materials{};
     std::unordered_map<Name, std::unique_ptr<RenderMesh>> m_meshes{};
@@ -59,8 +60,11 @@ public:
             std::make_unique<RenderTexture>(render_backend.createTexture(std::array<uint8_t, 12>{1, 0, 0, 0, 1, 0, 0, 0, 255, 128, 0, 255}, false));
         m_fallback_textures[2] =
             std::make_unique<RenderTexture>(render_backend.createTexture(std::array<uint8_t, 12>{1, 0, 0, 0, 1, 0, 0, 0, 127, 127, 255, 255}, false));
-        m_fallback_material =
-            std::make_unique<RenderMaterial>(render_backend.createMaterial(*m_fallback_textures[0], *m_fallback_textures[1], *m_fallback_textures[2]));
+        // only samples the 'missing' texture
+        m_fallback_material = std::make_unique<RenderMaterial>(render_backend.createMaterial(
+            *m_fallback_textures[0], *m_fallback_textures[1], *m_fallback_textures[2], *m_fallback_textures[1], MATERIAL_FEATURE_BASE_COLOR_TEXTURE,
+            MaterialBlendMode::NONE,
+            MaterialConstants{}));
     }
     RenderObjectManager(const RenderObjectManager&) = delete;
     RenderObjectManager(RenderObjectManager&&) = delete;
@@ -81,7 +85,15 @@ public:
             const ResourceMaterial* material_resource = m_resource_manager.get<ResourceMaterial>(name);
             if (material_resource) {
 
+                // A texture that the material doesn't name isn't a feature of it: its pipeline doesn't sample that texture and uses
+                // the material's constants instead. The fallback texture only fills the slot in the descriptor set.
+                // A texture that is named but can't be found is still sampled, so that the fallback shows that it is missing.
+                MaterialFeatures features = 0;
+
                 RenderTexture* base_color = m_texture_manager.acquire(m_resource_manager, m_render_backend, material_resource->base_color_texture);
+                if (!material_resource->base_color_texture.empty()) {
+                    features |= MATERIAL_FEATURE_BASE_COLOR_TEXTURE;
+                }
                 if (!base_color) {
                     if (!material_resource->base_color_texture.empty() && m_resources_not_found.emplace(material_resource->base_color_texture).second) {
                         GC_ERROR("Base color texture not found: {}", material_resource->base_color_texture.getString());
@@ -89,6 +101,9 @@ public:
                     base_color = m_fallback_textures[0].get();
                 }
                 RenderTexture* orm = m_texture_manager.acquire(m_resource_manager, m_render_backend, material_resource->orm_texture);
+                if (!material_resource->orm_texture.empty()) {
+                    features |= MATERIAL_FEATURE_ORM_TEXTURE;
+                }
                 if (!orm) {
                     if (!material_resource->orm_texture.empty() && m_resources_not_found.emplace(material_resource->orm_texture).second) {
                         GC_ERROR("ORM texture not found: {}", material_resource->orm_texture.getString());
@@ -96,18 +111,40 @@ public:
                     orm = m_fallback_textures[1].get();
                 }
                 RenderTexture* normal = m_texture_manager.acquire(m_resource_manager, m_render_backend, material_resource->normal_texture);
+                if (!material_resource->normal_texture.empty()) {
+                    features |= MATERIAL_FEATURE_NORMAL_TEXTURE;
+                }
                 if (!normal) {
                     if (!material_resource->normal_texture.empty() && m_resources_not_found.emplace(material_resource->normal_texture).second) {
                         GC_ERROR("Normal not found: {}", material_resource->normal_texture.getString());
                     }
                     normal = m_fallback_textures[2].get();
                 }
+                RenderTexture* emissive = m_texture_manager.acquire(m_resource_manager, m_render_backend, material_resource->emissive_texture);
+                if (!material_resource->emissive_texture.empty()) {
+                    features |= MATERIAL_FEATURE_EMISSIVE_TEXTURE;
+                }
+                if (!emissive) {
+                    if (!material_resource->emissive_texture.empty() && m_resources_not_found.emplace(material_resource->emissive_texture).second) {
+                        GC_ERROR("Emissive texture not found: {}", material_resource->emissive_texture.getString());
+                    }
+                    emissive = m_fallback_textures[0].get();
+                }
+
+                MaterialConstants constants{};
+                constants.base_color = material_resource->base_color;
+                constants.roughness = material_resource->roughness;
+                constants.metallic = material_resource->metallic;
+                constants.alpha_cutoff = material_resource->alpha_cutoff;
+                constants.emissive = material_resource->emissive;
 
                 MaterialEntry entry{};
-                entry.render_material = std::make_unique<RenderMaterial>(m_render_backend.createMaterial(*base_color, *orm, *normal));
+                entry.render_material = std::make_unique<RenderMaterial>(m_render_backend.createMaterial(
+                    *base_color, *orm, *normal, *emissive, features, material_resource->blend_mode, constants));
                 entry.base_color_texture = material_resource->base_color_texture;
                 entry.orm_texture = material_resource->orm_texture;
                 entry.normal_texture = material_resource->normal_texture;
+                entry.emissive_texture = material_resource->emissive_texture;
                 it = m_materials.emplace(name, std::move(entry)).first;
             }
             else {
@@ -157,6 +194,9 @@ public:
                 }
                 if (!entry.normal_texture.empty()) {
                     m_texture_manager.release(entry.normal_texture);
+                }
+                if (!entry.emissive_texture.empty()) {
+                    m_texture_manager.release(entry.emissive_texture);
                 }
                 it = m_materials.erase(it);
             }

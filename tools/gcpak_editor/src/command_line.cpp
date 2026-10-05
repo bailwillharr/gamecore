@@ -49,6 +49,8 @@ static const char* getAssetTypeName(gcpak::GcpakAssetType type)
         return "prefab";
     case gcpak::GcpakAssetType::MATERIAL:
         return "material";
+    case gcpak::GcpakAssetType::SHADOW_MAP_R16:
+        return "shadow map";
     default:
         return "invalid";
     }

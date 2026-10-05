@@ -58,7 +58,7 @@ Entities that the local host controls (e.g. the local player) are never interpol
 
 # Debugging and testing
 
-The "Replication" debug window (F10 for the mouse) shows the role, every entity, and per-connection statistics.
+The "Replication" debug window (F10, then Windows > Replication) shows the role, every entity, and per-connection statistics.
 
 gamecore_template can run without a window as a bot (--bot), and dedicated_server runs the same game, so a full session can be
 run on one machine. scripts/test_replication.py does that: it starts a server and several bots as separate processes, with

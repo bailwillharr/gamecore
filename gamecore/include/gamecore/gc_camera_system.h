@@ -1,5 +1,7 @@
 #pragma once
 
+#include <cmath>
+
 #include <glm/ext/matrix_clip_space.hpp>
 
 #include <tracy/Tracy.hpp>
@@ -40,6 +42,9 @@ public:
 
                 frame_state.draw_data.setProjectionMatrix(projection_matrix);
                 frame_state.draw_data.setViewMatrix(glm::inverse(t.getWorldMatrix()));
+                // What luminance (cd/m^2) is multiplied by. 1.2 * 2^EV100 is the luminance that saturates a sensor at that
+                // exposure value.
+                frame_state.draw_data.setExposure(1.0f / (1.2f * std::exp2(c.m_exposure_ev100)));
 
                 has_camera = true;
             }

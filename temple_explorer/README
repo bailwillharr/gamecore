@@ -14,7 +14,9 @@ Controls:
     Left Ctrl / Q       down
     Left Shift          fly faster
     Up / Down arrows    double / halve the flying speed
-    L                   turn the light on the camera on and off (the engine only draws with one light)
+    L                   turn the light on the camera on and off
+    C                   turn collisions on and off. When on, the camera can't fly through anything that has a ColliderComponent
+                        (everything, in a prefab that gcpak_editor made from a glTF file)
     F10                 show the debug windows and free the mouse
     Escape              quit
 

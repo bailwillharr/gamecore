@@ -43,6 +43,7 @@ inline constexpr float PROJECTILE_LIFETIME = 2.0f;   // seconds
 inline constexpr float FIRE_COOLDOWN = 0.25f;        // seconds
 inline constexpr int PROJECTILE_DAMAGE = 34;
 inline constexpr int NUM_PICKUPS = 8;
+inline constexpr float CAMERA_EXPOSURE_EV100 = 7.0f; // suits the evening sun in game.cpp (400 lux)
 
 struct GameConfig {
     bool headless{};           // nothing is rendered, so entities don't need models

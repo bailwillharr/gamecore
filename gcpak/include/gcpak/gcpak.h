@@ -71,8 +71,15 @@ enum class GcpakAssetType : std::uint32_t {
                                                 // The values are linear: for data such as normal maps, roughness and metallic
     MESH_POS12_NORM12_TANG16_UV8_INDEXED16 = 3, // first 2 bytes is vertex count, followed by vertices, followed by 16 bit indices
     PREFAB = 4,                                 // See gcpak_prefab.h
-    MATERIAL = 5, // three asset IDs (uint32_t): base color texture, occlusion-roughness-metallic texture, normal texture. Zero means none
+    MATERIAL = 5, // three asset IDs (uint32_t): base color texture, occlusion-roughness-metallic texture, normal texture. Zero means none.
+                  // Then six floats, used in place of the textures that are none: base color (linear RGBA), roughness, metallic.
+                  // Then the blend mode (uint32_t: 0 opaque, 1 alpha test, 2 alpha blend) and the alpha cutoff (float) for alpha test.
+                  // Then the emissive texture's asset ID (uint32_t) and three floats that it is multiplied by (or that are the emission,
+                  // if the ID is zero).
+                  // Older files end after the first three asset IDs, after the six floats, or after the alpha cutoff.
     TEXTURE_R8G8B8A8_SRGB = 6, // same layout as TEXTURE_R8G8B8A8, but the RGB values are sRGB encoded: for colors (alpha is always linear)
+    SHADOW_MAP_R16 = 7, // first 4 bytes is width, second 4 bytes is height, then one uint16_t per texel: the depth of the surface nearest
+                        // to the light (0 is nearest, 65535 is farthest, or nothing). See gc::ShadowMapComponent
 };
 
 struct GcpakAssetEntry {

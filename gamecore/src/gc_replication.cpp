@@ -129,9 +129,12 @@ void ReplicationSystem::onUpdate(FrameState& frame_state)
         tick();
     }
 
-    // There is only an ImGui context if the app has a window. Like the other debug windows, it's only shown on request (F10)
-    if (m_show_debug_ui && ImGui::GetCurrentContext() && App::instance().debugUI().active) {
-        renderDebugUI();
+    // There is only an ImGui context if the app has a window. Like the other debug windows, it's only shown on request
+    // (F10, then the Windows menu)
+    if (m_show_debug_ui && ImGui::GetCurrentContext()) {
+        if (bool* const open = App::instance().debugUI().getWindowOpen("Replication")) {
+            renderDebugUI(open);
+        }
     }
 }
 
@@ -1234,11 +1237,11 @@ void ReplicationSystem::sendStates(Link& link)
     }
 }
 
-void ReplicationSystem::renderDebugUI()
+void ReplicationSystem::renderDebugUI(bool* open)
 {
-    ImGui::SetNextWindowPos(ImVec2(530.0f, 140.0f), ImGuiCond_FirstUseEver);
+    ImGui::SetNextWindowPos(ImVec2(530.0f, 40.0f), ImGuiCond_FirstUseEver);
     ImGui::SetNextWindowSize(ImVec2(480.0f, 430.0f), ImGuiCond_FirstUseEver);
-    if (ImGui::Begin("Replication")) {
+    if (ImGui::Begin("Replication", open)) {
         ImGui::Text("Role: %s", roleString(m_role));
         ImGui::Text("Local peer ID: %u", getLocalPeerId());
         ImGui::Text("Replicated entities: %u", static_cast<unsigned>(m_entities.size()));

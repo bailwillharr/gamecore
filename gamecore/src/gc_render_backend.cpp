@@ -1,7 +1,9 @@
 #include "gamecore/gc_render_backend.h"
 
+#include <cstddef>
 #include <cstring>
 
+#include <algorithm>
 #include <array>
 
 #include <SDL3/SDL_vulkan.h>
@@ -154,6 +156,43 @@ static uint32_t getAppropriateFramesInFlight(uint32_t swapchain_image_count) { r
     }
 }
 
+// Must match FrameUniformBuffer in the shaders (std140 layout). A shader can declare only the first members, if that's all it needs.
+struct PointLightUniformData {
+    glm::vec4 position_range; // xyz = world position, w = range (zero: unlimited)
+    glm::vec4 color;          // rgb = color * luminous intensity (candela)
+};
+struct FrameUniformData {
+    glm::mat4 projection_matrix;
+    glm::mat4 view_matrix;
+    glm::vec3 camera_position;
+    uint32_t point_light_count;
+    glm::vec4 directional_light_direction; // xyz = direction towards the light
+    glm::vec4 directional_light_color;     // rgb = color * illuminance (lux)
+    float exposure;
+    std::array<float, 3> padding;    // vectors are aligned to 16 bytes
+    glm::vec4 ambient_light;         // rgb = color * illuminance (lux) of a surface facing up
+    glm::mat4 shadow_matrix;         // world space to the shadow map's texture coordinates (x, y) and depth (z)
+    glm::vec4 shadow_params;         // x = normal bias (metres), y = depth bias, z = 1 if there is a shadow map, else 0
+    std::array<PointLightUniformData, WorldDrawData::MAX_POINT_LIGHTS> point_lights;
+};
+static_assert(offsetof(FrameUniformData, camera_position) == 128);
+static_assert(offsetof(FrameUniformData, point_light_count) == 140);
+static_assert(offsetof(FrameUniformData, directional_light_direction) == 144);
+static_assert(offsetof(FrameUniformData, directional_light_color) == 160);
+static_assert(offsetof(FrameUniformData, exposure) == 176);
+static_assert(offsetof(FrameUniformData, ambient_light) == 192);
+static_assert(offsetof(FrameUniformData, shadow_matrix) == 208);
+static_assert(offsetof(FrameUniformData, shadow_params) == 272);
+static_assert(offsetof(FrameUniformData, point_lights) == 288);
+static_assert(sizeof(PointLightUniformData) == 32);
+
+// Must match the fragment shader's push constant block
+static_assert(offsetof(MaterialConstants, base_color) == 0);
+static_assert(offsetof(MaterialConstants, roughness) == 16);
+static_assert(offsetof(MaterialConstants, metallic) == 20);
+static_assert(offsetof(MaterialConstants, alpha_cutoff) == 24);
+static_assert(offsetof(MaterialConstants, emissive) == 32);
+
 RenderBackend::RenderBackend(SDL_Window* window_handle)
     : m_device(), m_allocator(m_device), m_swapchain(m_device, window_handle), m_delete_queue(m_device.getHandle(), m_allocator.getHandle())
 {
@@ -181,7 +220,8 @@ RenderBackend::RenderBackend(SDL_Window* window_handle)
     // create main descriptor pool for long-lasting static resources
     {
         std::array<VkDescriptorPoolSize, 1> pool_sizes = {
-            VkDescriptorPoolSize{VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, 100},
+            // every material has four textures
+            VkDescriptorPoolSize{VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, 4096},
         };
         VkDescriptorPoolCreateInfo pool_info = {};
         pool_info.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_POOL_CREATE_INFO;
@@ -201,7 +241,7 @@ RenderBackend::RenderBackend(SDL_Window* window_handle)
         bindings[0].binding = 0;
         bindings[0].descriptorType = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER;
         bindings[0].descriptorCount = 1;
-        bindings[0].stageFlags = VK_SHADER_STAGE_VERTEX_BIT;
+        bindings[0].stageFlags = VK_SHADER_STAGE_VERTEX_BIT | VK_SHADER_STAGE_FRAGMENT_BIT; // the fragment shader reads the lights
         VkDescriptorSetLayoutCreateInfo info{};
         info.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_LAYOUT_CREATE_INFO;
         info.bindingCount = static_cast<uint32_t>(bindings.size());
@@ -209,7 +249,12 @@ RenderBackend::RenderBackend(SDL_Window* window_handle)
         GC_CHECKVK(vkCreateDescriptorSetLayout(m_device.getHandle(), &info, nullptr, &m_frame_set_layout));
     }
     {
-        std::array<VkDescriptorSetLayoutBinding, 3> bindings{};
+        std::array<VkDescriptorSetLayoutBinding, 4> bindings{};
+        bindings[3].binding = 3; // emissive
+        bindings[3].descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
+        bindings[3].descriptorCount = 1;
+        bindings[3].stageFlags = VK_SHADER_STAGE_FRAGMENT_BIT;
+        bindings[3].pImmutableSamplers = &m_sampler;
         bindings[0].binding = 0;
         bindings[0].descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
         bindings[0].descriptorCount = 1;
@@ -231,33 +276,52 @@ RenderBackend::RenderBackend(SDL_Window* window_handle)
         info.pBindings = bindings.data();
         GC_CHECKVK(vkCreateDescriptorSetLayout(m_device.getHandle(), &info, nullptr, &m_material_set_layout));
     }
-
-    // pipeline layouts
     {
-        const std::array set_layouts{m_frame_set_layout, m_material_set_layout};
+        // Shadow maps are read texel by texel (the shader does its own filtering), and never outside their edges
+        VkSamplerCreateInfo sampler_info{};
+        sampler_info.sType = VK_STRUCTURE_TYPE_SAMPLER_CREATE_INFO;
+        sampler_info.magFilter = VK_FILTER_NEAREST;
+        sampler_info.minFilter = VK_FILTER_NEAREST;
+        sampler_info.mipmapMode = VK_SAMPLER_MIPMAP_MODE_NEAREST;
+        sampler_info.addressModeU = VK_SAMPLER_ADDRESS_MODE_CLAMP_TO_EDGE;
+        sampler_info.addressModeV = VK_SAMPLER_ADDRESS_MODE_CLAMP_TO_EDGE;
+        sampler_info.addressModeW = VK_SAMPLER_ADDRESS_MODE_CLAMP_TO_EDGE;
+        sampler_info.maxLod = VK_LOD_CLAMP_NONE;
+        GC_CHECKVK(vkCreateSampler(m_device.getHandle(), &sampler_info, nullptr, &m_shadow_sampler));
 
-        VkPushConstantRange push_constant_range{};
-        push_constant_range.offset = 0;
-        push_constant_range.size = 64;
-        push_constant_range.stageFlags = VK_SHADER_STAGE_VERTEX_BIT;
-
-        VkPipelineLayoutCreateInfo info{};
-        info.sType = VK_STRUCTURE_TYPE_PIPELINE_LAYOUT_CREATE_INFO;
-        info.setLayoutCount = static_cast<uint32_t>(set_layouts.size());
-        info.pSetLayouts = set_layouts.data();
-        info.pushConstantRangeCount = 1;
-        info.pPushConstantRanges = &push_constant_range;
-        GC_CHECKVK(vkCreatePipelineLayout(m_device.getHandle(), &info, nullptr, &m_main_pipeline_layout));
+        std::array<VkDescriptorSetLayoutBinding, 1> bindings{};
+        bindings[0].binding = 0;
+        bindings[0].descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
+        bindings[0].descriptorCount = 1;
+        bindings[0].stageFlags = VK_SHADER_STAGE_FRAGMENT_BIT;
+        bindings[0].pImmutableSamplers = &m_shadow_sampler;
+        VkDescriptorSetLayoutCreateInfo info{};
+        info.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_LAYOUT_CREATE_INFO;
+        info.bindingCount = static_cast<uint32_t>(bindings.size());
+        info.pBindings = bindings.data();
+        GC_CHECKVK(vkCreateDescriptorSetLayout(m_device.getHandle(), &info, nullptr, &m_shadow_set_layout));
     }
+
+    // Pipeline layout. Every pipeline that draws the world uses it, so that descriptor sets stay bound when the pipeline changes.
     {
-        const std::array set_layouts{m_frame_set_layout, m_material_set_layout};
+        const std::array set_layouts{m_frame_set_layout, m_material_set_layout, m_shadow_set_layout};
+
+        std::array<VkPushConstantRange, 2> push_constant_ranges{};
+        // the world matrix (not used by instanced draws)
+        push_constant_ranges[0].offset = 0;
+        push_constant_ranges[0].size = sizeof(glm::mat4);
+        push_constant_ranges[0].stageFlags = VK_SHADER_STAGE_VERTEX_BIT;
+        push_constant_ranges[1].offset = MATERIAL_CONSTANTS_PUSH_CONSTANT_OFFSET;
+        push_constant_ranges[1].size = sizeof(MaterialConstants);
+        push_constant_ranges[1].stageFlags = VK_SHADER_STAGE_FRAGMENT_BIT;
+
         VkPipelineLayoutCreateInfo info{};
         info.sType = VK_STRUCTURE_TYPE_PIPELINE_LAYOUT_CREATE_INFO;
         info.setLayoutCount = static_cast<uint32_t>(set_layouts.size());
         info.pSetLayouts = set_layouts.data();
-        info.pushConstantRangeCount = 0;
-        info.pPushConstantRanges = nullptr;
-        GC_CHECKVK(vkCreatePipelineLayout(m_device.getHandle(), &info, nullptr, &m_instancing_pipeline_layout));
+        info.pushConstantRangeCount = static_cast<uint32_t>(push_constant_ranges.size());
+        info.pPushConstantRanges = push_constant_ranges.data();
+        GC_CHECKVK(vkCreatePipelineLayout(m_device.getHandle(), &info, nullptr, &m_world_pipeline_layout));
     }
 
     // find depth stencil format to use
@@ -334,6 +398,12 @@ RenderBackend::RenderBackend(SDL_Window* window_handle)
     }
 #endif
 
+    {
+        // one texel at the farthest depth, which nothing is behind
+        const std::array<uint8_t, 10> no_shadow_pak{1, 0, 0, 0, 1, 0, 0, 0, 0xff, 0xff};
+        m_no_shadow_map = std::make_unique<RenderShadowMap>(createShadowMap(no_shadow_pak));
+    }
+
     // m_main_timeline_semaphore and the frame in flight command pools will be created when submitFrame() is called for the first time.
 
     VkPhysicalDeviceDriverProperties driverProps{};
@@ -356,11 +426,16 @@ RenderBackend::~RenderBackend()
     GC_TRACE("Destroying RenderBackend...");
 
     // The destructors for these objects defer destruction until the resource is no longer in use by a GPU queue.
+    m_no_shadow_map.reset();
     m_frame_uniform_buffer_set.reset();
     m_instancing_transforms_buffer.reset();
     m_frame_uniform_buffer.reset();
-    m_main_pipeline.reset();
-    m_instancing_pipeline.reset();
+    for (auto& pipeline : m_main_pipelines) {
+        pipeline.reset();
+    }
+    for (auto& pipeline : m_instancing_pipelines) {
+        pipeline.reset();
+    }
 
     waitIdle();
 
@@ -395,9 +470,14 @@ RenderBackend::~RenderBackend()
     vkDestroyImageView(m_device.getHandle(), m_depth_stencil_attachment_view, nullptr);
     vmaDestroyImage(m_allocator.getHandle(), m_depth_stencil_attachment_image, m_depth_stencil_attachment_allocation);
 
-    vkDestroyPipelineLayout(m_device.getHandle(), m_instancing_pipeline_layout, nullptr);
-    vkDestroyPipelineLayout(m_device.getHandle(), m_main_pipeline_layout, nullptr);
+    vkDestroyShaderModule(m_device.getHandle(), m_fragment_module, nullptr);
+    vkDestroyShaderModule(m_device.getHandle(), m_instanced_vertex_module, nullptr);
+    vkDestroyShaderModule(m_device.getHandle(), m_single_draw_vertex_module, nullptr);
 
+    vkDestroyPipelineLayout(m_device.getHandle(), m_world_pipeline_layout, nullptr);
+
+    vkDestroyDescriptorSetLayout(m_device.getHandle(), m_shadow_set_layout, nullptr);
+    vkDestroySampler(m_device.getHandle(), m_shadow_sampler, nullptr);
     vkDestroyDescriptorSetLayout(m_device.getHandle(), m_material_set_layout, nullptr);
     vkDestroyDescriptorSetLayout(m_device.getHandle(), m_frame_set_layout, nullptr);
     vkDestroyDescriptorPool(m_device.getHandle(), m_main_descriptor_pool, nullptr);
@@ -432,6 +512,8 @@ void RenderBackend::submitFrame(bool window_resized, const WorldDrawData& world_
     }
 
     auto& stuff = m_fif[m_frame_count % m_fif.size()];
+
+    createMissingPipelines(world_draw_data);
 
     // Wait for command buffer to be available
     waitForFrameReady();
@@ -502,18 +584,38 @@ void RenderBackend::submitFrame(bool window_resized, const WorldDrawData& world_
         vkCmdPipelineBarrier2(stuff.cmd, &dep);
     }
 
+    // The shadow map can only be used once it has been uploaded. Until then, and if there isn't one, nothing is shadowed.
+    RenderShadowMap* shadow_map = world_draw_data.getShadowMap();
+    const bool has_shadow_map = shadow_map && shadow_map->isUploaded();
+    if (!has_shadow_map) {
+        m_no_shadow_map->waitForUpload(); // a single texel, uploaded when the backend was created
+        shadow_map = m_no_shadow_map.get();
+    }
+
     // update frame uniform buffer
     {
-        // alignment is the same here as in the shader, but rules are different!
-        struct {
-            glm::mat4 projection_matrix;
-            glm::mat4 view_matrix;
-            glm::vec3 camera_position;
-        } data;
+        FrameUniformData data{};
         data.projection_matrix = world_draw_data.getProjectionMatrix();
         data.view_matrix = world_draw_data.getViewMatrix();
         data.camera_position =
             glm::vec3(glm::inverse(data.view_matrix) * glm::vec4(0.0, 0.0, 0.0, 1.0)); // TODO, have world_draw_data just contain the camera position
+
+        data.directional_light_direction = glm::vec4(world_draw_data.getDirectionalLightDirection(), 0.0f);
+        data.directional_light_color = glm::vec4(world_draw_data.getDirectionalLightColor(), 0.0f);
+        data.exposure = world_draw_data.getExposure();
+        data.ambient_light = glm::vec4(world_draw_data.getAmbientLight(), 0.0f);
+        data.shadow_matrix = world_draw_data.getShadowMatrix();
+        data.shadow_params = glm::vec4(world_draw_data.getShadowNormalBias(), world_draw_data.getShadowDepthBias(), has_shadow_map ? 1.0f : 0.0f, 0.0f);
+
+        const auto& point_lights = world_draw_data.getPointLights();
+        if (point_lights.size() > data.point_lights.size()) {
+            GC_WARN_ONCE("The world has {} point lights but only {} can be drawn. The rest are left out", point_lights.size(), data.point_lights.size());
+        }
+        data.point_light_count = static_cast<uint32_t>(std::min(point_lights.size(), data.point_lights.size()));
+        for (uint32_t i = 0; i < data.point_light_count; ++i) {
+            data.point_lights[i].position_range = glm::vec4(point_lights[i].position, point_lights[i].range);
+            data.point_lights[i].color = glm::vec4(point_lights[i].color, 0.0f);
+        }
 
         m_frame_uniform_buffer->writeData(stuff.cmd, m_frame_count, m_main_timeline_semaphore, m_main_timeline_value + 1,
                                           std::span(reinterpret_cast<const uint8_t*>(&data), sizeof(data)));
@@ -522,7 +624,7 @@ void RenderBackend::submitFrame(bool window_resized, const WorldDrawData& world_
         b.sType = VK_STRUCTURE_TYPE_BUFFER_MEMORY_BARRIER_2;
         b.srcStageMask = VK_PIPELINE_STAGE_2_COPY_BIT;
         b.srcAccessMask = VK_ACCESS_2_TRANSFER_WRITE_BIT;
-        b.dstStageMask = VK_PIPELINE_STAGE_2_VERTEX_SHADER_BIT;
+        b.dstStageMask = VK_PIPELINE_STAGE_2_VERTEX_SHADER_BIT | VK_PIPELINE_STAGE_2_FRAGMENT_SHADER_BIT;
         b.dstAccessMask = VK_ACCESS_2_UNIFORM_READ_BIT;
         b.srcQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
         b.dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
@@ -616,11 +718,8 @@ void RenderBackend::submitFrame(bool window_resized, const WorldDrawData& world_
         scissor.extent = swapchain_extent;
         vkCmdSetScissor(stuff.cmd, 0, 1, &scissor);
 
-        GC_ASSERT(m_main_pipeline);
-        GC_ASSERT(m_instancing_pipeline);
-
-        recordWorldRenderingCommands(stuff.cmd, m_main_pipeline_layout, *m_main_pipeline, m_instancing_pipeline_layout, *m_instancing_pipeline,
-                                     m_main_timeline_semaphore, m_main_timeline_value + 1, world_draw_data, *m_frame_uniform_buffer_set,
+        recordWorldRenderingCommands(stuff.cmd, m_world_pipeline_layout, m_main_pipelines, m_instancing_pipelines, m_main_timeline_semaphore,
+                                     m_main_timeline_value + 1, world_draw_data, *m_frame_uniform_buffer_set, *shadow_map,
                                      *m_instancing_transforms_buffer);
 
         if (post_render_callback) {
@@ -729,29 +828,65 @@ void RenderBackend::cleanupGPUResources()
     }
 }
 
-GPUPipeline RenderBackend::createPipeline(std::span<const uint8_t> vertex_spv, std::span<const uint8_t> fragment_spv,
-                                          const VkPipelineVertexInputStateCreateInfo& vertex_input_state, VkPipelineLayout pipeline_layout)
+void RenderBackend::setWorldShaders(std::span<const uint8_t> single_draw_vertex_spv, std::span<const uint8_t> instanced_vertex_spv,
+                                    std::span<const uint8_t> fragment_spv)
+{
+    if (m_fragment_module) {
+        abortGame("World shaders already set!");
+    }
+    if (single_draw_vertex_spv.empty() || instanced_vertex_spv.empty() || fragment_spv.empty()) {
+        abortGame("setWorldShaders() called with empty SPIRV code");
+    }
+
+    const auto create_module = [this](std::span<const uint8_t> spv) {
+        VkShaderModuleCreateInfo module_info{};
+        module_info.sType = VK_STRUCTURE_TYPE_SHADER_MODULE_CREATE_INFO;
+        module_info.pNext = nullptr;
+        module_info.flags = 0;
+        module_info.codeSize = spv.size();
+        module_info.pCode = reinterpret_cast<const uint32_t*>(spv.data());
+        VkShaderModule shader_module = VK_NULL_HANDLE;
+        GC_CHECKVK(vkCreateShaderModule(m_device.getHandle(), &module_info, nullptr, &shader_module));
+        return shader_module;
+    };
+    m_single_draw_vertex_module = create_module(single_draw_vertex_spv);
+    m_instanced_vertex_module = create_module(instanced_vertex_spv);
+    m_fragment_module = create_module(fragment_spv);
+}
+
+GPUPipeline RenderBackend::createPipeline(VkShaderModule vertex_module, VkShaderModule fragment_module, uint32_t variant,
+                                          const VkPipelineVertexInputStateCreateInfo& vertex_input_state)
 {
     ZoneScoped;
 
-    if (vertex_spv.empty() || fragment_spv.empty()) {
-        gc::abortGame("createPipeline() called with empty SPIRV code");
+    if (!vertex_module || !fragment_module) {
+        abortGame("setWorldShaders() must be called before the world is drawn");
     }
+    GC_ASSERT(variant < MATERIAL_PIPELINE_VARIANTS);
+    const MaterialFeatures features = variant % MATERIAL_FEATURE_COMBINATIONS;
+    const MaterialBlendMode blend_mode = static_cast<MaterialBlendMode>(variant / MATERIAL_FEATURE_COMBINATIONS);
 
-    VkShaderModuleCreateInfo module_info{};
-    module_info.sType = VK_STRUCTURE_TYPE_SHADER_MODULE_CREATE_INFO;
-    module_info.pNext = nullptr;
-    module_info.flags = 0;
-
-    module_info.codeSize = vertex_spv.size();
-    module_info.pCode = reinterpret_cast<const uint32_t*>(vertex_spv.data());
-    VkShaderModule vertex_module = VK_NULL_HANDLE;
-    GC_CHECKVK(vkCreateShaderModule(m_device.getHandle(), &module_info, nullptr, &vertex_module));
-
-    module_info.codeSize = fragment_spv.size();
-    module_info.pCode = reinterpret_cast<const uint32_t*>(fragment_spv.data());
-    VkShaderModule fragment_module = VK_NULL_HANDLE;
-    GC_CHECKVK(vkCreateShaderModule(m_device.getHandle(), &module_info, nullptr, &fragment_module));
+    // The fragment shader has a bool specialization constant for each material feature. The driver compiles out what a variant
+    // doesn't use, such as sampling a normal map.
+    // The constant after those is the blend mode: the shader discards what fails the alpha test, or keeps the alpha for blending.
+    static_assert(sizeof(VkBool32) == sizeof(uint32_t));
+    std::array<uint32_t, MATERIAL_FEATURE_COUNT + 1> specialization_data{};
+    std::array<VkSpecializationMapEntry, MATERIAL_FEATURE_COUNT + 1> specialization_entries{};
+    specialization_data[MATERIAL_FEATURE_COUNT] = static_cast<uint32_t>(blend_mode);
+    specialization_entries[MATERIAL_FEATURE_COUNT].constantID = MATERIAL_FEATURE_COUNT;
+    specialization_entries[MATERIAL_FEATURE_COUNT].offset = MATERIAL_FEATURE_COUNT * static_cast<uint32_t>(sizeof(uint32_t));
+    specialization_entries[MATERIAL_FEATURE_COUNT].size = sizeof(uint32_t);
+    for (uint32_t i = 0; i < MATERIAL_FEATURE_COUNT; ++i) {
+        specialization_data[i] = (features & (1u << i)) ? VK_TRUE : VK_FALSE;
+        specialization_entries[i].constantID = i;
+        specialization_entries[i].offset = i * static_cast<uint32_t>(sizeof(VkBool32));
+        specialization_entries[i].size = sizeof(VkBool32);
+    }
+    VkSpecializationInfo specialization_info{};
+    specialization_info.mapEntryCount = static_cast<uint32_t>(specialization_entries.size());
+    specialization_info.pMapEntries = specialization_entries.data();
+    specialization_info.dataSize = sizeof(specialization_data);
+    specialization_info.pData = specialization_data.data();
 
     std::array<VkPipelineShaderStageCreateInfo, 2> stage_infos{};
     stage_infos[0].sType = VK_STRUCTURE_TYPE_PIPELINE_SHADER_STAGE_CREATE_INFO;
@@ -764,6 +899,7 @@ GPUPipeline RenderBackend::createPipeline(std::span<const uint8_t> vertex_spv, s
     stage_infos[0].module = vertex_module;
     stage_infos[1].stage = VK_SHADER_STAGE_FRAGMENT_BIT;
     stage_infos[1].module = fragment_module;
+    stage_infos[1].pSpecializationInfo = &specialization_info;
 
     VkPipelineInputAssemblyStateCreateInfo input_assembly_state{};
     input_assembly_state.sType = VK_STRUCTURE_TYPE_PIPELINE_INPUT_ASSEMBLY_STATE_CREATE_INFO;
@@ -815,7 +951,8 @@ GPUPipeline RenderBackend::createPipeline(std::span<const uint8_t> vertex_spv, s
     VkPipelineDepthStencilStateCreateInfo depth_stencil_state{};
     depth_stencil_state.sType = VK_STRUCTURE_TYPE_PIPELINE_DEPTH_STENCIL_STATE_CREATE_INFO;
     depth_stencil_state.depthTestEnable = VK_TRUE;
-    depth_stencil_state.depthWriteEnable = VK_TRUE;
+    // Blended surfaces are hidden by what is in front of them, but don't hide what is behind them
+    depth_stencil_state.depthWriteEnable = (blend_mode == MaterialBlendMode::ALPHA_BLEND) ? VK_FALSE : VK_TRUE;
     depth_stencil_state.depthCompareOp = VK_COMPARE_OP_GREATER_OR_EQUAL;
     depth_stencil_state.depthBoundsTestEnable = VK_FALSE;
     depth_stencil_state.minDepthBounds = 0.0f;
@@ -826,7 +963,19 @@ GPUPipeline RenderBackend::createPipeline(std::span<const uint8_t> vertex_spv, s
 
     VkPipelineColorBlendAttachmentState color_blend_attachment{};
     color_blend_attachment.colorWriteMask = VK_COLOR_COMPONENT_R_BIT | VK_COLOR_COMPONENT_G_BIT | VK_COLOR_COMPONENT_B_BIT | VK_COLOR_COMPONENT_A_BIT;
-    color_blend_attachment.blendEnable = VK_FALSE;
+    if (blend_mode == MaterialBlendMode::ALPHA_BLEND) {
+        // color = color * alpha + what is there already * (1 - alpha)
+        color_blend_attachment.blendEnable = VK_TRUE;
+        color_blend_attachment.srcColorBlendFactor = VK_BLEND_FACTOR_SRC_ALPHA;
+        color_blend_attachment.dstColorBlendFactor = VK_BLEND_FACTOR_ONE_MINUS_SRC_ALPHA;
+        color_blend_attachment.colorBlendOp = VK_BLEND_OP_ADD;
+        color_blend_attachment.srcAlphaBlendFactor = VK_BLEND_FACTOR_ONE;
+        color_blend_attachment.dstAlphaBlendFactor = VK_BLEND_FACTOR_ONE_MINUS_SRC_ALPHA;
+        color_blend_attachment.alphaBlendOp = VK_BLEND_OP_ADD;
+    }
+    else {
+        color_blend_attachment.blendEnable = VK_FALSE;
+    }
 
     VkPipelineColorBlendStateCreateInfo color_blend_state{};
     color_blend_state.sType = VK_STRUCTURE_TYPE_PIPELINE_COLOR_BLEND_STATE_CREATE_INFO;
@@ -862,7 +1011,7 @@ GPUPipeline RenderBackend::createPipeline(std::span<const uint8_t> vertex_spv, s
     info.pDepthStencilState = &depth_stencil_state;
     info.pColorBlendState = &color_blend_state;
     info.pDynamicState = &dynamic_state;
-    info.layout = pipeline_layout;
+    info.layout = m_world_pipeline_layout;
     info.renderPass = VK_NULL_HANDLE;
     info.subpass = 0;
     info.basePipelineHandle = VK_NULL_HANDLE;
@@ -871,18 +1020,11 @@ GPUPipeline RenderBackend::createPipeline(std::span<const uint8_t> vertex_spv, s
     VkPipeline handle{};
     GC_CHECKVK(vkCreateGraphicsPipelines(m_device.getHandle(), VK_NULL_HANDLE, 1, &info, nullptr, &handle));
 
-    vkDestroyShaderModule(m_device.getHandle(), fragment_module, nullptr);
-    vkDestroyShaderModule(m_device.getHandle(), vertex_module, nullptr);
-
     return GPUPipeline(m_delete_queue, handle);
 }
 
-void RenderBackend::createMainPipeline(std::span<const uint8_t> vertex_spv, std::span<const uint8_t> fragment_spv)
+GPUPipeline RenderBackend::createMainPipeline(uint32_t variant)
 {
-    if (m_main_pipeline) {
-        abortGame("Main pipeline already created!");
-    }
-
     VkVertexInputBindingDescription vertex_input_binding{};
     vertex_input_binding.binding = 0;
     vertex_input_binding.stride = static_cast<uint32_t>(sizeof(MeshVertex));
@@ -918,15 +1060,11 @@ void RenderBackend::createMainPipeline(std::span<const uint8_t> vertex_spv, std:
     vertex_input_state.vertexAttributeDescriptionCount = static_cast<uint32_t>(vertex_input_attributes.size());
     vertex_input_state.pVertexAttributeDescriptions = vertex_input_attributes.data();
 
-    m_main_pipeline = std::make_unique<GPUPipeline>(createPipeline(vertex_spv, fragment_spv, vertex_input_state, m_main_pipeline_layout));
+    return createPipeline(m_single_draw_vertex_module, m_fragment_module, variant, vertex_input_state);
 }
 
-void RenderBackend::createInstancingPipeline(std::span<const uint8_t> vertex_spv, std::span<const uint8_t> fragment_spv)
+GPUPipeline RenderBackend::createInstancingPipeline(uint32_t variant)
 {
-    if (m_instancing_pipeline) {
-        abortGame("Instancing pipeline already created!");
-    }
-
     std::array<VkVertexInputBindingDescription, 2> vertex_input_bindings{};
 
     vertex_input_bindings[0].binding = 0;
@@ -988,28 +1126,67 @@ void RenderBackend::createInstancingPipeline(std::span<const uint8_t> vertex_spv
     vertex_input_state.vertexAttributeDescriptionCount = static_cast<uint32_t>(vertex_input_attributes.size());
     vertex_input_state.pVertexAttributeDescriptions = vertex_input_attributes.data();
 
-    m_instancing_pipeline = std::make_unique<GPUPipeline>(createPipeline(vertex_spv, fragment_spv, vertex_input_state, m_instancing_pipeline_layout));
+    return createPipeline(m_instanced_vertex_module, m_fragment_module, variant, vertex_input_state);
+}
+
+void RenderBackend::createMissingPipelines(const WorldDrawData& world_draw_data)
+{
+    for (const auto& entry : world_draw_data.getDrawEntries()) {
+        const uint32_t variant = entry.material->getPipelineVariant();
+        if (!m_main_pipelines[variant]) [[unlikely]] {
+            GC_DEBUG("Creating pipeline for material features {:#05b}, blend mode {}", entry.material->getFeatures(),
+                     static_cast<uint32_t>(entry.material->getBlendMode()));
+            m_main_pipelines[variant] = std::make_unique<GPUPipeline>(createMainPipeline(variant));
+        }
+    }
+    for (const auto& entry : world_draw_data.getInstancedDrawEntries()) {
+        const uint32_t variant = entry.material->getPipelineVariant();
+        if (!m_instancing_pipelines[variant]) [[unlikely]] {
+            GC_DEBUG("Creating instancing pipeline for material features {:#05b}, blend mode {}", entry.material->getFeatures(),
+                     static_cast<uint32_t>(entry.material->getBlendMode()));
+            m_instancing_pipelines[variant] = std::make_unique<GPUPipeline>(createInstancingPipeline(variant));
+        }
+    }
 }
 
 RenderTexture RenderBackend::createTexture(std::span<const uint8_t> r8g8b8a8_pak, bool srgb)
 {
+    return createTextureFromPak(r8g8b8a8_pak, srgb ? VK_FORMAT_R8G8B8A8_SRGB : VK_FORMAT_R8G8B8A8_UNORM, 4, true);
+}
+
+RenderShadowMap RenderBackend::createShadowMap(std::span<const uint8_t> r16_pak)
+{
+    VkDescriptorSet descriptor_set{};
+    VkDescriptorSetAllocateInfo info{};
+    info.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_ALLOCATE_INFO;
+    info.descriptorPool = m_main_descriptor_pool;
+    info.descriptorSetCount = 1;
+    info.pSetLayouts = &m_shadow_set_layout;
+    GC_CHECKVK(vkAllocateDescriptorSets(m_device.getHandle(), &info, &descriptor_set));
+    // no mipmaps: a shadow map is only ever read at full resolution
+    return RenderShadowMap(m_device.getHandle(), createTextureFromPak(r16_pak, VK_FORMAT_R16_UNORM, 2, false),
+                           GPUDescriptorSet(m_delete_queue, m_main_descriptor_pool, descriptor_set));
+}
+
+RenderTexture RenderBackend::createTextureFromPak(std::span<const uint8_t> pak, VkFormat image_format, uint32_t bytes_per_texel, bool generate_mips)
+{
     ZoneScoped;
 
-    GC_ASSERT(r8g8b8a8_pak.size() > 2ULL * sizeof(uint32_t));
+    GC_ASSERT(pak.size() > 2ULL * sizeof(uint32_t));
     uint32_t width{}, height{};
-    std::memcpy(&width, r8g8b8a8_pak.data(), sizeof(uint32_t));
-    std::memcpy(&height, r8g8b8a8_pak.data() + sizeof(uint32_t), sizeof(uint32_t));
+    std::memcpy(&width, pak.data(), sizeof(uint32_t));
+    std::memcpy(&height, pak.data() + sizeof(uint32_t), sizeof(uint32_t));
     GC_ASSERT(width != 0 && height != 0);
-    GC_ASSERT(r8g8b8a8_pak.size() == 2 * sizeof(uint32_t) + (static_cast<size_t>(width) * static_cast<size_t>(height) * 4ULL));
-    const uint8_t* const bitmap_data_start = r8g8b8a8_pak.data() + 2 * sizeof(uint32_t);
+    GC_ASSERT(pak.size() == 2 * sizeof(uint32_t) + (static_cast<size_t>(width) * static_cast<size_t>(height) * static_cast<size_t>(bytes_per_texel)));
+    const uint8_t* const bitmap_data_start = pak.data() + 2 * sizeof(uint32_t);
 
     GC_TRACE("creating texture with size: {}x{}", width, height);
 
-    const uint32_t mip_levels = getMipLevels(width, height);
+    const uint32_t mip_levels = generate_mips ? getMipLevels(width, height) : 1;
 
     VkBufferCreateInfo buffer_info{};
     buffer_info.sType = VK_STRUCTURE_TYPE_BUFFER_CREATE_INFO;
-    buffer_info.size = static_cast<VkDeviceSize>(width) * static_cast<VkDeviceSize>(height) * 4ULL;
+    buffer_info.size = static_cast<VkDeviceSize>(width) * static_cast<VkDeviceSize>(height) * static_cast<VkDeviceSize>(bytes_per_texel);
     buffer_info.usage = VK_BUFFER_USAGE_TRANSFER_SRC_BIT;
     buffer_info.sharingMode = VK_SHARING_MODE_EXCLUSIVE;
     VmaAllocationCreateInfo buffer_alloc_info{};
@@ -1027,7 +1204,6 @@ RenderTexture RenderBackend::createTexture(std::span<const uint8_t> r8g8b8a8_pak
 
     GPUBuffer gpu_staging_buffer(m_delete_queue, buffer, buffer_alloc);
 
-    const VkFormat image_format = srgb ? VK_FORMAT_R8G8B8A8_SRGB : VK_FORMAT_R8G8B8A8_UNORM;
     auto [image, allocation] = vkutils::createImage(m_allocator.getHandle(), image_format, width, height, mip_levels, VK_SAMPLE_COUNT_1_BIT,
                                                     VK_IMAGE_USAGE_TRANSFER_DST_BIT | VK_IMAGE_USAGE_TRANSFER_SRC_BIT | VK_IMAGE_USAGE_SAMPLED_BIT, 0.5f);
 
@@ -1467,7 +1643,8 @@ RenderMesh RenderBackend::createMesh(std::span<const MeshVertex> vertices, std::
 }
 
 // textures passed as parameters must outlive the material!
-RenderMaterial RenderBackend::createMaterial(RenderTexture& base_color, RenderTexture& orm, RenderTexture& normal)
+RenderMaterial RenderBackend::createMaterial(RenderTexture& base_color, RenderTexture& orm, RenderTexture& normal, RenderTexture& emissive,
+                                             MaterialFeatures features, MaterialBlendMode blend_mode, const MaterialConstants& constants)
 {
     VkDescriptorSet descriptor_set{};
     VkDescriptorSetAllocateInfo info{};
@@ -1476,7 +1653,8 @@ RenderMaterial RenderBackend::createMaterial(RenderTexture& base_color, RenderTe
     info.descriptorSetCount = 1;
     info.pSetLayouts = &m_material_set_layout;
     GC_CHECKVK(vkAllocateDescriptorSets(m_device.getHandle(), &info, &descriptor_set));
-    return RenderMaterial(m_device.getHandle(), GPUDescriptorSet(m_delete_queue, m_main_descriptor_pool, descriptor_set), base_color, orm, normal);
+    return RenderMaterial(m_device.getHandle(), GPUDescriptorSet(m_delete_queue, m_main_descriptor_pool, descriptor_set), base_color, orm, normal, emissive,
+                          features, blend_mode, constants);
 }
 
 void RenderBackend::waitIdle()
@@ -1549,8 +1727,7 @@ void RenderBackend::recreateFramesInFlightResources()
 
     // RenderBuffers rely on the number of frames in flight
 
-    constexpr VkDeviceSize FRAME_UNIFORM_BUFFER_SIZE =
-        sizeof(glm::mat4) + sizeof(glm::mat4) + sizeof(glm::vec3); // projection matrix, view matrix, camera position
+    constexpr VkDeviceSize FRAME_UNIFORM_BUFFER_SIZE = sizeof(FrameUniformData);
     m_frame_uniform_buffer = std::make_unique<RenderBuffer>(m_delete_queue, m_allocator.getHandle(), static_cast<uint32_t>(m_fif.size()),
                                                             FRAME_UNIFORM_BUFFER_SIZE, VK_BUFFER_USAGE_UNIFORM_BUFFER_BIT);
 

@@ -45,6 +45,7 @@ class App {
     std::unique_ptr<Window> m_window{};
     std::unique_ptr<RenderBackend> m_render_backend{};
     std::unique_ptr<DebugUI> m_debug_ui{};
+    bool m_recapture_mouse{}; // the mouse was captured when the debug UI was shown, so capture it again when it is hidden
     std::unique_ptr<World> m_world{};
     std::unique_ptr<ResourceManager> m_resource_manager{};
     std::unique_ptr<Net> m_net{};

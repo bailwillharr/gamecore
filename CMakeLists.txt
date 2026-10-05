@@ -280,6 +280,7 @@ add_subdirectory(dedicated_server)
 add_subdirectory(tools/gcpak_editor)
 add_subdirectory(tools/net_test)
 add_subdirectory(tools/prefab_test)
+add_subdirectory(tools/collision_test)
 
 if(Python3_FOUND)
     add_custom_target(

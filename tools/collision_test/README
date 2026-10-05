@@ -1,0 +1,11 @@
+Tests the engine's collision detection (gc::CollisionSystem).
+
+    collision_test
+
+A world is filled with a few hundred colliders (cubes, spheres and planes, with every kind of transform, some of them children of
+a moving parent). Thousands of random ray casts, sphere overlaps and box queries are then compared with slow versions that test
+every triangle of every collider in double precision.
+
+This is repeated after colliders are moved, given different meshes, given meshes that don't exist, removed (by deleting the entity
+and by removing the component), and after many frames of all of those happening at once, to check that the system keeps up with
+the world as it changes. No window is opened. The exit code is zero if every check passed.

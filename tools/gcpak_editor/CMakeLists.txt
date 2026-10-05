@@ -10,6 +10,8 @@ set(SRC_FILES
   "src/asset_compiler.cpp"
   "src/gltf_compiler.h"
   "src/gltf_compiler.cpp"
+  "src/shadow_baker.h"
+  "src/shadow_baker.cpp"
   "src/command_line.h"
   "src/command_line.cpp"
 )

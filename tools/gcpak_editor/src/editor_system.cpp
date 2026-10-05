@@ -20,6 +20,8 @@
 #include <gamecore/gc_prefab.h>
 #include <gamecore/gc_camera_component.h>
 #include <gamecore/gc_light_component.h>
+#include <gamecore/gc_shadow_map_component.h>
+#include <gamecore/gc_collider_component.h>
 
 using namespace gc;
 using namespace gc::literals;
@@ -42,6 +44,8 @@ static std::string getAssetTypeString(gcpak::GcpakAssetType type)
         return "Prefab";
     case GcpakAssetType::MATERIAL:
         return "Material";
+    case GcpakAssetType::SHADOW_MAP_R16:
+        return "Shadow map";
     default:
         return "(unknown)";
     }
@@ -303,6 +307,12 @@ static std::string getComponentDisplayName(gc::Name component_name)
     else if (component_name == LightComponent::NAME) {
         return "LightComponent";
     }
+    else if (component_name == ShadowMapComponent::NAME) {
+        return "ShadowMapComponent";
+    }
+    else if (component_name == ColliderComponent::NAME) {
+        return "ColliderComponent";
+    }
     else {
         return component_name.getString(); // only readable if the name happens to be known
     }
@@ -323,11 +333,6 @@ EditorSystem::EditorSystem(World& world, Window& window, gc::ResourceManager& re
 void EditorSystem::onUpdate(FrameState& frame_state)
 {
     ZoneScoped;
-
-    if (frame_state.window_state->getIsMouseCaptured()) {
-        // when engine closes debug UI, it tries to recapture the mouse
-        m_window.setMouseCaptured(false);
-    }
 
     if (const auto& drag_drop_path = frame_state.window_state->getDragDropPath(); !drag_drop_path.empty()) {
         // terrible hack right here
@@ -740,31 +745,29 @@ void EditorSystem::addPrefabPreviewMaterial(Name material_name)
         return;
     }
     const Asset* const material_asset = findAsset(gcpak::GcpakAssetType::MATERIAL, material_name.getHash());
-    if (!material_asset || material_asset->data.size() != 3 * sizeof(uint32_t)) {
+    if (!material_asset) {
         return;
     }
-    std::array<uint32_t, 3> texture_ids{};
-    std::memcpy(texture_ids.data(), material_asset->data.data(), material_asset->data.size());
+    std::optional<ResourceMaterial> material = ResourceMaterial::create(material_asset->data);
+    if (!material) {
+        return;
+    }
 
-    for (size_t i = 0; i < texture_ids.size(); ++i) {
-        if (texture_ids[i] == 0) {
+    for (const Name texture_name : {material->base_color_texture, material->orm_texture, material->normal_texture, material->emissive_texture}) {
+        if (texture_name.empty()) {
             continue;
         }
-        const Asset* const texture_asset = findTextureAsset(texture_ids[i]);
+        const Asset* const texture_asset = findTextureAsset(texture_name.getHash());
         if (!texture_asset) {
             continue;
         }
         const bool srgb = (texture_asset->type == gcpak::GcpakAssetType::TEXTURE_R8G8B8A8_SRGB);
-        if (!m_resource_manager.add<ResourceTexture>(ResourceTexture(texture_asset->data, srgb), Name(texture_ids[i])).empty()) {
-            m_prefab_textures.push_back(Name(texture_ids[i]));
+        if (!m_resource_manager.add<ResourceTexture>(ResourceTexture(texture_asset->data, srgb), texture_name).empty()) {
+            m_prefab_textures.push_back(texture_name);
         }
     }
 
-    ResourceMaterial material{};
-    material.base_color_texture = Name(texture_ids[0]);
-    material.orm_texture = Name(texture_ids[1]);
-    material.normal_texture = Name(texture_ids[2]);
-    if (!m_resource_manager.add<ResourceMaterial>(std::move(material), material_name).empty()) {
+    if (!m_resource_manager.add<ResourceMaterial>(std::move(*material), material_name).empty()) {
         m_prefab_materials.push_back(material_name);
     }
 }
@@ -859,14 +862,24 @@ void EditorSystem::showSelectedAssetInfoUI()
             ImGui::Text("Vertices: %d, Triangles: %d", info.vertex_count, info.index_count / 3);
         } break;
         case gcpak::GcpakAssetType::MATERIAL: {
-            if (asset.asset.data.size() == 3 * sizeof(uint32_t)) {
-                std::array<uint32_t, 3> texture_ids{};
-                std::memcpy(texture_ids.data(), asset.asset.data.data(), asset.asset.data.size());
+            if (const std::optional<ResourceMaterial> material = ResourceMaterial::create(asset.asset.data); material) {
+                const std::array<uint32_t, 3> texture_ids{material->base_color_texture.getHash(), material->orm_texture.getHash(),
+                                                          material->normal_texture.getHash()};
                 const std::array<const char*, 3> labels{"Base color", "Occlusion-roughness-metallic", "Normal"};
                 for (size_t i = 0; i < texture_ids.size(); ++i) {
                     const Asset* const texture = findTextureAsset(texture_ids[i]);
                     if (texture_ids[i] == 0) {
-                        ImGui::Text("%s: (none)", labels[i]);
+                        // the material's constants are used in place of the texture
+                        if (i == 0) {
+                            ImGui::Text("%s: (none) %.3f %.3f %.3f %.3f", labels[i], material->base_color.r, material->base_color.g, material->base_color.b,
+                                        material->base_color.a);
+                        }
+                        else if (i == 1) {
+                            ImGui::Text("%s: (none) roughness %.3f, metallic %.3f", labels[i], material->roughness, material->metallic);
+                        }
+                        else {
+                            ImGui::Text("%s: (none)", labels[i]);
+                        }
                     }
                     else if (texture && !texture->name.empty()) {
                         ImGui::Text("%s: %s", labels[i], texture->name.c_str());
@@ -874,6 +887,25 @@ void EditorSystem::showSelectedAssetInfoUI()
                     else {
                         ImGui::Text("%s: %#x", labels[i], texture_ids[i]);
                     }
+                }
+                if (material->emissive != glm::vec3{0.0f, 0.0f, 0.0f}) {
+                    const Asset* const emissive_texture = findTextureAsset(material->emissive_texture.getHash());
+                    ImGui::Text("Emissive: %s x %.3f %.3f %.3f",
+                                material->emissive_texture.empty() ? "(none)"
+                                                                   : ((emissive_texture && !emissive_texture->name.empty()) ? emissive_texture->name.c_str()
+                                                                                                                           : "(texture)"),
+                                material->emissive.r, material->emissive.g, material->emissive.b);
+                }
+                switch (material->blend_mode) {
+                case MaterialBlendMode::NONE:
+                    ImGui::TextUnformatted("Blend mode: opaque");
+                    break;
+                case MaterialBlendMode::ALPHA_TEST:
+                    ImGui::Text("Blend mode: alpha test, cutoff %.3f", material->alpha_cutoff);
+                    break;
+                case MaterialBlendMode::ALPHA_BLEND:
+                    ImGui::TextUnformatted("Blend mode: alpha blend");
+                    break;
                 }
             }
         } break;

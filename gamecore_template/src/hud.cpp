@@ -33,7 +33,9 @@ void HudSystem::onUpdate([[maybe_unused]] gc::FrameState& frame_state)
 
     constexpr ImGuiWindowFlags FLAGS = ImGuiWindowFlags_NoDecoration | ImGuiWindowFlags_AlwaysAutoResize | ImGuiWindowFlags_NoSavedSettings |
                                        ImGuiWindowFlags_NoFocusOnAppearing | ImGuiWindowFlags_NoNav | ImGuiWindowFlags_NoMove | ImGuiWindowFlags_NoInputs;
-    ImGui::SetNextWindowPos(ImVec2(10.0f, 10.0f), ImGuiCond_Always);
+    // the work area starts below the debug menu bar, when that is shown (F10)
+    const ImVec2 work_pos = ImGui::GetMainViewport()->WorkPos;
+    ImGui::SetNextWindowPos(ImVec2(work_pos.x + 10.0f, work_pos.y + 10.0f), ImGuiCond_Always);
     ImGui::SetNextWindowBgAlpha(0.5f);
     if (ImGui::Begin("Scoreboard", nullptr, FLAGS)) {
         if (rows.empty()) {

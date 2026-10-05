@@ -98,6 +98,12 @@ void World::update(FrameState& frame_state)
     }
 }
 
+bool World::isEntityAlive(Entity entity) const
+{
+    // every entity has a TransformComponent, so a living entity's signature is never empty
+    return entity < m_entity_signatures.size() && m_entity_signatures[entity].componentCount() > 0;
+}
+
 std::vector<Name> World::getComponentList(Entity entity) const
 {
     std::vector<Name> list{};

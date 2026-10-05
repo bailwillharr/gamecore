@@ -550,7 +550,7 @@ static void testComponentsByName()
     CHECK(!world.isComponentRegistered(UnregisteredComponent::NAME));
 
     CHECK(world.getComponentSerialisedSize(HealthComponent::NAME) == HealthComponent::getSerialisedSize());
-    CHECK(world.getComponentSerialisedSize(gc::LightComponent::NAME) == size_t{0});
+    CHECK(world.getComponentSerialisedSize(gc::LightComponent::NAME) == gc::LightComponent::getSerialisedSize());
     CHECK(!world.getComponentSerialisedSize(RuntimeOnlyComponent::NAME).has_value());
     CHECK(!world.getComponentSerialisedSize(UnregisteredComponent::NAME).has_value());
 
