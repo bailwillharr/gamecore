@@ -17,12 +17,14 @@
 
 #include <gamecore/gc_app.h>
 #include <gamecore/gc_camera_component.h>
+#include <gamecore/gc_collider_component.h>
 #include <gamecore/gc_collision_system.h>
 #include <gamecore/gc_frame_state.h>
 #include <gamecore/gc_light_component.h>
 #include <gamecore/gc_renderable_component.h>
 #include <gamecore/gc_resource_manager.h>
 #include <gamecore/gc_resources.h>
+#include <gamecore/gc_skybox_component.h>
 #include <gamecore/gc_transform_component.h>
 #include <gamecore/gc_window.h>
 #include <gamecore/gc_world.h>
@@ -80,6 +82,15 @@ void FlyCameraSystem::onUpdate(gc::FrameState& frame_state)
 
     const bool toggle_headlamp = input.getKeyPress(SDL_SCANCODE_L);
     const bool toggle_collide = input.getKeyPress(SDL_SCANCODE_C);
+
+    // The sky's lighting (image based lighting). Without it, the world is lit by its ambient light instead
+    bool sky_lighting = false;
+    m_world.forEach<gc::SkyboxComponent>([&](gc::Entity, gc::SkyboxComponent& sky) {
+        if (input.getKeyPress(SDL_SCANCODE_I)) {
+            sky.setLighting(!sky.m_lighting);
+        }
+        sky_lighting = sky.m_lighting;
+    });
     gc::Entity headlamp_entity = gc::ENTITY_NONE;
 
     m_world.forEach<gc::TransformComponent, FlyCameraComponent>([&](gc::Entity entity, gc::TransformComponent& t, FlyCameraComponent& camera) {
@@ -139,7 +150,7 @@ void FlyCameraSystem::onUpdate(gc::FrameState& frame_state)
             headlamp = !headlamp;
         }
         showHelp(*m_world.getComponent<FlyCameraComponent>(headlamp_entity), m_world.getComponent<gc::TransformComponent>(headlamp_entity)->getPosition(),
-                 headlamp);
+                 headlamp, sky_lighting);
     }
 }
 
@@ -177,16 +188,28 @@ void FlyCameraSystem::frameWorld()
     glm::vec3 bounds_max{std::numeric_limits<float>::lowest()};
     bool found = false;
     // The bounds of everything that is drawn. The positions of the entities aren't enough, as a mesh can be any size and
-    // anywhere relative to its entity. This reads every mesh in the world once (meshes are views of the mapped .gcpak file).
+    // anywhere relative to its entity. The CollisionSystem already knows the bounds of everything that is solid (which is
+    // everything, in a prefab made from a glTF file), and has just been updated. Only the meshes of things that are drawn but
+    // aren't solid have to be read, once each: that takes a while for a big world, as it brings every vertex in from the
+    // .gcpak file, and this is the main thread.
     gc::ResourceManager& resource_manager = gc::app().resourceManager();
+    const gc::CollisionSystem& collision = m_world.getSystem<gc::CollisionSystem>();
     struct MeshBounds {
         glm::vec3 min;
         glm::vec3 max;
     };
     std::unordered_map<gc::Name, MeshBounds> mesh_bounds{}; // a mesh is often used by many entities
-    m_world.forEach<gc::TransformComponent, gc::RenderableComponent>([&](gc::Entity, const gc::TransformComponent& t, const gc::RenderableComponent& r) {
+    m_world.forEach<gc::TransformComponent, gc::RenderableComponent>([&](gc::Entity entity, const gc::TransformComponent& t, const gc::RenderableComponent& r) {
         if (r.m_mesh.empty()) {
             return;
+        }
+        if (const gc::ColliderComponent* const collider = m_world.getComponent<gc::ColliderComponent>(entity); collider && collider->m_mesh == r.m_mesh) {
+            if (const auto box = collision.getColliderAABB(entity); box) {
+                bounds_min = glm::min(bounds_min, box->min);
+                bounds_max = glm::max(bounds_max, box->max);
+                found = true;
+                return;
+            }
         }
         auto it = mesh_bounds.find(r.m_mesh);
         if (it == mesh_bounds.end()) {
@@ -230,7 +253,7 @@ void FlyCameraSystem::frameWorld()
     });
 }
 
-void FlyCameraSystem::showHelp(const FlyCameraComponent& camera, const glm::vec3& position, bool headlamp)
+void FlyCameraSystem::showHelp(const FlyCameraComponent& camera, const glm::vec3& position, bool headlamp, bool sky_lighting)
 {
     if (!ImGui::GetCurrentContext()) {
         return;
@@ -243,9 +266,9 @@ void FlyCameraSystem::showHelp(const FlyCameraComponent& camera, const glm::vec3
     ImGui::SetNextWindowBgAlpha(0.5f);
     if (ImGui::Begin("Fly camera", nullptr, FLAGS)) {
         ImGui::TextUnformatted("Mouse: look   WASD: fly   Space/E: up   Ctrl/Q: down   Shift: fast");
-        ImGui::TextUnformatted("Up/Down arrows: change speed   L: headlamp   C: collisions   F10: debug windows   Esc: quit");
-        ImGui::Text("Position: %.1f %.1f %.1f   Speed: %.2f m/s   Headlamp: %s   Collisions: %s", position.x, position.y, position.z, camera.speed,
-                    headlamp ? "on" : "off", camera.collide ? "on" : "off");
+        ImGui::TextUnformatted("Up/Down arrows: change speed   L: headlamp   C: collisions   I: sky lighting   F10: debug windows   Esc: quit");
+        ImGui::Text("Position: %.1f %.1f %.1f   Speed: %.2f m/s   Headlamp: %s   Collisions: %s   Sky lighting: %s", position.x, position.y, position.z,
+                    camera.speed, headlamp ? "on" : "off", camera.collide ? "on" : "off", sky_lighting ? "on" : "off");
         ImGui::Text("Looking at: %s", m_looking_at.c_str());
     }
     ImGui::End();

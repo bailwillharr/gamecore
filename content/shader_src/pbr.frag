@@ -43,9 +43,13 @@ layout(set = 0, binding = 0) uniform FrameUniformBuffer {
     vec4 directional_light_direction; // xyz = direction towards the light
     vec4 directional_light_color;     // rgb = color * illuminance (lux). Black if the world has no directional light
     float exposure;                   // scales luminance (cd/m^2) to the range that is tone mapped
-    vec4 ambient_light;               // rgb = color * illuminance (lux) of a surface facing up. Black if the world has no ambient light
+    vec4 ambient_light;               // rgb = color * illuminance (lux) of a surface facing up. Black if the world has no ambient light.
+                                      // Not used if the world is lit by a sky
     mat4 shadow_matrix;               // world space to the shadow map's texture coordinates (xy) and depth (z)
     vec4 shadow_params;               // x = normal bias (metres), y = depth bias, z = 1 if there is a shadow map, else 0
+    mat4 environment_matrix;          // turns a direction in the world to one in the sky's cube maps
+    vec4 environment_params;          // x = the luminance (cd/m^2) of a texel of 1, or 0 if the world isn't lit by a sky.
+                                      // y = the last mip level of the sky's reflections
     PointLight point_lights[MAX_POINT_LIGHTS];
 } frame_uniform_buffer;
 
@@ -66,6 +70,13 @@ layout(set = 1, binding = 3) uniform sampler2D materialSetEmissiveSampler;
 // The depth of the surface nearest to the directional light, baked when the world was made (see ShadowMapComponent).
 // 0 is nearest to the light and 1 is farthest.
 layout(set = 2, binding = 0) uniform sampler2D shadowMapSampler;
+
+// The sky (see SkyboxComponent), in cube maps that were worked out from it when it was packaged. Black if the world has none.
+// The irradiance is the light that a surface facing each direction gets from the whole sky, divided by pi: the luminance of a
+// white diffuse surface. The reflections are the sky as a surface reflects it: sharp in the first mip level, for a mirror, and
+// blurrier in each level after, up to a roughness of 1 in the last.
+layout(set = 3, binding = 1) uniform samplerCube environmentIrradianceSampler;
+layout(set = 3, binding = 2) uniform samplerCube environmentSpecularSampler;
 
 // in world space
 layout(location = 0) in Vertex {
@@ -106,6 +117,19 @@ float gaSchlickGGX(float cosLi, float cosLo, float roughness)
 vec3 fresnelSchlick(vec3 F0, float cosTheta)
 {
 	return F0 + (vec3(1.0) - F0) * pow(1.0 - cosTheta, 5.0);
+}
+
+// How much of the light from all around is reflected, for a surface of some roughness seen at some angle: the reflectance is
+// F0 * x + y. This is the second half of the "split sum" in the course notes above (the first half is the sky's reflections
+// cube map). It is usually looked up in a texture. This is a curve fitted to that texture, from Karis, "Physically Based
+// Shading on Mobile" (2014).
+vec2 environmentBRDF(float roughness, float cosLo)
+{
+	const vec4 c0 = vec4(-1.0, -0.0275, -0.572, 0.022);
+	const vec4 c1 = vec4(1.0, 0.0425, 1.04, -0.04);
+	vec4 r = roughness * c0 + c1;
+	float a004 = min(r.x * r.x, exp2(-9.28 * cosLo)) * r.x + r.y;
+	return vec2(-1.04, 1.04) * a004 + r.zw;
 }
 
 // Cubic approximation of the planckian (black body) locus. This is a very good approximation for most purposes.
@@ -235,10 +259,12 @@ void main()
 	}
 	float metalness = material.metallic;
 	float roughness = material.roughness;
+	float occlusion = 1.0; // how much of the light from all around gets into the surface's nooks: only dims the sky and ambient light
 	if (USE_ORM_TEXTURE) {
 		vec3 orm = texture(materialSetORMSampler, vin.texcoord).rgb;
 		metalness = orm.z;
 		roughness = orm.y;
+		occlusion = orm.x;
 	}
 
 	// Outgoing light direction (vector from world-space fragment position to the "eye").
@@ -286,14 +312,34 @@ void main()
 		}
 	}
 
-    // Ambient light (black if the world has none). Surfaces facing up get all of it, surfaces facing down get half.
+    // The light from all around
     vec3 ambient;
-    {
+    if (frame_uniform_buffer.environment_params.x > 0.0) {
+        // From the sky (image based lighting). The sky's sun isn't in these cube maps: it is the directional light above.
+        mat3 world_to_sky = mat3(frame_uniform_buffer.environment_matrix);
+
+        // Diffuse: what the whole sky gives a surface facing this way. As for a light, less is scattered the more is reflected,
+        // and metals scatter none.
+        vec3 F = F0 + (max(vec3(1.0 - roughness), F0) - F0) * pow(1.0 - cosLo, 5.0); // Fresnel, weaker for rough surfaces
+        vec3 kd = mix(vec3(1.0) - F, vec3(0.0), metalness);
+        vec3 diffuse = kd * albedo * texture(environmentIrradianceSampler, world_to_sky * N).rgb;
+
+        // Specular: the part of the sky that is mirrored towards the eye, as blurred as the surface is rough
+        vec3 reflected = world_to_sky * reflect(-Lo, N);
+        vec3 reflection = textureLod(environmentSpecularSampler, reflected, roughness * frame_uniform_buffer.environment_params.y).rgb;
+        vec2 brdf = environmentBRDF(roughness, cosLo);
+        vec3 specular = reflection * (F0 * brdf.x + brdf.y);
+
+        ambient = (diffuse + specular) * frame_uniform_buffer.environment_params.x;
+    }
+    else {
+        // From the world's ambient lights (black if it has none). Surfaces facing up get all of it, surfaces facing down get half.
         vec3 skyIlluminance    = frame_uniform_buffer.ambient_light.rgb;
         vec3 groundIlluminance = frame_uniform_buffer.ambient_light.rgb * 0.5;
         float NdotUp = 0.5 * (N.z + 1.0); // remap [-1,1] → [0,1]. The world is Z-up
         ambient = mix(groundIlluminance, skyIlluminance, NdotUp) * albedo / PI;
     }
+    ambient *= occlusion;
 
     // luminance, in cd/m^2
     vec3 total_lighting = directLighting + ambient;

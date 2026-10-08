@@ -25,6 +25,7 @@
 #include <gamecore/gc_replication.h>
 #include <gamecore/gc_resource_manager.h>
 #include <gamecore/gc_shadow_map_component.h>
+#include <gamecore/gc_skybox_component.h>
 #include <gamecore/gc_transform_component.h>
 #include <gamecore/gc_window.h>
 #include <gamecore/gc_world.h>
@@ -161,6 +162,14 @@ static void createPipelines(gc::App& app)
         }
     }
     app.renderBackend().setWorldShaders(single_draw_vert.data, instanced_vert.data, frag.data);
+
+    // the sky is drawn by shaders of its own
+    const auto sky_vert = content.findAsset("sky.vert"_name);
+    const auto sky_frag = content.findAsset("sky.frag"_name);
+    if (sky_vert.type != gcpak::GcpakAssetType::SPIRV_SHADER || sky_frag.type != gcpak::GcpakAssetType::SPIRV_SHADER) {
+        gc::abortGame("Failed to find the sky's shaders. Does content/shaders.gcpak need to be packaged again?");
+    }
+    app.renderBackend().setSkyShaders(sky_vert.data, sky_frag.data);
 }
 
 // The parts of the world that never change. Every host makes its own copy, so none of it needs replicating.
@@ -202,8 +211,13 @@ static void createScenery(gc::App& app)
         world.addComponent<gc::LightComponent>(sun).setType(gc::LightType::DIRECTIONAL).setIntensity(SUN_ILLUMINANCE);
     }
     {
-        // the sky: a tenth of the sun
+        // The sky: it is seen behind everything, and lights the world with a tenth of what the sun does. Its cube maps were
+        // made from content/textures/skyboxes/mpumalanga_veld_puresky_8k.hdr, and it turns so that its sun is where the
+        // directional light is.
         const auto sky = world.createEntity("sky"_name);
+        world.addComponent<gc::SkyboxComponent>(sky).setSky("mpumalanga_veld_puresky_8k.hdr").setIlluminance(0.1f * SUN_ILLUMINANCE);
+        // An ambient light of the same strength, which is what is drawn instead when the sky's lighting is turned off
+        // (in the debug UI: F10, Render menu)
         world.addComponent<gc::LightComponent>(sky).setType(gc::LightType::AMBIENT).setIntensity(0.1f * SUN_ILLUMINANCE);
     }
     {
@@ -303,6 +317,7 @@ int buildAndStartGame(gc::App& app, const Options& options)
     world.registerComponent<gc::CameraComponent, gc::ComponentArrayType::SPARSE>();
     world.registerComponent<gc::LightComponent, gc::ComponentArrayType::SPARSE>();
     world.registerComponent<gc::ShadowMapComponent, gc::ComponentArrayType::SPARSE>();
+    world.registerComponent<gc::SkyboxComponent, gc::ComponentArrayType::SPARSE>();
     world.registerComponent<SpinComponent, gc::ComponentArrayType::SPARSE>();
     world.registerComponent<MouseMoveComponent, gc::ComponentArrayType::SPARSE>();
     world.registerComponent<PlayerComponent, gc::ComponentArrayType::SPARSE>();

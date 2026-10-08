@@ -14,6 +14,7 @@
 #include "gamecore/gc_format_specialisations.h"
 #include "gamecore/gc_render_buffer.h"
 #include "gamecore/gc_gpu_resources.h"
+#include "gamecore/gc_render_environment.h"
 #include "gamecore/gc_render_shadow_map.h"
 
 namespace gc {
@@ -21,7 +22,8 @@ namespace gc {
 void recordWorldRenderingCommands(VkCommandBuffer cmd, VkPipelineLayout pipeline_layout, std::span<const std::unique_ptr<GPUPipeline>> main_pipelines,
                                   std::span<const std::unique_ptr<GPUPipeline>> instancing_pipelines, VkSemaphore timeline_semaphore,
                                   uint64_t signal_value, const WorldDrawData& draw_data, GPUDescriptorSet& frame_uniform_buffer_set,
-                                  RenderShadowMap& shadow_map, RenderBuffer& instance_transforms_buffer)
+                                  RenderShadowMap& shadow_map, RenderEnvironment& environment, GPUPipeline* sky_pipeline,
+                                  RenderBuffer& instance_transforms_buffer)
 {
     GC_ASSERT(cmd);
     GC_ASSERT(pipeline_layout);
@@ -36,6 +38,7 @@ void recordWorldRenderingCommands(VkCommandBuffer cmd, VkPipelineLayout pipeline
         vkCmdBindDescriptorSets(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, pipeline_layout, 0, 1, &ds, 0, nullptr);
     }
     shadow_map.bind(cmd, pipeline_layout, timeline_semaphore, signal_value);
+    environment.bind(cmd, pipeline_layout, timeline_semaphore, signal_value);
 
     GPUPipeline* last_bound_pipeline = nullptr;
     RenderMaterial* last_bound_material = nullptr;
@@ -118,6 +121,14 @@ void recordWorldRenderingCommands(VkCommandBuffer cmd, VkPipelineLayout pipeline
                 vkCmdDrawIndexed(cmd, entry.mesh->getNumIndices(), entry.instance_count, 0, 0, entry.transform_offset);
             }
         }
+    }
+
+    // The sky: one triangle that covers the screen, as far away as anything can be, so it is only drawn where nothing else was
+    if (sky_pipeline) {
+        sky_pipeline->useResource(timeline_semaphore, signal_value);
+        vkCmdBindPipeline(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, sky_pipeline->getHandle());
+        last_bound_pipeline = sky_pipeline;
+        vkCmdDraw(cmd, 3, 1, 0, 0);
     }
 
     // Alpha blended draws, furthest first, so that nearer ones are mixed over further ones. (They don't write depth, so the

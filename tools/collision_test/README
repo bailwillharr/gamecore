@@ -8,4 +8,10 @@ every triangle of every collider in double precision.
 
 This is repeated after colliders are moved, given different meshes, given meshes that don't exist, removed (by deleting the entity
 and by removing the component), and after many frames of all of those happening at once, to check that the system keeps up with
-the world as it changes. No window is opened. The exit code is zero if every check passed.
+the world as it changes.
+
+The same queries are then made with the trees of the meshes baked into COLLISION_BVH assets (see gc::CollisionBvhComponent) rather
+than built: with some of the meshes baked and some not, with two assets at once, and after the assets are taken away. The asset
+format is checked too: that what is read back is what was built, and that damaged data is refused.
+
+No window is opened. The exit code is zero if every check passed.

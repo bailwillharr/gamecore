@@ -11,6 +11,7 @@
 #include <gamecore/gc_camera_component.h>
 #include <gamecore/gc_camera_system.h>
 #include <gamecore/gc_collider_component.h>
+#include <gamecore/gc_collision_bvh_component.h>
 #include <gamecore/gc_collision_system.h>
 #include <gamecore/gc_content.h>
 #include <gamecore/gc_light_component.h>
@@ -24,6 +25,7 @@
 #include <gamecore/gc_replication.h>
 #include <gamecore/gc_resource_manager.h>
 #include <gamecore/gc_shadow_map_component.h>
+#include <gamecore/gc_skybox_component.h>
 #include <gamecore/gc_transform_component.h>
 #include <gamecore/gc_window.h>
 #include <gamecore/gc_world.h>
@@ -157,6 +159,14 @@ static void createPipelines(gc::App& app)
         }
     }
     app.renderBackend().setWorldShaders(single_draw_vert.data, instanced_vert.data, frag.data);
+
+    // the sky is drawn by shaders of its own
+    const auto sky_vert = content.findAsset("sky.vert"_name);
+    const auto sky_frag = content.findAsset("sky.frag"_name);
+    if (sky_vert.type != gcpak::GcpakAssetType::SPIRV_SHADER || sky_frag.type != gcpak::GcpakAssetType::SPIRV_SHADER) {
+        gc::abortGame("Failed to find the sky's shaders. Does content/shaders.gcpak need to be packaged again?");
+    }
+    app.renderBackend().setSkyShaders(sky_vert.data, sky_frag.data);
 }
 
 // returns false on failure
@@ -221,7 +231,9 @@ int buildAndStartGame(gc::App& app, const Options& options)
     world.registerComponent<gc::CameraComponent, gc::ComponentArrayType::SPARSE>();
     world.registerComponent<gc::LightComponent, gc::ComponentArrayType::SPARSE>();
     world.registerComponent<gc::ShadowMapComponent, gc::ComponentArrayType::SPARSE>();
+    world.registerComponent<gc::SkyboxComponent, gc::ComponentArrayType::SPARSE>();
     world.registerComponent<gc::ColliderComponent, gc::ComponentArrayType::DENSE>(); // nearly everything in the map is solid
+    world.registerComponent<gc::CollisionBvhComponent, gc::ComponentArrayType::SPARSE>(); // the map's baked collision trees
     world.registerComponent<SpawnPointComponent, gc::ComponentArrayType::SPARSE>();
     world.registerComponent<PickupSpawnerComponent, gc::ComponentArrayType::SPARSE>();
     world.registerComponent<PatrolPointComponent, gc::ComponentArrayType::SPARSE>();

@@ -26,6 +26,7 @@ enum class SourceFileKind {
     TEXTURE, // .png .jpg .jpeg     sRGB, unless the file's name says it isn't a color. See isLinearTextureFile()
     MESH,    // .obj
     GLTF,    // .gltf .glb          becomes a prefab, along with the meshes, materials and textures it uses
+    SKY,     // .hdr                a panorama of a sky. Becomes three cube maps: the sky, and the light it gives. See environment_baker.h
 };
 
 struct CompileStats {

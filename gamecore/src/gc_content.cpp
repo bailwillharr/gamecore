@@ -10,6 +10,8 @@
 
 #include <SDL3/SDL_filesystem.h>
 
+#include <functional>
+
 #include <mio/mmap.hpp>
 
 #include "gclog/gclog.h"
@@ -139,6 +141,17 @@ AssetView Content::findAsset(Name name) const
 
     const uint8_t* const asset_data = m_package_file_maps[asset_info.file_index].data() + asset_info.entry.offset;
     return AssetView{std::span<const uint8_t>(asset_data, asset_info.entry.size), asset_info.entry.asset_type};
+}
+
+bool Content::contains(std::span<const uint8_t> data) const
+{
+    const std::less_equal<const uint8_t*> less_equal{}; // (pointers into different objects can't be compared with <=)
+    for (const auto& map : m_package_file_maps) {
+        if (less_equal(map.data(), data.data()) && less_equal(data.data() + data.size(), map.data() + map.size())) {
+            return true;
+        }
+    }
+    return false;
 }
 
 } // namespace gc

@@ -80,6 +80,19 @@ enum class GcpakAssetType : std::uint32_t {
     TEXTURE_R8G8B8A8_SRGB = 6, // same layout as TEXTURE_R8G8B8A8, but the RGB values are sRGB encoded: for colors (alpha is always linear)
     SHADOW_MAP_R16 = 7, // first 4 bytes is width, second 4 bytes is height, then one uint16_t per texel: the depth of the surface nearest
                         // to the light (0 is nearest, 65535 is farthest, or nothing). See gc::ShadowMapComponent
+    COLLISION_BVH = 8,  // The triangles of several meshes, each sorted into a tree of bounding boxes for collision detection.
+                        // Two uint32_t: the version (1) and the number of meshes. Then four uint32_t for each mesh: the mesh's asset ID,
+                        // and its number of positions, triangles and nodes. Then for each mesh: its positions (three floats each), its
+                        // nodes (six floats, the minimum and maximum of a box, then two uint32_t: see gc::CollisionBvhNode) and its
+                        // triangles (three uint16_t each, indices into the positions), padded to a multiple of 4 bytes.
+                        // See gc::CollisionBvhComponent
+    CUBE_MAP_E5B9G9R9 = 9, // A cube map with high dynamic range, such as a sky. A header of 32 bytes: the width and height of a face
+                           // and the number of mip levels (two uint32_t), then five floats that describe a sky (the direction of its
+                           // sun, the illuminance of the sky without the sun, and of the sun: see gc::CubeMapInfo), then a uint32_t
+                           // that is zero. Then the texels of each mip level, largest first: its six faces in the order +X -X +Y -Y
+                           // +Z -Z, laid out as Vulkan's cube maps are, one uint32_t per texel in the format
+                           // VK_FORMAT_E5B9G9R9_UFLOAT_PACK32. Each level is half the size of the one before.
+                           // See gc::SkyboxComponent
 };
 
 struct GcpakAssetEntry {

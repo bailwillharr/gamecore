@@ -12,7 +12,7 @@
 //
 // The engine only draws shadows that were baked beforehand, so the map isn't finished until gcpak_editor has baked them:
 //
-//     gcpak_editor --bake-shadows ember_court.map OUTPUT.gcpak --no-cast sky --no-cast beacon
+//     gcpak_editor --bake-shadows ember_court.map OUTPUT.gcpak --no-cast beacon
 //
 // The build does both (see CMakeLists.txt).
 //
@@ -45,6 +45,7 @@
 #include <gamecore/gc_prefab.h>
 #include <gamecore/gc_renderable_component.h>
 #include <gamecore/gc_resources.h>
+#include <gamecore/gc_skybox_component.h>
 
 #include "components.h"
 
@@ -59,6 +60,7 @@ constexpr float COURT_HALF_SIZE = 24.0f; // the court is this far across in each
 constexpr float SUN_ILLUMINANCE = 700.0f;
 constexpr float SKY_ILLUMINANCE = 220.0f;
 constexpr float CAMERA_EXPOSURE = 7.5f;
+constexpr const char* SKY_NAME = "table_mountain_2_puresky_8k.hdr"; // in content/textures.gcpak
 const glm::vec3 DIRECTION_TO_SUN = glm::normalize(glm::vec3{-0.45f, -0.55f, 0.6f}); // it is in the south west
 
 const glm::quat NO_ROTATION{1.0f, 0.0f, 0.0f, 0.0f};
@@ -124,8 +126,7 @@ std::vector<uint8_t> makeBoxMesh(const glm::vec3& size, float tile)
 }
 
 // A sphere with a radius of 1. Its texture wraps round it once, with the bottom of the texture at the bottom (-Z) of the sphere.
-// 'inside_out' makes it visible from the inside instead, for the sky.
-std::vector<uint8_t> makeSphereMesh(int rings, int segments, bool inside_out)
+std::vector<uint8_t> makeSphereMesh(int rings, int segments)
 {
     const auto point = [&](int ring, int segment) {
         const float theta = glm::pi<float>() * static_cast<float>(ring) / static_cast<float>(rings); // from the top
@@ -144,16 +145,9 @@ std::vector<uint8_t> makeSphereMesh(int rings, int segments, bool inside_out)
                                                      point(ring + 1, segment + 1), point(ring, segment + 1), point(ring, segment)};
             for (int triangle = 0; triangle < 2; ++triangle) {
                 // (the triangles at the poles have two corners in the same place, which is harmless)
-                if (inside_out) {
-                    vertices.push_back(quad[triangle * 3 + 2]);
-                    vertices.push_back(quad[triangle * 3 + 1]);
-                    vertices.push_back(quad[triangle * 3]);
-                }
-                else {
-                    vertices.push_back(quad[triangle * 3]);
-                    vertices.push_back(quad[triangle * 3 + 1]);
-                    vertices.push_back(quad[triangle * 3 + 2]);
-                }
+                vertices.push_back(quad[triangle * 3]);
+                vertices.push_back(quad[triangle * 3 + 1]);
+                vertices.push_back(quad[triangle * 3 + 2]);
             }
         }
     }
@@ -169,45 +163,6 @@ uint8_t toSrgb(float linear)
     linear = glm::clamp(linear, 0.0f, 1.0f);
     const float srgb = (linear <= 0.0031308f) ? linear * 12.92f : 1.055f * std::pow(linear, 1.0f / 2.4f) - 0.055f;
     return static_cast<uint8_t>(std::lround(srgb * 255.0f));
-}
-
-// The evening sky, as seen from the middle of the map: one texel for every direction, wrapped round the sky's sphere.
-// It glows where the sun is, so that what casts the shadows can be seen.
-std::vector<uint8_t> makeSkyTexture()
-{
-    constexpr uint32_t WIDTH = 512;
-    constexpr uint32_t HEIGHT = 256;
-    const glm::vec3 horizon{0.95f, 0.5f, 0.24f};
-    const glm::vec3 zenith{0.07f, 0.16f, 0.42f};
-    const glm::vec3 below{0.05f, 0.055f, 0.07f};
-    const glm::vec3 sun_color{1.0f, 0.8f, 0.5f};
-
-    std::vector<uint8_t> rgba(static_cast<size_t>(WIDTH) * HEIGHT * 4);
-    for (uint32_t y = 0; y < HEIGHT; ++y) {
-        // the first row of a texture is its bottom
-        const float elevation = ((static_cast<float>(y) + 0.5f) / static_cast<float>(HEIGHT) - 0.5f) * glm::pi<float>();
-        for (uint32_t x = 0; x < WIDTH; ++x) {
-            const float phi = (static_cast<float>(x) + 0.5f) / static_cast<float>(WIDTH) * glm::two_pi<float>();
-            const glm::vec3 direction{std::cos(elevation) * std::cos(phi), std::cos(elevation) * std::sin(phi), std::sin(elevation)};
-
-            glm::vec3 color{};
-            if (direction.z >= 0.0f) {
-                color = glm::mix(horizon, zenith, std::pow(direction.z, 0.45f));
-            }
-            else {
-                color = glm::mix(horizon * 0.6f, below, glm::clamp(-direction.z * 6.0f, 0.0f, 1.0f));
-            }
-            const float towards_sun = glm::max(glm::dot(direction, DIRECTION_TO_SUN), 0.0f);
-            color += sun_color * (2.0f * std::pow(towards_sun, 600.0f) + 0.45f * std::pow(towards_sun, 10.0f));
-
-            uint8_t* const texel = &rgba[(static_cast<size_t>(y) * WIDTH + x) * 4];
-            texel[0] = toSrgb(color.r);
-            texel[1] = toSrgb(color.g);
-            texel[2] = toSrgb(color.b);
-            texel[3] = 255;
-        }
-    }
-    return gc::makeTextureData(WIDTH, HEIGHT, rgba);
 }
 
 // An iron grating: bars with holes between them. The holes are in the alpha, for an alpha tested material.
@@ -368,18 +323,9 @@ std::vector<Asset> buildMap()
     const gc::Name warm_lamp = map.addMaterial("warm_lamp", makeGlowingMaterial({1.0f, 0.75f, 0.4f}));
     const gc::Name cold_lamp = map.addMaterial("cold_lamp", makeGlowingMaterial({0.5f, 0.75f, 1.0f}));
     const gc::Name beacon = map.addMaterial("beacon", makeGlowingMaterial({0.2f, 0.95f, 0.85f}));
-    gc::Name sky{};
-    {
-        gc::ResourceMaterial material = makePlainMaterial({0.0f, 0.0f, 0.0f}, 1.0f); // it only glows
-        material.emissive_texture = map.addAsset("ember_court/sky.png", makeSkyTexture(), gcpak::GcpakAssetType::TEXTURE_R8G8B8A8_SRGB);
-        material.emissive = glm::vec3{1.0f, 1.0f, 1.0f};
-        sky = map.addMaterial("sky", material);
-    }
 
     const gc::Name sphere_mesh =
-        map.addAsset("ember_court/sphere", makeSphereMesh(16, 32, false), gcpak::GcpakAssetType::MESH_POS12_NORM12_TANG16_UV8_INDEXED16);
-    const gc::Name sky_mesh =
-        map.addAsset("ember_court/sky_sphere", makeSphereMesh(24, 48, true), gcpak::GcpakAssetType::MESH_POS12_NORM12_TANG16_UV8_INDEXED16);
+        map.addAsset("ember_court/sphere", makeSphereMesh(16, 32), gcpak::GcpakAssetType::MESH_POS12_NORM12_TANG16_UV8_INDEXED16);
 
     //
     // The court: the ground and the walls around it
@@ -524,16 +470,18 @@ std::vector<Asset> buildMap()
     // The sky and the lights
     //
     {
-        // A sphere far outside the map, seen from the inside. It is named so that the shadow bake can be told to leave it out
-        // (--no-cast sky): it is between the sun and everything else.
-        prefab.beginEntity(gc::Name("sky"), gcpak::PREFAB_NO_PARENT, {0.0f, 0.0f, 0.0f}, NO_ROTATION, glm::vec3{400.0f});
-        prefab.addComponent(gc::RenderableComponent{}.setMesh(sky_mesh).setMaterial(sky));
+        // The sky: what is seen behind everything, and the light that it gives the court (see gc::SkyboxComponent). Its cube
+        // maps aren't made here: gcpak_editor makes them from content/textures/skyboxes/table_mountain_2_puresky_8k.hdr when
+        // content/textures is packaged. The sky turns so that its sun is in the same compass direction as the sun below.
+        prefab.beginEntity(gc::Name("sky"));
+        prefab.addComponent(gc::SkyboxComponent{}.setSky(SKY_NAME).setIlluminance(SKY_ILLUMINANCE));
 
         // Lights shine along their -Z axis, as cameras look. This is the light that gcpak_editor bakes the shadows of.
         prefab.beginEntity(gc::Name("sun"), gcpak::PREFAB_NO_PARENT, {0.0f, 0.0f, 0.0f}, glm::quatLookAt(-DIRECTION_TO_SUN, glm::vec3{0.0f, 0.0f, 1.0f}));
         prefab.addComponent(gc::LightComponent{}.setType(gc::LightType::DIRECTIONAL).setColor({1.0f, 0.82f, 0.62f}).setIntensity(SUN_ILLUMINANCE));
 
-        // what the sky lights the shadows with
+        // What lights the shadows instead when the sky's lighting is turned off (an ambient light isn't drawn while the sky
+        // lights the world)
         prefab.beginEntity(gc::Name("sky_light"));
         prefab.addComponent(gc::LightComponent{}.setType(gc::LightType::AMBIENT).setColor({0.55f, 0.7f, 1.0f}).setIntensity(SKY_ILLUMINANCE));
     }

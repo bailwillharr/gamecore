@@ -26,6 +26,25 @@ std::vector<uint8_t> makeMeshData(std::span<const MeshVertex> vertices, std::spa
     return data;
 }
 
+std::vector<uint8_t> makeCubeMapData(const CubeMapInfo& info, std::span<const uint32_t> texels)
+{
+    GC_ASSERT(texels.size() == ResourceCubeMap::getTexelCount(info.face_size, info.mip_count));
+    const uint32_t sizes[2]{info.face_size, info.mip_count};
+    const float sky[5]{info.sun_direction.x, info.sun_direction.y, info.sun_direction.z, info.sky_illuminance, info.sun_illuminance};
+    const uint32_t reserved = 0;
+    static_assert(sizeof(sizes) + sizeof(sky) + sizeof(reserved) == ResourceCubeMap::HEADER_SIZE);
+    std::vector<uint8_t> data(ResourceCubeMap::HEADER_SIZE + texels.size_bytes());
+    uint8_t* dest = data.data();
+    std::memcpy(dest, sizes, sizeof(sizes));
+    dest += sizeof(sizes);
+    std::memcpy(dest, sky, sizeof(sky));
+    dest += sizeof(sky);
+    std::memcpy(dest, &reserved, sizeof(reserved));
+    dest += sizeof(reserved);
+    std::memcpy(dest, texels.data(), texels.size_bytes());
+    return data;
+}
+
 std::vector<uint8_t> makeMaterialData(const ResourceMaterial& material)
 {
     const uint32_t ids[3]{material.base_color_texture.getHash(), material.orm_texture.getHash(), material.normal_texture.getHash()};

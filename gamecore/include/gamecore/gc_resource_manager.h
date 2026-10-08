@@ -80,6 +80,8 @@ public:
     ResourceManager(const Content& content_manager) : m_content_manager(content_manager) { GC_TRACE("Initialised resource manager"); }
     ~ResourceManager() { GC_TRACE("Destroying resource manager..."); };
 
+    const Content& getContent() const { return m_content_manager; }
+
     template <ValidResource T>
     const T* get(Name name)
     {

@@ -43,7 +43,7 @@ private:
     // Moves the cameras to where the whole world can be seen, and picks a flying speed that suits the size of the world.
     void frameWorld();
 
-    void showHelp(const FlyCameraComponent& camera, const glm::vec3& position, bool headlamp);
+    void showHelp(const FlyCameraComponent& camera, const glm::vec3& position, bool headlamp, bool sky_lighting);
 
     // Returns where a camera that wants to be at 'position' can be: outside of everything solid. Stops 'velocity' going into what
     // it touches.

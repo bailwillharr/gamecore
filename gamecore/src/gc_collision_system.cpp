@@ -15,6 +15,7 @@
 
 #include "gamecore/gc_assert.h"
 #include "gamecore/gc_collider_component.h"
+#include "gamecore/gc_collision_bvh_component.h"
 #include "gamecore/gc_frame_state.h"
 #include "gamecore/gc_resource_manager.h"
 #include "gamecore/gc_resources.h"
@@ -24,8 +25,6 @@
 namespace gc {
 
 namespace {
-
-constexpr uint32_t MAX_TRIANGLES_PER_LEAF = 4;
 
 AABB boxUnion(const AABB& a, const AABB& b) { return AABB{glm::min(a.min, b.min), glm::max(a.max, b.max)}; }
 
@@ -156,6 +155,8 @@ void CollisionSystem::onUpdate([[maybe_unused]] FrameState& frame_state)
 
     ++m_update_count;
 
+    findBakedMeshes(); // before the colliders are looked at, so that the meshes of a prefab that was just loaded are found
+
     // Compare every collider with what was known about it, and only redo what changed
     m_world.forEach<TransformComponent, ColliderComponent>([&](Entity entity, const TransformComponent& t, const ColliderComponent& c) {
         const auto [it, is_new] = m_colliders.try_emplace(entity);
@@ -181,12 +182,12 @@ void CollisionSystem::onUpdate([[maybe_unused]] FrameState& frame_state)
         if (collider.tree_node != -1) {
             removeLeaf(collider.tree_node);
         }
-        if (collider.shape && !collider.shape->nodes.empty()) {
+        if (collider.shape && !collider.shape->bvh.nodes.empty()) {
             if (collider.tree_node == -1) {
                 collider.tree_node = allocateTreeNode();
             }
             TreeNode& leaf = m_tree[collider.tree_node];
-            leaf.box = transformBox(collider.shape->nodes[0].box, world_matrix);
+            leaf.box = transformBox(collider.shape->bvh.nodes[0].box, world_matrix);
             leaf.child1 = -1;
             leaf.child2 = -1;
             leaf.entity = entity;
@@ -268,7 +269,7 @@ RaycastHit CollisionSystem::raycast(const Ray& ray, float max_distance, Entity i
         // Narrow phase: the triangles of the collider's mesh. The ray is moved into the mesh's space, rather than the triangles
         // into the world's. Distances along the ray are the same in both, as the direction isn't normalised again.
         const Collider& collider = m_colliders.at(node.entity);
-        const MeshShape& shape = *collider.shape;
+        const CollisionBvhView& shape = collider.shape->bvh;
         const glm::vec3 local_origin = glm::vec3(collider.inverse_matrix * glm::vec4(ray.origin, 1.0f));
         const glm::vec3 local_direction = glm::mat3(collider.inverse_matrix) * direction;
         const glm::vec3 local_inverse_direction = 1.0f / local_direction;
@@ -277,7 +278,7 @@ RaycastHit CollisionSystem::raycast(const Ray& ray, float max_distance, Entity i
         size_t mesh_stack_size = 0;
         mesh_stack[mesh_stack_size++] = 0;
         while (mesh_stack_size > 0) {
-            const MeshNode& mesh_node = shape.nodes[mesh_stack[--mesh_stack_size]];
+            const CollisionBvhNode& mesh_node = shape.nodes[mesh_stack[--mesh_stack_size]];
             float mesh_entry{};
             if (!rayHitsBox(local_origin, local_inverse_direction, mesh_node.box, nearest, mesh_entry)) {
                 continue;
@@ -290,7 +291,7 @@ RaycastHit CollisionSystem::raycast(const Ray& ray, float max_distance, Entity i
                 continue;
             }
             for (uint32_t i = 0; i < mesh_node.count; ++i) {
-                const uint32_t* const indices = &shape.triangles[static_cast<size_t>(mesh_node.first + i) * 3];
+                const uint16_t* const indices = &shape.triangles[static_cast<size_t>(mesh_node.first + i) * 3];
                 const glm::vec3& a = shape.positions[indices[0]];
                 const glm::vec3& b = shape.positions[indices[1]];
                 const glm::vec3& c = shape.positions[indices[2]];
@@ -348,7 +349,7 @@ void CollisionSystem::overlapSphere(const glm::vec3& centre, float radius, std::
         // Narrow phase. The triangles near the sphere are found in the mesh's space, then tested in world space: the sphere
         // wouldn't be a sphere in the mesh's space if the entity is scaled.
         const Collider& collider = m_colliders.at(node.entity);
-        const MeshShape& shape = *collider.shape;
+        const CollisionBvhView& shape = collider.shape->bvh;
         const AABB local_box = transformBox(sphere_box, collider.inverse_matrix);
 
         float nearest_squared = radius * radius;
@@ -360,7 +361,7 @@ void CollisionSystem::overlapSphere(const glm::vec3& centre, float radius, std::
         size_t mesh_stack_size = 0;
         mesh_stack[mesh_stack_size++] = 0;
         while (mesh_stack_size > 0) {
-            const MeshNode& mesh_node = shape.nodes[mesh_stack[--mesh_stack_size]];
+            const CollisionBvhNode& mesh_node = shape.nodes[mesh_stack[--mesh_stack_size]];
             if (!boxesOverlap(mesh_node.box, local_box)) {
                 continue;
             }
@@ -372,7 +373,7 @@ void CollisionSystem::overlapSphere(const glm::vec3& centre, float radius, std::
                 continue;
             }
             for (uint32_t i = 0; i < mesh_node.count; ++i) {
-                const uint32_t* const indices = &shape.triangles[static_cast<size_t>(mesh_node.first + i) * 3];
+                const uint16_t* const indices = &shape.triangles[static_cast<size_t>(mesh_node.first + i) * 3];
                 const glm::vec3 a = glm::vec3(collider.world_matrix * glm::vec4(shape.positions[indices[0]], 1.0f));
                 const glm::vec3 b = glm::vec3(collider.world_matrix * glm::vec4(shape.positions[indices[1]], 1.0f));
                 const glm::vec3 c = glm::vec3(collider.world_matrix * glm::vec4(shape.positions[indices[2]], 1.0f));
@@ -464,7 +465,48 @@ int CollisionSystem::getTreeHeight() const
 // Meshes
 //
 
-// Returns null if there is no such mesh, or it has no triangles. Call releaseShape() with the same name either way.
+size_t CollisionSystem::getBakedMeshCount() const
+{
+    return static_cast<size_t>(std::count_if(m_shapes.begin(), m_shapes.end(), [](const auto& shape) { return shape.second.is_baked; }));
+}
+
+// Keeps m_baked_meshes up to date with the CollisionBvhComponents in the world. There are only ever a few of them, and they only
+// change when a prefab is loaded or deleted.
+void CollisionSystem::findBakedMeshes()
+{
+    if (!m_world.isComponentRegistered(CollisionBvhComponent::NAME)) {
+        return; // the game doesn't use baked trees
+    }
+
+    std::vector<Name> assets{};
+    m_world.forEach<CollisionBvhComponent>([&](Entity, const CollisionBvhComponent& c) {
+        if (!c.m_bvh.empty() && std::find(assets.begin(), assets.end(), c.m_bvh) == assets.end()) {
+            assets.push_back(c.m_bvh);
+        }
+    });
+    if (assets == m_baked_assets) {
+        return;
+    }
+
+    // Shapes that are already in use keep the trees they have. An asset's data stays where it is after its component has gone.
+    m_baked_meshes.clear();
+    for (const Name asset : assets) {
+        const ResourceCollisionBvh* const resource = m_resource_manager.get<ResourceCollisionBvh>(asset);
+        if (!resource) {
+            if (std::find(m_baked_assets.begin(), m_baked_assets.end(), asset) == m_baked_assets.end()) {
+                GC_ERROR("Could not load the baked collision trees {}. The trees of its meshes will be built instead", asset);
+            }
+            continue;
+        }
+        for (const auto& [mesh, bvh] : resource->meshes) {
+            m_baked_meshes.try_emplace(mesh, bvh);
+        }
+    }
+    m_baked_assets = std::move(assets);
+    GC_DEBUG("Using the baked collision trees of {} meshes, from {} assets", m_baked_meshes.size(), m_baked_assets.size());
+}
+
+// Returns null if the name is empty. Call releaseShape() with the same name either way.
 const CollisionSystem::MeshShape* CollisionSystem::acquireShape(Name mesh)
 {
     if (mesh.empty()) {
@@ -475,31 +517,24 @@ const CollisionSystem::MeshShape* CollisionSystem::acquireShape(Name mesh)
         return &it->second;
     }
 
-    const ResourceMesh* const resource = m_resource_manager.get<ResourceMesh>(mesh);
-    if (!resource) {
-        GC_ERROR("Could not find the mesh of a collider: {}", mesh);
+    // (shapes stay where they are in the map, so a shape's view of the tree that it built itself stays valid)
+    MeshShape& shape = m_shapes[mesh];
+    shape.ref_count = 1;
+
+    if (const auto it = m_baked_meshes.find(mesh); it != m_baked_meshes.end()) {
+        shape.bvh = it->second; // the mesh itself isn't needed
+        shape.is_baked = true;
+        return &shape;
     }
 
     // A missing mesh gets an (empty) shape too, so that it is only looked for once, however many colliders want it
-    MeshShape& shape = m_shapes[mesh];
-    shape.ref_count = 1;
-    if (resource) {
-        const std::span<const MeshVertex> vertices = resource->vertices.get();
-        const std::span<const uint16_t> indices = resource->indices.get();
-        shape.positions.reserve(vertices.size());
-        for (const MeshVertex& vertex : vertices) {
-            shape.positions.push_back(vertex.position);
-        }
-        shape.triangles.reserve(indices.size());
-        for (size_t i = 0; i + 2 < indices.size(); i += 3) {
-            if (indices[i] < vertices.size() && indices[i + 1] < vertices.size() && indices[i + 2] < vertices.size()) {
-                shape.triangles.push_back(indices[i]);
-                shape.triangles.push_back(indices[i + 1]);
-                shape.triangles.push_back(indices[i + 2]);
-            }
-        }
-        buildMeshShape(shape);
+    const ResourceMesh* const resource = m_resource_manager.get<ResourceMesh>(mesh);
+    if (!resource) {
+        GC_ERROR("Could not find the mesh of a collider: {}", mesh);
+        return &shape;
     }
+    shape.built = buildCollisionBvh(resource->vertices.get(), resource->indices.get());
+    shape.bvh = shape.built;
     return &shape;
 }
 
@@ -512,85 +547,6 @@ void CollisionSystem::releaseShape(Name mesh)
             m_shapes.erase(it);
         }
     }
-}
-
-// Sorts the shape's triangles into a tree. A mesh never changes, so the tree is built once, from the top down: the triangles are
-// split in half along the axis they are most spread out on, and each half is split again until only a few are left.
-void CollisionSystem::buildMeshShape(MeshShape& shape)
-{
-    ZoneScoped;
-
-    const uint32_t triangle_count = static_cast<uint32_t>(shape.triangles.size() / 3);
-    if (triangle_count == 0) {
-        return;
-    }
-
-    struct Triangle {
-        AABB box;
-        glm::vec3 centroid;
-        uint32_t index;
-    };
-    std::vector<Triangle> triangles(triangle_count);
-    for (uint32_t i = 0; i < triangle_count; ++i) {
-        Triangle& triangle = triangles[i];
-        for (int corner = 0; corner < 3; ++corner) {
-            boxExpand(triangle.box, shape.positions[shape.triangles[static_cast<size_t>(i) * 3 + corner]]);
-        }
-        triangle.centroid = 0.5f * (triangle.box.min + triangle.box.max);
-        triangle.index = i;
-    }
-
-    shape.nodes.reserve(static_cast<size_t>(triangle_count) * 2 / MAX_TRIANGLES_PER_LEAF + 1);
-    shape.nodes.emplace_back();
-
-    // ranges of 'triangles' that still have to be made into nodes
-    struct Work {
-        uint32_t node;
-        uint32_t first;
-        uint32_t count;
-    };
-    std::vector<Work> work{{0, 0, triangle_count}};
-    while (!work.empty()) {
-        const Work range = work.back();
-        work.pop_back();
-
-        AABB box{};
-        AABB centroid_box{};
-        for (uint32_t i = range.first; i < range.first + range.count; ++i) {
-            box = boxUnion(box, triangles[i].box);
-            boxExpand(centroid_box, triangles[i].centroid);
-        }
-        shape.nodes[range.node].box = box;
-
-        if (range.count <= MAX_TRIANGLES_PER_LEAF) {
-            shape.nodes[range.node].first = range.first;
-            shape.nodes[range.node].count = range.count;
-            continue;
-        }
-
-        const glm::vec3 spread = centroid_box.max - centroid_box.min;
-        const int axis = (spread.x >= spread.y && spread.x >= spread.z) ? 0 : ((spread.y >= spread.z) ? 1 : 2);
-        const uint32_t half = range.count / 2;
-        std::nth_element(triangles.begin() + range.first, triangles.begin() + range.first + half, triangles.begin() + range.first + range.count,
-                         [axis](const Triangle& a, const Triangle& b) { return a.centroid[axis] < b.centroid[axis]; });
-
-        const uint32_t children = static_cast<uint32_t>(shape.nodes.size());
-        shape.nodes.emplace_back();
-        shape.nodes.emplace_back();
-        shape.nodes[range.node].first = children;
-        shape.nodes[range.node].count = 0;
-        work.push_back(Work{children, range.first, half});
-        work.push_back(Work{children + 1, range.first + half, range.count - half});
-    }
-
-    // put the triangles in the order of the leaves
-    std::vector<uint32_t> sorted(shape.triangles.size());
-    for (uint32_t i = 0; i < triangle_count; ++i) {
-        for (int corner = 0; corner < 3; ++corner) {
-            sorted[static_cast<size_t>(i) * 3 + corner] = shape.triangles[static_cast<size_t>(triangles[i].index) * 3 + corner];
-        }
-    }
-    shape.triangles = std::move(sorted);
 }
 
 //

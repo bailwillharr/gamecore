@@ -54,6 +54,11 @@ public:
     /* Returns a non-owning view of the asset */
     /* On failure, AssetView::data is empty */
     AssetView findAsset(Name name) const;
+
+    /* This function is thread-safe */
+    /* Whether the data is part of a mapped .gcpak file, as the data of every asset that findAsset() returns is. */
+    /* Such data never changes or moves, and stays valid for as long as this object exists. */
+    bool contains(std::span<const uint8_t> data) const;
 };
 
 } // namespace gc

@@ -24,83 +24,24 @@
 #include "gamecore/gc_world_draw_data.h"
 #include "gamecore/gc_units.h"
 #include "gamecore/gc_render_world.h"
+#include "gamecore/gc_resources.h"
 #include "gamecore/gc_vulkan_utils.h"
 
 namespace gc {
 
 static uint32_t getMipLevels(uint32_t width, uint32_t height) { return static_cast<uint32_t>(std::floor(std::log2(std::max(width, height)))) + 1; }
 
-// The original image (mip level 0) should be TRANSFER_SRC image layout, the rest should be TRANSFER_DST
-// At the end, will transition all mip levels to SHADER_READ_ONLY_OPTIMAL
-static void generateMipMaps(VkCommandBuffer cmd, VkImage image, uint32_t width, uint32_t height)
+static VkShaderModule createShaderModule(VkDevice device, std::span<const uint8_t> spv)
 {
-    VkImageBlit region{};
-    region.srcSubresource.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT;
-    region.srcSubresource.baseArrayLayer = 0;
-    region.srcSubresource.layerCount = 1;
-    region.srcOffsets[0] = {0, 0, 0};
-    region.dstSubresource.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT;
-    region.dstSubresource.baseArrayLayer = 0;
-    region.dstSubresource.layerCount = 1;
-    region.dstOffsets[1] = {0, 0, 0};
-
-    std::array<VkImageMemoryBarrier2, 2> barriers{};
-    barriers[0].sType = VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER_2;
-    barriers[0].srcStageMask = VK_PIPELINE_STAGE_2_BLIT_BIT;
-    barriers[0].srcAccessMask = VK_ACCESS_2_TRANSFER_READ_BIT;
-    barriers[0].dstStageMask = VK_PIPELINE_STAGE_2_FRAGMENT_SHADER_BIT;
-    barriers[0].dstAccessMask = VK_ACCESS_2_SHADER_SAMPLED_READ_BIT;
-    barriers[0].oldLayout = VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL;
-    barriers[0].newLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
-    barriers[0].srcQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
-    barriers[0].dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
-    barriers[0].image = image;
-    barriers[0].subresourceRange.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT;
-    barriers[0].subresourceRange.levelCount = 1;
-    barriers[0].subresourceRange.baseArrayLayer = 0;
-    barriers[0].subresourceRange.layerCount = 1;
-    barriers[1] = barriers[0];
-    barriers[1].srcStageMask = VK_PIPELINE_STAGE_2_BLIT_BIT;
-    barriers[1].srcAccessMask = VK_ACCESS_2_TRANSFER_WRITE_BIT;
-    barriers[1].dstStageMask = VK_PIPELINE_STAGE_2_BLIT_BIT;
-    barriers[1].dstAccessMask = VK_ACCESS_2_TRANSFER_READ_BIT;
-    barriers[1].oldLayout = VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL;
-    barriers[1].newLayout = VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL;
-    VkDependencyInfo dep{};
-    dep.sType = VK_STRUCTURE_TYPE_DEPENDENCY_INFO;
-    dep.imageMemoryBarrierCount = static_cast<uint32_t>(barriers.size());
-    dep.pImageMemoryBarriers = barriers.data();
-
-    uint32_t level_width = width;
-    uint32_t level_height = height;
-    uint32_t mip_dst_index = 0;
-    while (level_width > 1 || level_height > 1) {
-        const uint32_t src_width = level_width;
-        const uint32_t src_height = level_height;
-        level_width = (level_width > 1) ? level_width / 2 : 1;
-        level_height = (level_height > 1) ? level_height / 2 : 1;
-        ++mip_dst_index;
-        const uint32_t mip_src_index = mip_dst_index - 1;
-
-        // blit mip_src_index to mip_dst_index
-        region.srcSubresource.mipLevel = mip_src_index;
-        region.srcOffsets[1] = {static_cast<int>(src_width), static_cast<int>(src_height), 1};
-        region.dstSubresource.mipLevel = mip_dst_index;
-        region.dstOffsets[1] = {static_cast<int>(level_width), static_cast<int>(level_height), 1};
-        vkCmdBlitImage(cmd, image, VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL, image, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, 1, &region, VK_FILTER_LINEAR);
-
-        // barrier for mip_src_index TRANSFER_SRC_OPTIMAL -> SHADER_READ_ONLY_OPTIMAL
-        barriers[0].subresourceRange.baseMipLevel = mip_src_index;
-        // barrier for mip_dst_index TRANSFER_DST_OPTIMAL -> TRANSFER_SRC_OPTIMAL
-        barriers[1].subresourceRange.baseMipLevel = mip_dst_index;
-        if (level_width == 1 && level_height == 1) {
-            // last mip level won't be blitted from so make it SHADER_READ_ONLY_OPTIMAL
-            barriers[1].dstStageMask = VK_PIPELINE_STAGE_2_FRAGMENT_SHADER_BIT;
-            barriers[1].dstAccessMask = VK_ACCESS_2_SHADER_SAMPLED_READ_BIT;
-            barriers[1].newLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
-        }
-        vkCmdPipelineBarrier2(cmd, &dep);
-    }
+    VkShaderModuleCreateInfo module_info{};
+    module_info.sType = VK_STRUCTURE_TYPE_SHADER_MODULE_CREATE_INFO;
+    module_info.pNext = nullptr;
+    module_info.flags = 0;
+    module_info.codeSize = spv.size();
+    module_info.pCode = reinterpret_cast<const uint32_t*>(spv.data());
+    VkShaderModule shader_module = VK_NULL_HANDLE;
+    GC_CHECKVK(vkCreateShaderModule(device, &module_info, nullptr, &shader_module));
+    return shader_module;
 }
 
 static VkSampleCountFlagBits getMaxSupportedSampleCount(const VkPhysicalDeviceLimits& limits, VkSampleCountFlagBits max)
@@ -173,6 +114,9 @@ struct FrameUniformData {
     glm::vec4 ambient_light;         // rgb = color * illuminance (lux) of a surface facing up
     glm::mat4 shadow_matrix;         // world space to the shadow map's texture coordinates (x, y) and depth (z)
     glm::vec4 shadow_params;         // x = normal bias (metres), y = depth bias, z = 1 if there is a shadow map, else 0
+    glm::mat4 environment_matrix;    // turns a direction in the world to one in the sky's cube maps
+    glm::vec4 environment_params;    // x = the luminance (cd/m^2) of a texel of 1 when lighting with the sky, or 0 if the world isn't lit
+                                     // by one. y = the last mip level of the sky's reflections. z = the same as x, for drawing the sky
     std::array<PointLightUniformData, WorldDrawData::MAX_POINT_LIGHTS> point_lights;
 };
 static_assert(offsetof(FrameUniformData, camera_position) == 128);
@@ -183,7 +127,9 @@ static_assert(offsetof(FrameUniformData, exposure) == 176);
 static_assert(offsetof(FrameUniformData, ambient_light) == 192);
 static_assert(offsetof(FrameUniformData, shadow_matrix) == 208);
 static_assert(offsetof(FrameUniformData, shadow_params) == 272);
-static_assert(offsetof(FrameUniformData, point_lights) == 288);
+static_assert(offsetof(FrameUniformData, environment_matrix) == 288);
+static_assert(offsetof(FrameUniformData, environment_params) == 352);
+static_assert(offsetof(FrameUniformData, point_lights) == 368);
 static_assert(sizeof(PointLightUniformData) == 32);
 
 // Must match the fragment shader's push constant block
@@ -220,7 +166,7 @@ RenderBackend::RenderBackend(SDL_Window* window_handle)
     // create main descriptor pool for long-lasting static resources
     {
         std::array<VkDescriptorPoolSize, 1> pool_sizes = {
-            // every material has four textures
+            // every material has four textures. A shadow map has one and a sky has three, but there are only ever a few of those
             VkDescriptorPoolSize{VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, 4096},
         };
         VkDescriptorPoolCreateInfo pool_info = {};
@@ -302,9 +248,38 @@ RenderBackend::RenderBackend(SDL_Window* window_handle)
         GC_CHECKVK(vkCreateDescriptorSetLayout(m_device.getHandle(), &info, nullptr, &m_shadow_set_layout));
     }
 
+    {
+        // The sky's cube maps: the sky itself, its irradiance and its reflections. They are read with directions, so nothing
+        // repeats, and the reflections are blurrier in each mip level, so the levels are blended.
+        VkSamplerCreateInfo sampler_info{};
+        sampler_info.sType = VK_STRUCTURE_TYPE_SAMPLER_CREATE_INFO;
+        sampler_info.magFilter = VK_FILTER_LINEAR;
+        sampler_info.minFilter = VK_FILTER_LINEAR;
+        sampler_info.mipmapMode = VK_SAMPLER_MIPMAP_MODE_LINEAR;
+        sampler_info.addressModeU = VK_SAMPLER_ADDRESS_MODE_CLAMP_TO_EDGE;
+        sampler_info.addressModeV = VK_SAMPLER_ADDRESS_MODE_CLAMP_TO_EDGE;
+        sampler_info.addressModeW = VK_SAMPLER_ADDRESS_MODE_CLAMP_TO_EDGE;
+        sampler_info.maxLod = VK_LOD_CLAMP_NONE;
+        GC_CHECKVK(vkCreateSampler(m_device.getHandle(), &sampler_info, nullptr, &m_environment_sampler));
+
+        std::array<VkDescriptorSetLayoutBinding, 3> bindings{};
+        for (uint32_t i = 0; i < bindings.size(); ++i) {
+            bindings[i].binding = i;
+            bindings[i].descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
+            bindings[i].descriptorCount = 1;
+            bindings[i].stageFlags = VK_SHADER_STAGE_FRAGMENT_BIT;
+            bindings[i].pImmutableSamplers = &m_environment_sampler;
+        }
+        VkDescriptorSetLayoutCreateInfo info{};
+        info.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_LAYOUT_CREATE_INFO;
+        info.bindingCount = static_cast<uint32_t>(bindings.size());
+        info.pBindings = bindings.data();
+        GC_CHECKVK(vkCreateDescriptorSetLayout(m_device.getHandle(), &info, nullptr, &m_environment_set_layout));
+    }
+
     // Pipeline layout. Every pipeline that draws the world uses it, so that descriptor sets stay bound when the pipeline changes.
     {
-        const std::array set_layouts{m_frame_set_layout, m_material_set_layout, m_shadow_set_layout};
+        const std::array set_layouts{m_frame_set_layout, m_material_set_layout, m_shadow_set_layout, m_environment_set_layout};
 
         std::array<VkPushConstantRange, 2> push_constant_ranges{};
         // the world matrix (not used by instanced draws)
@@ -362,16 +337,10 @@ RenderBackend::RenderBackend(SDL_Window* window_handle)
     }
 
     m_main_timeline_value = 0;
-    m_transfer_timeline_value = 0;
     m_framebuffer_copy_finished_value = 0;
 
-    {
-        VkCommandPoolCreateInfo info{};
-        info.sType = VK_STRUCTURE_TYPE_COMMAND_POOL_CREATE_INFO;
-        info.queueFamilyIndex = m_device.getQueueFamilyIndex();
-        info.flags = VK_COMMAND_POOL_CREATE_TRANSIENT_BIT | VK_COMMAND_POOL_CREATE_RESET_COMMAND_BUFFER_BIT;
-        GC_CHECKVK(vkCreateCommandPool(m_device.getHandle(), &info, nullptr, &m_transfer_cmd_pool));
-    }
+    m_uploader = std::make_unique<RenderUploader>(m_device.getHandle(), m_allocator.getHandle(), m_delete_queue, m_device.getTransferQueue(),
+                                                  m_device.getQueueFamilyIndex(), m_transfer_timeline_semaphore);
 
 #ifdef TRACY_ENABLE
     {
@@ -403,6 +372,13 @@ RenderBackend::RenderBackend(SDL_Window* window_handle)
         const std::array<uint8_t, 10> no_shadow_pak{1, 0, 0, 0, 1, 0, 0, 0, 0xff, 0xff};
         m_no_shadow_map = std::make_unique<RenderShadowMap>(createShadowMap(no_shadow_pak));
     }
+    {
+        // a cube map of one black texel a face (the header is the size of a face and the number of mip levels, see gcpak.h)
+        std::array<uint8_t, ResourceCubeMap::HEADER_SIZE + 6 * sizeof(uint32_t)> no_sky_pak{};
+        no_sky_pak[0] = 1;
+        no_sky_pak[4] = 1;
+        m_no_environment = std::make_unique<RenderEnvironment>(createEnvironment(no_sky_pak, no_sky_pak, no_sky_pak));
+    }
 
     // m_main_timeline_semaphore and the frame in flight command pools will be created when submitFrame() is called for the first time.
 
@@ -427,6 +403,8 @@ RenderBackend::~RenderBackend()
 
     // The destructors for these objects defer destruction until the resource is no longer in use by a GPU queue.
     m_no_shadow_map.reset();
+    m_no_environment.reset();
+    m_sky_pipeline.reset();
     m_frame_uniform_buffer_set.reset();
     m_instancing_transforms_buffer.reset();
     m_frame_uniform_buffer.reset();
@@ -449,7 +427,8 @@ RenderBackend::~RenderBackend()
         GC_TRACE("Transfer semaphore value: {}", transfer_val);
     }
 
-    vkDestroyCommandPool(m_device.getHandle(), m_transfer_cmd_pool, nullptr);
+    // stops the render work thread
+    m_uploader.reset();
 
     if (m_transfer_timeline_semaphore) {
         vkDestroySemaphore(m_device.getHandle(), m_transfer_timeline_semaphore, nullptr);
@@ -470,12 +449,16 @@ RenderBackend::~RenderBackend()
     vkDestroyImageView(m_device.getHandle(), m_depth_stencil_attachment_view, nullptr);
     vmaDestroyImage(m_allocator.getHandle(), m_depth_stencil_attachment_image, m_depth_stencil_attachment_allocation);
 
+    vkDestroyShaderModule(m_device.getHandle(), m_sky_fragment_module, nullptr);
+    vkDestroyShaderModule(m_device.getHandle(), m_sky_vertex_module, nullptr);
     vkDestroyShaderModule(m_device.getHandle(), m_fragment_module, nullptr);
     vkDestroyShaderModule(m_device.getHandle(), m_instanced_vertex_module, nullptr);
     vkDestroyShaderModule(m_device.getHandle(), m_single_draw_vertex_module, nullptr);
 
     vkDestroyPipelineLayout(m_device.getHandle(), m_world_pipeline_layout, nullptr);
 
+    vkDestroyDescriptorSetLayout(m_device.getHandle(), m_environment_set_layout, nullptr);
+    vkDestroySampler(m_device.getHandle(), m_environment_sampler, nullptr);
     vkDestroyDescriptorSetLayout(m_device.getHandle(), m_shadow_set_layout, nullptr);
     vkDestroySampler(m_device.getHandle(), m_shadow_sampler, nullptr);
     vkDestroyDescriptorSetLayout(m_device.getHandle(), m_material_set_layout, nullptr);
@@ -512,6 +495,9 @@ void RenderBackend::submitFrame(bool window_resized, const WorldDrawData& world_
     }
 
     auto& stuff = m_fif[m_frame_count % m_fif.size()];
+
+    // Before anything is drawn, so that what the render work thread has finished copying is given to the GPU as soon as possible
+    m_uploader->submitFinishedUploads();
 
     createMissingPipelines(world_draw_data);
 
@@ -592,6 +578,24 @@ void RenderBackend::submitFrame(bool window_resized, const WorldDrawData& world_
         shadow_map = m_no_shadow_map.get();
     }
 
+    // The same goes for the sky: until it is uploaded, the world is lit as if it had none (by its ambient lights)
+    RenderEnvironment* environment = world_draw_data.getEnvironment();
+    const bool has_environment = environment && environment->isUploaded() && world_draw_data.getEnvironmentScale() > 0.0f;
+    if (!has_environment) {
+        m_no_environment->waitForUpload();
+        environment = m_no_environment.get();
+    }
+    const bool draw_sky = has_environment && world_draw_data.getEnvironmentVisible();
+    if (draw_sky && !m_sky_pipeline) {
+        if (m_sky_vertex_module) {
+            GC_DEBUG("Creating the pipeline that draws the sky");
+            m_sky_pipeline = std::make_unique<GPUPipeline>(createSkyPipeline());
+        }
+        else {
+            GC_WARN_ONCE("The world has a sky, but it can't be drawn as setSkyShaders() wasn't called");
+        }
+    }
+
     // update frame uniform buffer
     {
         FrameUniformData data{};
@@ -606,6 +610,12 @@ void RenderBackend::submitFrame(bool window_resized, const WorldDrawData& world_
         data.ambient_light = glm::vec4(world_draw_data.getAmbientLight(), 0.0f);
         data.shadow_matrix = world_draw_data.getShadowMatrix();
         data.shadow_params = glm::vec4(world_draw_data.getShadowNormalBias(), world_draw_data.getShadowDepthBias(), has_shadow_map ? 1.0f : 0.0f, 0.0f);
+        data.environment_matrix = world_draw_data.getEnvironmentMatrix();
+        if (has_environment) {
+            const float scale = world_draw_data.getEnvironmentScale();
+            data.environment_params = glm::vec4(world_draw_data.getEnvironmentLighting() ? scale : 0.0f,
+                                                static_cast<float>(environment->getSpecularLevelCount() - 1), scale, 0.0f);
+        }
 
         const auto& point_lights = world_draw_data.getPointLights();
         if (point_lights.size() > data.point_lights.size()) {
@@ -719,8 +729,8 @@ void RenderBackend::submitFrame(bool window_resized, const WorldDrawData& world_
         vkCmdSetScissor(stuff.cmd, 0, 1, &scissor);
 
         recordWorldRenderingCommands(stuff.cmd, m_world_pipeline_layout, m_main_pipelines, m_instancing_pipelines, m_main_timeline_semaphore,
-                                     m_main_timeline_value + 1, world_draw_data, *m_frame_uniform_buffer_set, *shadow_map,
-                                     *m_instancing_transforms_buffer);
+                                     m_main_timeline_value + 1, world_draw_data, *m_frame_uniform_buffer_set, *shadow_map, *environment,
+                                     draw_sky ? m_sky_pipeline.get() : nullptr, *m_instancing_transforms_buffer);
 
         if (post_render_callback) {
             bool ret = post_render_callback(stuff.cmd);
@@ -838,20 +848,113 @@ void RenderBackend::setWorldShaders(std::span<const uint8_t> single_draw_vertex_
         abortGame("setWorldShaders() called with empty SPIRV code");
     }
 
-    const auto create_module = [this](std::span<const uint8_t> spv) {
-        VkShaderModuleCreateInfo module_info{};
-        module_info.sType = VK_STRUCTURE_TYPE_SHADER_MODULE_CREATE_INFO;
-        module_info.pNext = nullptr;
-        module_info.flags = 0;
-        module_info.codeSize = spv.size();
-        module_info.pCode = reinterpret_cast<const uint32_t*>(spv.data());
-        VkShaderModule shader_module = VK_NULL_HANDLE;
-        GC_CHECKVK(vkCreateShaderModule(m_device.getHandle(), &module_info, nullptr, &shader_module));
-        return shader_module;
-    };
-    m_single_draw_vertex_module = create_module(single_draw_vertex_spv);
-    m_instanced_vertex_module = create_module(instanced_vertex_spv);
-    m_fragment_module = create_module(fragment_spv);
+    m_single_draw_vertex_module = createShaderModule(m_device.getHandle(), single_draw_vertex_spv);
+    m_instanced_vertex_module = createShaderModule(m_device.getHandle(), instanced_vertex_spv);
+    m_fragment_module = createShaderModule(m_device.getHandle(), fragment_spv);
+}
+
+void RenderBackend::setSkyShaders(std::span<const uint8_t> vertex_spv, std::span<const uint8_t> fragment_spv)
+{
+    if (m_sky_vertex_module) {
+        abortGame("Sky shaders already set!");
+    }
+    if (vertex_spv.empty() || fragment_spv.empty()) {
+        abortGame("setSkyShaders() called with empty SPIRV code");
+    }
+    m_sky_vertex_module = createShaderModule(m_device.getHandle(), vertex_spv);
+    m_sky_fragment_module = createShaderModule(m_device.getHandle(), fragment_spv);
+}
+
+// One triangle, made by the vertex shader, that is drawn wherever the depth buffer still has nothing in it
+GPUPipeline RenderBackend::createSkyPipeline()
+{
+    ZoneScoped;
+
+    std::array<VkPipelineShaderStageCreateInfo, 2> stage_infos{};
+    stage_infos[0].sType = VK_STRUCTURE_TYPE_PIPELINE_SHADER_STAGE_CREATE_INFO;
+    stage_infos[0].pName = "main";
+    stage_infos[1] = stage_infos[0];
+    stage_infos[0].stage = VK_SHADER_STAGE_VERTEX_BIT;
+    stage_infos[0].module = m_sky_vertex_module;
+    stage_infos[1].stage = VK_SHADER_STAGE_FRAGMENT_BIT;
+    stage_infos[1].module = m_sky_fragment_module;
+
+    VkPipelineVertexInputStateCreateInfo vertex_input_state{};
+    vertex_input_state.sType = VK_STRUCTURE_TYPE_PIPELINE_VERTEX_INPUT_STATE_CREATE_INFO;
+
+    VkPipelineInputAssemblyStateCreateInfo input_assembly_state{};
+    input_assembly_state.sType = VK_STRUCTURE_TYPE_PIPELINE_INPUT_ASSEMBLY_STATE_CREATE_INFO;
+    input_assembly_state.topology = VK_PRIMITIVE_TOPOLOGY_TRIANGLE_LIST;
+
+    VkPipelineViewportStateCreateInfo viewport_state{};
+    viewport_state.sType = VK_STRUCTURE_TYPE_PIPELINE_VIEWPORT_STATE_CREATE_INFO;
+    viewport_state.viewportCount = 1;
+    viewport_state.scissorCount = 1;
+
+    VkPipelineRasterizationStateCreateInfo rasterization_state{};
+    rasterization_state.sType = VK_STRUCTURE_TYPE_PIPELINE_RASTERIZATION_STATE_CREATE_INFO;
+    rasterization_state.polygonMode = VK_POLYGON_MODE_FILL;
+    rasterization_state.lineWidth = 1.0f;
+    rasterization_state.cullMode = VK_CULL_MODE_NONE;
+    rasterization_state.frontFace = VK_FRONT_FACE_COUNTER_CLOCKWISE;
+
+    const VkFormat color_attachment_format = m_swapchain.getSurfaceFormat().format;
+    VkPipelineRenderingCreateInfo rendering_info{};
+    rendering_info.sType = VK_STRUCTURE_TYPE_PIPELINE_RENDERING_CREATE_INFO;
+    rendering_info.colorAttachmentCount = 1;
+    rendering_info.pColorAttachmentFormats = &color_attachment_format;
+    rendering_info.depthAttachmentFormat = m_depth_stencil_attachment_format;
+    rendering_info.stencilAttachmentFormat = m_depth_stencil_attachment_format;
+
+    VkPipelineMultisampleStateCreateInfo multisample_state{};
+    multisample_state.sType = VK_STRUCTURE_TYPE_PIPELINE_MULTISAMPLE_STATE_CREATE_INFO;
+    multisample_state.rasterizationSamples = m_msaa_samples;
+    multisample_state.minSampleShading = 1.0f;
+
+    // The far plane is at a depth of zero, which is also what the depth buffer is cleared to. So the sky passes wherever nothing
+    // has been drawn, and nowhere else. It doesn't write depth: blended things in front of it are drawn afterwards anyway.
+    VkPipelineDepthStencilStateCreateInfo depth_stencil_state{};
+    depth_stencil_state.sType = VK_STRUCTURE_TYPE_PIPELINE_DEPTH_STENCIL_STATE_CREATE_INFO;
+    depth_stencil_state.depthTestEnable = VK_TRUE;
+    depth_stencil_state.depthWriteEnable = VK_FALSE;
+    depth_stencil_state.depthCompareOp = VK_COMPARE_OP_GREATER_OR_EQUAL;
+    depth_stencil_state.minDepthBounds = 0.0f;
+    depth_stencil_state.maxDepthBounds = 1.0f;
+
+    VkPipelineColorBlendAttachmentState color_blend_attachment{};
+    color_blend_attachment.colorWriteMask = VK_COLOR_COMPONENT_R_BIT | VK_COLOR_COMPONENT_G_BIT | VK_COLOR_COMPONENT_B_BIT | VK_COLOR_COMPONENT_A_BIT;
+    color_blend_attachment.blendEnable = VK_FALSE;
+    VkPipelineColorBlendStateCreateInfo color_blend_state{};
+    color_blend_state.sType = VK_STRUCTURE_TYPE_PIPELINE_COLOR_BLEND_STATE_CREATE_INFO;
+    color_blend_state.attachmentCount = 1;
+    color_blend_state.pAttachments = &color_blend_attachment;
+
+    std::array dynamic_states{VK_DYNAMIC_STATE_VIEWPORT, VK_DYNAMIC_STATE_SCISSOR};
+    VkPipelineDynamicStateCreateInfo dynamic_state{};
+    dynamic_state.sType = VK_STRUCTURE_TYPE_PIPELINE_DYNAMIC_STATE_CREATE_INFO;
+    dynamic_state.dynamicStateCount = static_cast<uint32_t>(dynamic_states.size());
+    dynamic_state.pDynamicStates = dynamic_states.data();
+
+    VkGraphicsPipelineCreateInfo info{};
+    info.sType = VK_STRUCTURE_TYPE_GRAPHICS_PIPELINE_CREATE_INFO;
+    info.pNext = &rendering_info;
+    info.stageCount = static_cast<uint32_t>(stage_infos.size());
+    info.pStages = stage_infos.data();
+    info.pVertexInputState = &vertex_input_state;
+    info.pInputAssemblyState = &input_assembly_state;
+    info.pViewportState = &viewport_state;
+    info.pRasterizationState = &rasterization_state;
+    info.pMultisampleState = &multisample_state;
+    info.pDepthStencilState = &depth_stencil_state;
+    info.pColorBlendState = &color_blend_state;
+    info.pDynamicState = &dynamic_state;
+    info.layout = m_world_pipeline_layout;
+    info.basePipelineIndex = -1;
+
+    VkPipeline handle{};
+    GC_CHECKVK(vkCreateGraphicsPipelines(m_device.getHandle(), VK_NULL_HANDLE, 1, &info, nullptr, &handle));
+
+    return GPUPipeline(m_delete_queue, handle);
 }
 
 GPUPipeline RenderBackend::createPipeline(VkShaderModule vertex_module, VkShaderModule fragment_module, uint32_t variant,
@@ -1149,12 +1252,12 @@ void RenderBackend::createMissingPipelines(const WorldDrawData& world_draw_data)
     }
 }
 
-RenderTexture RenderBackend::createTexture(std::span<const uint8_t> r8g8b8a8_pak, bool srgb)
+RenderTexture RenderBackend::createTexture(std::span<const uint8_t> r8g8b8a8_pak, bool srgb, RenderUploadMode upload_mode)
 {
-    return createTextureFromPak(r8g8b8a8_pak, srgb ? VK_FORMAT_R8G8B8A8_SRGB : VK_FORMAT_R8G8B8A8_UNORM, 4, true);
+    return createTextureFromPak(r8g8b8a8_pak, srgb ? VK_FORMAT_R8G8B8A8_SRGB : VK_FORMAT_R8G8B8A8_UNORM, 4, true, upload_mode);
 }
 
-RenderShadowMap RenderBackend::createShadowMap(std::span<const uint8_t> r16_pak)
+RenderShadowMap RenderBackend::createShadowMap(std::span<const uint8_t> r16_pak, RenderUploadMode upload_mode)
 {
     VkDescriptorSet descriptor_set{};
     VkDescriptorSetAllocateInfo info{};
@@ -1164,11 +1267,12 @@ RenderShadowMap RenderBackend::createShadowMap(std::span<const uint8_t> r16_pak)
     info.pSetLayouts = &m_shadow_set_layout;
     GC_CHECKVK(vkAllocateDescriptorSets(m_device.getHandle(), &info, &descriptor_set));
     // no mipmaps: a shadow map is only ever read at full resolution
-    return RenderShadowMap(m_device.getHandle(), createTextureFromPak(r16_pak, VK_FORMAT_R16_UNORM, 2, false),
+    return RenderShadowMap(m_device.getHandle(), createTextureFromPak(r16_pak, VK_FORMAT_R16_UNORM, 2, false, upload_mode),
                            GPUDescriptorSet(m_delete_queue, m_main_descriptor_pool, descriptor_set));
 }
 
-RenderTexture RenderBackend::createTextureFromPak(std::span<const uint8_t> pak, VkFormat image_format, uint32_t bytes_per_texel, bool generate_mips)
+RenderTexture RenderBackend::createTextureFromPak(std::span<const uint8_t> pak, VkFormat image_format, uint32_t bytes_per_texel, bool generate_mips,
+                                                  RenderUploadMode upload_mode)
 {
     ZoneScoped;
 
@@ -1178,174 +1282,16 @@ RenderTexture RenderBackend::createTextureFromPak(std::span<const uint8_t> pak, 
     std::memcpy(&height, pak.data() + sizeof(uint32_t), sizeof(uint32_t));
     GC_ASSERT(width != 0 && height != 0);
     GC_ASSERT(pak.size() == 2 * sizeof(uint32_t) + (static_cast<size_t>(width) * static_cast<size_t>(height) * static_cast<size_t>(bytes_per_texel)));
-    const uint8_t* const bitmap_data_start = pak.data() + 2 * sizeof(uint32_t);
 
     GC_TRACE("creating texture with size: {}x{}", width, height);
 
     const uint32_t mip_levels = generate_mips ? getMipLevels(width, height) : 1;
 
-    VkBufferCreateInfo buffer_info{};
-    buffer_info.sType = VK_STRUCTURE_TYPE_BUFFER_CREATE_INFO;
-    buffer_info.size = static_cast<VkDeviceSize>(width) * static_cast<VkDeviceSize>(height) * static_cast<VkDeviceSize>(bytes_per_texel);
-    buffer_info.usage = VK_BUFFER_USAGE_TRANSFER_SRC_BIT;
-    buffer_info.sharingMode = VK_SHARING_MODE_EXCLUSIVE;
-    VmaAllocationCreateInfo buffer_alloc_info{};
-    buffer_alloc_info.usage = VMA_MEMORY_USAGE_AUTO;
-    buffer_alloc_info.flags = VMA_ALLOCATION_CREATE_HOST_ACCESS_SEQUENTIAL_WRITE_BIT;
-    buffer_alloc_info.priority = 0.5f;
-    VkBuffer buffer{};
-    VmaAllocation buffer_alloc{};
-    GC_CHECKVK(vmaCreateBuffer(m_allocator.getHandle(), &buffer_info, &buffer_alloc_info, &buffer, &buffer_alloc, nullptr));
-
-    uint8_t* data_dest{};
-    GC_CHECKVK(vmaMapMemory(m_allocator.getHandle(), buffer_alloc, reinterpret_cast<void**>(&data_dest)));
-    std::memcpy(data_dest, bitmap_data_start, buffer_info.size);
-    vmaUnmapMemory(m_allocator.getHandle(), buffer_alloc);
-
-    GPUBuffer gpu_staging_buffer(m_delete_queue, buffer, buffer_alloc);
-
-    auto [image, allocation] = vkutils::createImage(m_allocator.getHandle(), image_format, width, height, mip_levels, VK_SAMPLE_COUNT_1_BIT,
-                                                    VK_IMAGE_USAGE_TRANSFER_DST_BIT | VK_IMAGE_USAGE_TRANSFER_SRC_BIT | VK_IMAGE_USAGE_SAMPLED_BIT, 0.5f);
-
-    {
-        VkCommandBufferAllocateInfo cmd_info{};
-        cmd_info.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_ALLOCATE_INFO;
-        cmd_info.level = VK_COMMAND_BUFFER_LEVEL_PRIMARY;
-        cmd_info.commandPool = m_transfer_cmd_pool;
-        cmd_info.commandBufferCount = 1;
-        VkCommandBuffer cmd{};
-        GC_CHECKVK(vkAllocateCommandBuffers(m_device.getHandle(), &cmd_info, &cmd));
-
-        VkCommandBufferBeginInfo begin_info{};
-        begin_info.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO;
-        begin_info.flags = VK_COMMAND_BUFFER_USAGE_ONE_TIME_SUBMIT_BIT;
-        GC_CHECKVK(vkBeginCommandBuffer(cmd, &begin_info));
-
-        if (width > 16) {
-            // wasteGPUCycles(image, m_device.getHandle(), cmd, 20'000'000'000LL / (width * height));
-        }
-
-        VkImageMemoryBarrier2 barrier{};
-        barrier.sType = VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER_2;
-        barrier.srcStageMask = VK_PIPELINE_STAGE_2_NONE;
-        barrier.srcAccessMask = VK_ACCESS_2_NONE;
-        barrier.dstStageMask = VK_PIPELINE_STAGE_2_COPY_BIT;
-        barrier.dstAccessMask = VK_ACCESS_2_TRANSFER_WRITE_BIT;
-        barrier.oldLayout = VK_IMAGE_LAYOUT_UNDEFINED;
-        barrier.newLayout = VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL;
-        barrier.srcQueueFamilyIndex = m_device.getQueueFamilyIndex();
-        barrier.dstQueueFamilyIndex = m_device.getQueueFamilyIndex();
-        barrier.image = image;
-        barrier.subresourceRange.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT;
-        barrier.subresourceRange.baseMipLevel = 0;
-        barrier.subresourceRange.levelCount = 1;
-        barrier.subresourceRange.baseArrayLayer = 0;
-        barrier.subresourceRange.layerCount = 1;
-        VkDependencyInfo dependency{};
-        dependency.sType = VK_STRUCTURE_TYPE_DEPENDENCY_INFO;
-        dependency.imageMemoryBarrierCount = 1;
-        dependency.pImageMemoryBarriers = &barrier;
-        vkCmdPipelineBarrier2(cmd, &dependency);
-
-        VkBufferImageCopy region{};
-        region.bufferOffset = 0;
-        region.bufferRowLength = 0;
-        region.bufferImageHeight = 0;
-        region.imageSubresource.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT;
-        region.imageSubresource.mipLevel = 0;
-        region.imageSubresource.baseArrayLayer = 0;
-        region.imageSubresource.layerCount = 1;
-        region.imageOffset.x = 0;
-        region.imageOffset.y = 0;
-        region.imageOffset.z = 0;
-        region.imageExtent.width = width;
-        region.imageExtent.height = height;
-        region.imageExtent.depth = 1;
-        vkCmdCopyBufferToImage(cmd, gpu_staging_buffer.getHandle(), image, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, 1, &region);
-
-        if (mip_levels > 1) {
-            barrier.srcStageMask = VK_PIPELINE_STAGE_2_COPY_BIT;
-            barrier.srcAccessMask = VK_ACCESS_2_TRANSFER_WRITE_BIT;
-            barrier.dstStageMask = VK_PIPELINE_STAGE_2_BLIT_BIT;
-            barrier.dstAccessMask = VK_ACCESS_2_TRANSFER_READ_BIT;
-            barrier.oldLayout = VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL;
-            barrier.newLayout = VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL;
-            barrier.subresourceRange.baseMipLevel = 0;
-            barrier.subresourceRange.levelCount = 1;
-            vkCmdPipelineBarrier2(cmd, &dependency);
-            barrier.srcStageMask = VK_PIPELINE_STAGE_2_NONE;
-            barrier.srcAccessMask = VK_ACCESS_2_NONE;
-            barrier.dstStageMask = VK_PIPELINE_STAGE_2_BLIT_BIT;
-            barrier.dstAccessMask = VK_ACCESS_2_TRANSFER_WRITE_BIT;
-            barrier.oldLayout = VK_IMAGE_LAYOUT_UNDEFINED;
-            barrier.newLayout = VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL;
-            barrier.subresourceRange.baseMipLevel = 1;
-            barrier.subresourceRange.levelCount = mip_levels - 1;
-            vkCmdPipelineBarrier2(cmd, &dependency);
-
-            generateMipMaps(cmd, image, width, height);
-        }
-        else {
-            barrier.srcStageMask = VK_PIPELINE_STAGE_2_COPY_BIT;
-            barrier.srcAccessMask = VK_ACCESS_2_TRANSFER_WRITE_BIT;
-            barrier.dstStageMask = VK_PIPELINE_STAGE_2_FRAGMENT_SHADER_BIT;
-            barrier.dstAccessMask = VK_ACCESS_2_SHADER_SAMPLED_READ_BIT;
-            barrier.oldLayout = VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL;
-            barrier.newLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
-            barrier.subresourceRange.baseMipLevel = 0;
-            barrier.subresourceRange.levelCount = 1;
-            vkCmdPipelineBarrier2(cmd, &dependency);
-        }
-
-        GC_CHECKVK(vkEndCommandBuffer(cmd));
-
-        VkCommandBufferSubmitInfo cmd_submit_info{};
-        cmd_submit_info.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_SUBMIT_INFO;
-        cmd_submit_info.commandBuffer = cmd;
-        VkSemaphoreSubmitInfo signal_info{};
-        signal_info.sType = VK_STRUCTURE_TYPE_SEMAPHORE_SUBMIT_INFO;
-        signal_info.semaphore = m_transfer_timeline_semaphore;
-        signal_info.value = ++m_transfer_timeline_value;
-        if (mip_levels > 1) {
-            signal_info.stageMask = VK_PIPELINE_STAGE_2_BLIT_BIT;
-        }
-        else {
-            signal_info.stageMask = VK_PIPELINE_STAGE_2_COPY_BIT;
-        }
-        VkSubmitInfo2 submit_info{};
-        submit_info.sType = VK_STRUCTURE_TYPE_SUBMIT_INFO_2;
-        submit_info.waitSemaphoreInfoCount = 0;
-        submit_info.commandBufferInfoCount = 1;
-        submit_info.pCommandBufferInfos = &cmd_submit_info;
-        submit_info.signalSemaphoreInfoCount = 1;
-        submit_info.pSignalSemaphoreInfos = &signal_info;
-        const auto transfer_queue = m_device.getTransferQueue();
-        GC_CHECKVK(vkQueueSubmit2(transfer_queue, 1, &submit_info, VK_NULL_HANDLE));
-
-        GPUResourceDeleteQueue::DeletionEntry command_buffer_deletion_entry{};
-        command_buffer_deletion_entry.timeline_semaphore = m_transfer_timeline_semaphore;
-        command_buffer_deletion_entry.resource_free_signal_value = m_transfer_timeline_value;
-        const VkCommandPool transfer_cmd_pool = m_transfer_cmd_pool;
-        command_buffer_deletion_entry.deleter = [transfer_cmd_pool, cmd](VkDevice device, [[maybe_unused]] VmaAllocator allocator) {
-            GC_TRACE("freeing command buffer: {}", reinterpret_cast<void*>(cmd));
-            vkFreeCommandBuffers(device, transfer_cmd_pool, 1, &cmd);
-        };
-        m_delete_queue.markForDeletion(command_buffer_deletion_entry);
-    }
-
-    auto image_view = vkutils::createImageView(m_device.getHandle(), image, image_format, VK_IMAGE_ASPECT_COLOR_BIT, mip_levels);
-
-    GPUTexture gpu_texture(m_delete_queue, image, allocation, image_view);
-
-    // The destructor for GPUStagingBuffer will be called when this function returns.
-    // It will be actually destroyed only after the image has been uploaded.
-    gpu_staging_buffer.useResource(m_transfer_timeline_semaphore, m_transfer_timeline_value);
-    gpu_texture.useResource(m_transfer_timeline_semaphore, m_transfer_timeline_value);
-
-    return RenderTexture(std::move(gpu_texture));
+    // (the uploader makes the image, as allocating its memory takes a while too)
+    return RenderTexture(m_uploader->uploadImage(image_format, width, height, mip_levels, false, {pak.subspan(2 * sizeof(uint32_t))}, upload_mode));
 };
 
-RenderTexture RenderBackend::createCubeTexture(std::array<std::span<const uint8_t>, 6> r8g8b8a8_paks, bool srgb)
+RenderTexture RenderBackend::createCubeTexture(std::array<std::span<const uint8_t>, 6> r8g8b8a8_paks, bool srgb, RenderUploadMode upload_mode)
 {
     ZoneScoped;
 
@@ -1367,158 +1313,54 @@ RenderTexture RenderBackend::createCubeTexture(std::array<std::span<const uint8_
         GC_ASSERT(face_height == height);
     }
 
-    const auto getDataStart = [&](int index) -> const uint8_t* {
-        GC_ASSERT(r8g8b8a8_paks[index].size() == 2 * sizeof(uint32_t) + (static_cast<size_t>(width) * static_cast<size_t>(height) * 4ULL));
-        return r8g8b8a8_paks[index].data() + 2 * sizeof(uint32_t);
-    };
-
-    uint32_t mip_levels = 1; // getMipLevels(width, height);
-
-    const size_t face_buffer_size = static_cast<VkDeviceSize>(width) * static_cast<VkDeviceSize>(height) * 4ULL;
-
-    VkBufferCreateInfo buffer_info{};
-    buffer_info.sType = VK_STRUCTURE_TYPE_BUFFER_CREATE_INFO;
-    buffer_info.size = face_buffer_size * 6ULL; // 6 faces in contiguous memory
-    buffer_info.usage = VK_BUFFER_USAGE_TRANSFER_SRC_BIT;
-    buffer_info.sharingMode = VK_SHARING_MODE_EXCLUSIVE;
-    VmaAllocationCreateInfo buffer_alloc_info{};
-    buffer_alloc_info.usage = VMA_MEMORY_USAGE_AUTO;
-    buffer_alloc_info.flags = VMA_ALLOCATION_CREATE_HOST_ACCESS_SEQUENTIAL_WRITE_BIT;
-    buffer_alloc_info.priority = 0.5f;
-    VkBuffer buffer{};
-    VmaAllocation buffer_alloc{};
-    GC_CHECKVK(vmaCreateBuffer(m_allocator.getHandle(), &buffer_info, &buffer_alloc_info, &buffer, &buffer_alloc, nullptr));
-
-    uint8_t* data_dest{};
-    GC_CHECKVK(vmaMapMemory(m_allocator.getHandle(), buffer_alloc, reinterpret_cast<void**>(&data_dest)));
-    for (int i = 0; i < 6; ++i) {
-        std::memcpy(data_dest + face_buffer_size * i, getDataStart(i), face_buffer_size);
+    // the 6 faces go into the staging buffer one after another
+    RenderUploader::Sources faces{};
+    for (const auto& face_pak : r8g8b8a8_paks) {
+        GC_ASSERT(face_pak.size() == 2 * sizeof(uint32_t) + (static_cast<size_t>(width) * static_cast<size_t>(height) * 4ULL));
+        faces.push_back(face_pak.subspan(2 * sizeof(uint32_t)));
     }
-    vmaUnmapMemory(m_allocator.getHandle(), buffer_alloc);
 
-    GPUBuffer gpu_staging_buffer(m_delete_queue, buffer, buffer_alloc);
+    const uint32_t mip_levels = 1; // mipmaps aren't generated for cube maps yet
 
     const VkFormat image_format = srgb ? VK_FORMAT_R8G8B8A8_SRGB : VK_FORMAT_R8G8B8A8_UNORM;
-    auto [image, allocation] =
-        vkutils::createImage(m_allocator.getHandle(), image_format, width, height, mip_levels, VK_SAMPLE_COUNT_1_BIT,
-                             VK_IMAGE_USAGE_TRANSFER_DST_BIT | VK_IMAGE_USAGE_TRANSFER_SRC_BIT | VK_IMAGE_USAGE_SAMPLED_BIT, 0.5f, false, true);
-
-    {
-        VkCommandBufferAllocateInfo cmd_info{};
-        cmd_info.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_ALLOCATE_INFO;
-        cmd_info.level = VK_COMMAND_BUFFER_LEVEL_PRIMARY;
-        cmd_info.commandPool = m_transfer_cmd_pool;
-        cmd_info.commandBufferCount = 1;
-        VkCommandBuffer cmd{};
-        GC_CHECKVK(vkAllocateCommandBuffers(m_device.getHandle(), &cmd_info, &cmd));
-
-        VkCommandBufferBeginInfo begin_info{};
-        begin_info.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO;
-        begin_info.flags = VK_COMMAND_BUFFER_USAGE_ONE_TIME_SUBMIT_BIT;
-        GC_CHECKVK(vkBeginCommandBuffer(cmd, &begin_info));
-
-        VkImageMemoryBarrier2 barrier{};
-        barrier.sType = VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER_2;
-        barrier.srcStageMask = VK_PIPELINE_STAGE_2_NONE;
-        barrier.srcAccessMask = VK_ACCESS_2_NONE;
-        barrier.dstStageMask = VK_PIPELINE_STAGE_2_COPY_BIT;
-        barrier.dstAccessMask = VK_ACCESS_2_TRANSFER_WRITE_BIT;
-        barrier.oldLayout = VK_IMAGE_LAYOUT_UNDEFINED;
-        barrier.newLayout = VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL;
-        barrier.srcQueueFamilyIndex = m_device.getQueueFamilyIndex();
-        barrier.dstQueueFamilyIndex = m_device.getQueueFamilyIndex();
-        barrier.image = image;
-        barrier.subresourceRange.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT;
-        barrier.subresourceRange.baseMipLevel = 0;
-        barrier.subresourceRange.levelCount = 1;
-        barrier.subresourceRange.baseArrayLayer = 0;
-        barrier.subresourceRange.layerCount = 6;
-        VkDependencyInfo dependency{};
-        dependency.sType = VK_STRUCTURE_TYPE_DEPENDENCY_INFO;
-        dependency.imageMemoryBarrierCount = 1;
-        dependency.pImageMemoryBarriers = &barrier;
-        vkCmdPipelineBarrier2(cmd, &dependency);
-
-        VkBufferImageCopy region{};
-        region.bufferOffset = 0;
-        region.bufferRowLength = 0;
-        region.bufferImageHeight = 0;
-        region.imageSubresource.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT;
-        region.imageSubresource.mipLevel = 0;
-        region.imageSubresource.baseArrayLayer = 0;
-        region.imageSubresource.layerCount = 6;
-        region.imageOffset.x = 0;
-        region.imageOffset.y = 0;
-        region.imageOffset.z = 0;
-        region.imageExtent.width = width;
-        region.imageExtent.height = height;
-        region.imageExtent.depth = 1;
-        vkCmdCopyBufferToImage(cmd, gpu_staging_buffer.getHandle(), image, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, 1, &region);
-
-        if (mip_levels > 1) {
-            abortGame("Not yet implemented");
-        }
-        else {
-            barrier.srcStageMask = VK_PIPELINE_STAGE_2_COPY_BIT;
-            barrier.srcAccessMask = VK_ACCESS_2_TRANSFER_WRITE_BIT;
-            barrier.dstStageMask = VK_PIPELINE_STAGE_2_FRAGMENT_SHADER_BIT;
-            barrier.dstAccessMask = VK_ACCESS_2_SHADER_SAMPLED_READ_BIT;
-            barrier.oldLayout = VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL;
-            barrier.newLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
-            barrier.subresourceRange.baseMipLevel = 0;
-            barrier.subresourceRange.levelCount = 1;
-            barrier.subresourceRange.layerCount = 6;
-            vkCmdPipelineBarrier2(cmd, &dependency);
-        }
-
-        GC_CHECKVK(vkEndCommandBuffer(cmd));
-
-        VkCommandBufferSubmitInfo cmd_submit_info{};
-        cmd_submit_info.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_SUBMIT_INFO;
-        cmd_submit_info.commandBuffer = cmd;
-        VkSemaphoreSubmitInfo signal_info{};
-        signal_info.sType = VK_STRUCTURE_TYPE_SEMAPHORE_SUBMIT_INFO;
-        signal_info.semaphore = m_transfer_timeline_semaphore;
-        signal_info.value = ++m_transfer_timeline_value;
-        if (mip_levels > 1) {
-            signal_info.stageMask = VK_PIPELINE_STAGE_2_BLIT_BIT;
-        }
-        else {
-            signal_info.stageMask = VK_PIPELINE_STAGE_2_COPY_BIT;
-        }
-        VkSubmitInfo2 submit_info{};
-        submit_info.sType = VK_STRUCTURE_TYPE_SUBMIT_INFO_2;
-        submit_info.waitSemaphoreInfoCount = 0;
-        submit_info.commandBufferInfoCount = 1;
-        submit_info.pCommandBufferInfos = &cmd_submit_info;
-        submit_info.signalSemaphoreInfoCount = 1;
-        submit_info.pSignalSemaphoreInfos = &signal_info;
-        const auto transfer_queue = m_device.getTransferQueue();
-        GC_CHECKVK(vkQueueSubmit2(transfer_queue, 1, &submit_info, VK_NULL_HANDLE));
-
-        GPUResourceDeleteQueue::DeletionEntry command_buffer_deletion_entry{};
-        command_buffer_deletion_entry.timeline_semaphore = m_transfer_timeline_semaphore;
-        command_buffer_deletion_entry.resource_free_signal_value = m_transfer_timeline_value;
-        const VkCommandPool transfer_cmd_pool = m_transfer_cmd_pool;
-        command_buffer_deletion_entry.deleter = [transfer_cmd_pool, cmd](VkDevice device, [[maybe_unused]] VmaAllocator allocator) {
-            GC_TRACE("freeing command buffer: {}", reinterpret_cast<void*>(cmd));
-            vkFreeCommandBuffers(device, transfer_cmd_pool, 1, &cmd);
-        };
-        m_delete_queue.markForDeletion(command_buffer_deletion_entry);
-    }
-
-    auto image_view = vkutils::createImageView(m_device.getHandle(), image, image_format, VK_IMAGE_ASPECT_COLOR_BIT, mip_levels, true);
-    GPUTexture gpu_texture(m_delete_queue, image, allocation, image_view);
-
-    // The destructor for GPUStagingBuffer will be called when this function returns.
-    // It will be actually destroyed only after the image has been uploaded.
-    gpu_staging_buffer.useResource(m_transfer_timeline_semaphore, m_transfer_timeline_value);
-    gpu_texture.useResource(m_transfer_timeline_semaphore, m_transfer_timeline_value);
-
-    return RenderTexture(std::move(gpu_texture));
+    return RenderTexture(m_uploader->uploadImage(image_format, width, height, mip_levels, true, faces, upload_mode));
 }
 
-RenderMesh RenderBackend::createMesh(std::span<const MeshVertex> vertices, std::span<const uint16_t> indices)
+RenderTexture RenderBackend::createCubeMap(std::span<const uint8_t> cube_pak, RenderUploadMode upload_mode, uint32_t* mip_levels_out)
+{
+    const std::optional<ResourceCubeMap> cube_map = ResourceCubeMap::create(cube_pak);
+    if (!cube_map) {
+        abortGame("createCubeMap() called with data that isn't a cube map");
+    }
+    if (mip_levels_out) {
+        *mip_levels_out = cube_map->info.mip_count;
+    }
+    return RenderTexture(m_uploader->uploadImageLevels(VK_FORMAT_E5B9G9R9_UFLOAT_PACK32, sizeof(uint32_t), cube_map->info.face_size,
+                                                       cube_map->info.face_size, cube_map->info.mip_count, true,
+                                                       {cube_pak.subspan(ResourceCubeMap::HEADER_SIZE)}, upload_mode));
+}
+
+RenderEnvironment RenderBackend::createEnvironment(std::span<const uint8_t> sky_pak, std::span<const uint8_t> irradiance_pak,
+                                                   std::span<const uint8_t> specular_pak, RenderUploadMode upload_mode)
+{
+    VkDescriptorSet descriptor_set{};
+    VkDescriptorSetAllocateInfo info{};
+    info.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_ALLOCATE_INFO;
+    info.descriptorPool = m_main_descriptor_pool;
+    info.descriptorSetCount = 1;
+    info.pSetLayouts = &m_environment_set_layout;
+    GC_CHECKVK(vkAllocateDescriptorSets(m_device.getHandle(), &info, &descriptor_set));
+
+    // (the small ones first, so that the sky doesn't hold them up)
+    uint32_t specular_level_count{};
+    RenderTexture irradiance = createCubeMap(irradiance_pak, upload_mode);
+    RenderTexture specular = createCubeMap(specular_pak, upload_mode, &specular_level_count);
+    RenderTexture sky = createCubeMap(sky_pak, upload_mode);
+    return RenderEnvironment(m_device.getHandle(), std::move(sky), std::move(irradiance), std::move(specular), specular_level_count,
+                             GPUDescriptorSet(m_delete_queue, m_main_descriptor_pool, descriptor_set));
+}
+
+RenderMesh RenderBackend::createMesh(std::span<const MeshVertex> vertices, std::span<const uint16_t> indices, RenderUploadMode upload_mode)
 {
     GC_ASSERT(vertices.size() <= static_cast<size_t>(std::numeric_limits<decltype(indices)::value_type>::max()));
     GC_ASSERT(indices.size() <= static_cast<size_t>(std::numeric_limits<uint32_t>::max()));
@@ -1528,29 +1370,7 @@ RenderMesh RenderBackend::createMesh(std::span<const MeshVertex> vertices, std::
     const size_t indices_size = indices.size() * sizeof(decltype(indices)::value_type);
     const VkDeviceSize buffer_size = static_cast<VkDeviceSize>(vertices_size + indices_size);
 
-    // create and map staging buffer
-    VkBuffer staging_buffer{};
-    VmaAllocation staging_alloc{};
-    {
-        VkBufferCreateInfo staging_buffer_info{};
-        staging_buffer_info.sType = VK_STRUCTURE_TYPE_BUFFER_CREATE_INFO;
-        staging_buffer_info.size = buffer_size;
-        staging_buffer_info.usage = VK_BUFFER_USAGE_TRANSFER_SRC_BIT;
-        staging_buffer_info.sharingMode = VK_SHARING_MODE_EXCLUSIVE;
-        VmaAllocationCreateInfo staging_alloc_info{};
-        staging_alloc_info.usage = VMA_MEMORY_USAGE_AUTO;
-        staging_alloc_info.flags = VMA_ALLOCATION_CREATE_HOST_ACCESS_SEQUENTIAL_WRITE_BIT;
-        staging_alloc_info.priority = 0.5f;
-        GC_CHECKVK(vmaCreateBuffer(m_allocator.getHandle(), &staging_buffer_info, &staging_alloc_info, &staging_buffer, &staging_alloc, nullptr));
-    }
-    GPUBuffer managed_staging_buffer(m_delete_queue, staging_buffer, staging_alloc);
-    uint8_t* data_dest{};
-    GC_CHECKVK(vmaMapMemory(m_allocator.getHandle(), staging_alloc, reinterpret_cast<void**>(&data_dest)));
-    std::memcpy(data_dest, reinterpret_cast<const uint8_t*>(vertices.data()), vertices_size);
-    std::memcpy(data_dest + vertices_size, reinterpret_cast<const uint8_t*>(indices.data()), indices_size);
-    vmaUnmapMemory(m_allocator.getHandle(), staging_alloc);
-
-    // create destination buffer
+    // One buffer holds the vertices, then the indices
     VkBuffer buffer{};
     VmaAllocation buffer_alloc{};
     {
@@ -1565,81 +1385,13 @@ RenderMesh RenderBackend::createMesh(std::span<const MeshVertex> vertices, std::
         buffer_alloc_info.priority = 0.5f;
         GC_CHECKVK(vmaCreateBuffer(m_allocator.getHandle(), &buffer_info, &buffer_alloc_info, &buffer, &buffer_alloc, nullptr));
     }
-
-    // copy vertices and indices to the buffer
-    {
-        VkCommandBufferAllocateInfo cmd_info{};
-        cmd_info.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_ALLOCATE_INFO;
-        cmd_info.level = VK_COMMAND_BUFFER_LEVEL_PRIMARY;
-        cmd_info.commandPool = m_transfer_cmd_pool;
-        cmd_info.commandBufferCount = 1;
-        VkCommandBuffer cmd{};
-        GC_CHECKVK(vkAllocateCommandBuffers(m_device.getHandle(), &cmd_info, &cmd));
-
-        VkCommandBufferBeginInfo begin_info{};
-        begin_info.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO;
-        begin_info.flags = VK_COMMAND_BUFFER_USAGE_ONE_TIME_SUBMIT_BIT;
-        GC_CHECKVK(vkBeginCommandBuffer(cmd, &begin_info));
-
-        VkBufferCopy region{};
-        region.srcOffset = 0;
-        region.dstOffset = 0;
-        region.size = buffer_size;
-        vkCmdCopyBuffer(cmd, staging_buffer, buffer, 1, &region);
-
-        VkBufferMemoryBarrier2 barrier{};
-        barrier.sType = VK_STRUCTURE_TYPE_BUFFER_MEMORY_BARRIER_2;
-        barrier.srcStageMask = VK_PIPELINE_STAGE_2_COPY_BIT;
-        barrier.srcAccessMask = VK_ACCESS_2_TRANSFER_WRITE_BIT;
-        barrier.dstStageMask = VK_PIPELINE_STAGE_2_VERTEX_INPUT_BIT;
-        barrier.dstAccessMask = VK_ACCESS_2_INDEX_READ_BIT | VK_ACCESS_2_VERTEX_ATTRIBUTE_READ_BIT;
-        barrier.srcQueueFamilyIndex = m_device.getQueueFamilyIndex();
-        barrier.dstQueueFamilyIndex = m_device.getQueueFamilyIndex();
-        barrier.buffer = buffer;
-        barrier.offset = 0;
-        barrier.size = buffer_size;
-        VkDependencyInfo dependency{};
-        dependency.sType = VK_STRUCTURE_TYPE_DEPENDENCY_INFO;
-        dependency.bufferMemoryBarrierCount = 1;
-        dependency.pBufferMemoryBarriers = &barrier;
-        vkCmdPipelineBarrier2(cmd, &dependency);
-
-        GC_CHECKVK(vkEndCommandBuffer(cmd));
-
-        VkCommandBufferSubmitInfo cmd_submit_info{};
-        cmd_submit_info.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_SUBMIT_INFO;
-        cmd_submit_info.commandBuffer = cmd;
-        VkSemaphoreSubmitInfo signal_info{};
-        signal_info.sType = VK_STRUCTURE_TYPE_SEMAPHORE_SUBMIT_INFO;
-        signal_info.semaphore = m_transfer_timeline_semaphore;
-        signal_info.value = ++m_transfer_timeline_value;
-        signal_info.stageMask = VK_PIPELINE_STAGE_2_COPY_BIT;
-        VkSubmitInfo2 submit_info{};
-        submit_info.sType = VK_STRUCTURE_TYPE_SUBMIT_INFO_2;
-        submit_info.waitSemaphoreInfoCount = 0;
-        submit_info.commandBufferInfoCount = 1;
-        submit_info.pCommandBufferInfos = &cmd_submit_info;
-        submit_info.signalSemaphoreInfoCount = 1;
-        submit_info.pSignalSemaphoreInfos = &signal_info;
-        const auto transfer_queue = m_device.getTransferQueue();
-        GC_CHECKVK(vkQueueSubmit2(transfer_queue, 1, &submit_info, VK_NULL_HANDLE));
-
-        GPUResourceDeleteQueue::DeletionEntry command_buffer_deletion_entry{};
-        command_buffer_deletion_entry.timeline_semaphore = m_transfer_timeline_semaphore;
-        command_buffer_deletion_entry.resource_free_signal_value = m_transfer_timeline_value;
-        const VkCommandPool transfer_cmd_pool = m_transfer_cmd_pool;
-        command_buffer_deletion_entry.deleter = [transfer_cmd_pool, cmd](VkDevice device, [[maybe_unused]] VmaAllocator allocator) {
-            GC_TRACE("freeing command buffer: {}", reinterpret_cast<void*>(cmd));
-            vkFreeCommandBuffers(device, transfer_cmd_pool, 1, &cmd);
-        };
-        m_delete_queue.markForDeletion(command_buffer_deletion_entry);
-    }
-
-    managed_staging_buffer.useResource(m_transfer_timeline_semaphore, m_transfer_timeline_value);
     GPUBuffer managed_buffer(m_delete_queue, buffer, buffer_alloc);
-    managed_buffer.useResource(m_transfer_timeline_semaphore, m_transfer_timeline_value);
 
-    return RenderMesh(std::move(managed_buffer), static_cast<VkDeviceSize>(vertices_size), VK_INDEX_TYPE_UINT16, num_indices);
+    const std::span<const uint8_t> vertex_bytes(reinterpret_cast<const uint8_t*>(vertices.data()), vertices_size);
+    const std::span<const uint8_t> index_bytes(reinterpret_cast<const uint8_t*>(indices.data()), indices_size);
+    RenderUpload upload = m_uploader->uploadBuffer(buffer, {vertex_bytes, index_bytes}, upload_mode);
+
+    return RenderMesh(std::move(managed_buffer), std::move(upload), static_cast<VkDeviceSize>(vertices_size), VK_INDEX_TYPE_UINT16, num_indices);
 }
 
 // textures passed as parameters must outlive the material!

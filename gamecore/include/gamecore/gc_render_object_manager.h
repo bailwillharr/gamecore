@@ -167,8 +167,13 @@ public:
         // Not found, create new mesh
         const ResourceMesh* mesh_resource = m_resource_manager.get<ResourceMesh>(name);
         if (mesh_resource) {
-            auto inserted =
-                m_meshes.emplace(name, std::make_unique<RenderMesh>(m_render_backend.createMesh(mesh_resource->vertices.get(), mesh_resource->indices.get())));
+            // (the vertices and the indices of a mesh from the content are both in the same asset)
+            const RenderUploadMode upload_mode = (getRenderUploadMode(m_resource_manager, mesh_resource->vertices.get()) == RenderUploadMode::BACKGROUND &&
+                                                  getRenderUploadMode(m_resource_manager, mesh_resource->indices.get()) == RenderUploadMode::BACKGROUND)
+                                                     ? RenderUploadMode::BACKGROUND
+                                                     : RenderUploadMode::IMMEDIATE;
+            auto inserted = m_meshes.emplace(name, std::make_unique<RenderMesh>(m_render_backend.createMesh(
+                                                       mesh_resource->vertices.get(), mesh_resource->indices.get(), upload_mode)));
             return inserted.first->second.get();
         }
         else {

@@ -14,7 +14,8 @@ enum class LightType : uint8_t {
     POINT = 0,       // shines in every direction from the entity's position, as far as its range
     DIRECTIONAL = 1, // shines on the whole world along the entity's -Z axis (as cameras look), like the sun. Only one per world is drawn
     AMBIENT = 2,     // lights every surface in the world from every direction, like the sky. Nothing is lit by it unless there is one.
-                     // Where the entity is doesn't matter. Several add up
+                     // Where the entity is doesn't matter. Several add up.
+                     // A sky does this properly (see SkyboxComponent): while the world is lit by one, ambient lights aren't drawn
 };
 
 struct LightComponent {

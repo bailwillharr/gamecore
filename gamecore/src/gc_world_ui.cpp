@@ -17,10 +17,12 @@
 #include "gamecore/gc_byte_writer.h"
 #include "gamecore/gc_camera_component.h"
 #include "gamecore/gc_collider_component.h"
+#include "gamecore/gc_collision_bvh_component.h"
 #include "gamecore/gc_light_component.h"
 #include "gamecore/gc_renderable_component.h"
 #include "gamecore/gc_replication.h"
 #include "gamecore/gc_shadow_map_component.h"
+#include "gamecore/gc_skybox_component.h"
 #include "gamecore/gc_transform_component.h"
 #include "gamecore/gc_transform_system.h"
 #include "gamecore/gc_world.h"
@@ -136,10 +138,28 @@ void viewShadowMap(World& world, Entity entity)
     ImGui::DragFloat("Depth bias", &s.m_depth_bias, 0.00001f, 0.0f, 1.0f, "%.6f");
 }
 
+void viewSkybox(World& world, Entity entity)
+{
+    SkyboxComponent& s = *world.getComponent<SkyboxComponent>(entity);
+    textName("Sky", s.m_sky);
+    textName("Irradiance", s.m_irradiance);
+    textName("Reflections", s.m_specular);
+    ImGui::DragFloat("Illuminance", &s.m_illuminance, 10.0f, 0.0f, 1.0e6f, "%.0f lux", ImGuiSliderFlags_Logarithmic);
+    ImGui::Checkbox("Visible", &s.m_visible);
+    ImGui::Checkbox("Lights the world", &s.m_lighting);
+    ImGui::Checkbox("Follows the directional light", &s.m_follow_sun);
+}
+
 void viewCollider(World& world, Entity entity)
 {
     const ColliderComponent& c = *world.getComponent<ColliderComponent>(entity);
     textName("Mesh", c.m_mesh);
+}
+
+void viewCollisionBvh(World& world, Entity entity)
+{
+    const CollisionBvhComponent& c = *world.getComponent<CollisionBvhComponent>(entity);
+    textName("Baked trees", c.m_bvh);
 }
 
 void viewReplicated(World& world, Entity entity)
@@ -164,7 +184,9 @@ void registerEngineViewers()
     viewers.try_emplace(CameraComponent::NAME, viewCamera);
     viewers.try_emplace(LightComponent::NAME, viewLight);
     viewers.try_emplace(ShadowMapComponent::NAME, viewShadowMap);
+    viewers.try_emplace(SkyboxComponent::NAME, viewSkybox);
     viewers.try_emplace(ColliderComponent::NAME, viewCollider);
+    viewers.try_emplace(CollisionBvhComponent::NAME, viewCollisionBvh);
     viewers.try_emplace(ReplicatedComponent::NAME, viewReplicated);
 }
 

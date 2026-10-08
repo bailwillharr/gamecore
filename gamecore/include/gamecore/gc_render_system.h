@@ -1,5 +1,6 @@
 #pragma once
 
+#include <array>
 #include <memory>
 #include <unordered_map>
 #include <tuple>
@@ -39,6 +40,11 @@ private:
     // The shadow map of the world's ShadowMapComponent. It is kept until a different one is wanted.
     Name m_shadow_map_name{};
     std::unique_ptr<RenderShadowMap> m_shadow_map{}; // null if m_shadow_map_name couldn't be loaded
+
+    // The sky of the world's SkyboxComponent. It is kept until a different one is wanted.
+    std::array<Name, 3> m_environment_names{};         // the sky, its irradiance and its reflections
+    std::unique_ptr<RenderEnvironment> m_environment{}; // null if they couldn't be loaded
+    CubeMapInfo m_environment_info{};                   // what the sky's asset says about it
     std::unordered_map<std::pair<RenderMesh*, RenderMaterial*>, std::vector<glm::mat4>, MeshMaterialPairHash> m_instance_groups;
 
 public:

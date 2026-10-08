@@ -1,11 +1,16 @@
 An example game that loads an entire world from one prefab and lets the player fly around it.
 
-    temple_explorer [PREFAB]
+    temple_explorer [PREFAB] [SKY]
 
 The prefab is "temple.glb", from content/temple.gcpak, unless another prefab's name is given. Any prefab in any of the .gcpak files
 in the content directory can be loaded. To make one from a glTF file:
 
     gcpak_editor --pack temple.glb --out content/temple.gcpak
+
+A glTF scene has no sky, so one is added: it is seen behind the world and lights it (see gc::SkyboxComponent). It is
+"mpumalanga_veld_puresky_8k.hdr" unless another sky's name is given, such as "table_mountain_2_puresky_8k.hdr". Skies are made from
+the .hdr files in content/textures/skyboxes when content/textures is packaged. The sky is turned so that its sun is in the same
+compass direction as the scene's directional light, and is as bright as suits that light.
 
 Controls:
     Mouse               look around
@@ -15,6 +20,8 @@ Controls:
     Left Shift          fly faster
     Up / Down arrows    double / halve the flying speed
     L                   turn the light on the camera on and off
+    I                   turn the sky's lighting on and off. When off, the world is lit by a flat ambient light of the same
+                        strength instead, as it was before the engine had skies. The sky is still seen
     C                   turn collisions on and off. When on, the camera can't fly through anything that has a ColliderComponent
                         (everything, in a prefab that gcpak_editor made from a glTF file)
     F10                 show the debug windows and free the mouse

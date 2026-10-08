@@ -4,6 +4,7 @@ Creates and edits .gcpak files, which are what the engine loads assets from. It 
     .png .jpg .jpeg       texture. Either sRGB (colors) or linear (data), see below
     .obj                  mesh (triangles only, with texture coordinates and normals)
     .gltf .glb            scene, compiled into a prefab. See below
+    .hdr                  HDR panorama of a sky, compiled into the cube maps of a skybox and its lighting. See SKIES below
 
 Assets are named after the file they came from, including its extension (e.g. "bricks.png"), whatever directory it was in.
 Along with every .gcpak file, a .txt file with the names of the assets is saved. The editor needs it to open the .gcpak file again.
@@ -34,6 +35,7 @@ No window is opened, so this also works before content/shaders.gcpak exists.
     gcpak_editor --pack PATH... [--out FILE.gcpak] [--append] [--no-recurse]
     gcpak_editor --list FILE.gcpak
     gcpak_editor --bake-shadows PREFAB FILE.gcpak... [--resolution N] [--no-cast ENTITY]...
+    gcpak_editor --bake-collision PREFAB FILE.gcpak...
 
     --pack PATH...      Compile these source files. For a directory, every source file in it. Other files are ignored.
     --out FILE.gcpak    Where to save. Can be left out when packing a single directory: content/textures is saved to
@@ -44,6 +46,8 @@ No window is opened, so this also works before content/shaders.gcpak exists.
     --list FILE.gcpak   Print the assets in a package file
     --bake-shadows PREFAB FILE.gcpak...
                         Bake the shadow map of a prefab. See BAKING SHADOWS below
+    --bake-collision PREFAB FILE.gcpak...
+                        Bake the collision trees of a prefab. See BAKING COLLISION below
 
 The exit code is zero if every file compiled. The package file is still saved if some didn't.
 (On Windows the editor isn't a console program. Its output shows up in the console it was started from, but the console doesn't
@@ -79,7 +83,29 @@ loads, but not necessarily the same one as the prefab.
     directional and point lights, with their color, range and intensity. The engine uses glTF's physical units (lux and
     candela), so nothing is converted. A light without a range has no limit. Spot lights become point lights.
   - If the scene has a directional light, its shadows are baked, as --bake-shadows does for any prefab. See below.
+  - The collision trees of the scene's meshes are baked, as --bake-collision does for any prefab. See below.
   - Animations, skins and morph targets are left out.
+
+SKIES
+
+A .hdr file is taken to be a panorama of a whole sky (equirectangular: twice as wide as it is high, with the horizon across the
+middle), as HDRI sites provide. It becomes the three cube maps that a gc::SkyboxComponent uses, named after the file:
+
+    "evening.hdr"              the sky as it is seen behind the world. As sharp as the panorama (up to 2048x2048 a face, 96 MB)
+    "evening.hdr/irradiance"   the light that a surface facing each direction gets from the whole sky, for diffuse surfaces
+    "evening.hdr/specular"     the sky as it is reflected by surfaces of each roughness, in six mip levels: sharp to blurry
+
+The last two are what lights the world (image based lighting). They are worked out here so that the engine only has to read
+them. The sun is left out of them, though it stays in the first: texels that are far brighter than the rest of the sky (more
+than 8 times what 99% of the sky is below) are dimmed to match it. A world's sun is a directional light, which has shadows, and
+it shouldn't light everything a second time through the sky. Where the sun was, and how its light compares to the rest of the
+sky's, is stored in the sky's asset and printed, so that a game can match its directional light to it. The engine can turn the
+sky so that its sun is over the directional light (SkyboxComponent::setFollowSun(), which is on by default).
+
+The panorama's +Y is up, and is turned to the engine's +Z. The cube maps store what the file has: relative brightness, in a
+high dynamic range format. How bright the sky is in the world, in lux, is set on the SkyboxComponent.
+
+The games' skies are in content/textures/skyboxes, so they are part of content/textures.gcpak. Baking one takes a few seconds.
 
 BAKING SHADOWS
 
@@ -105,4 +131,24 @@ The engine draws the shadows on everything, but only the prefab's own meshes cas
 light had when they were baked. The holes of alpha tested materials don't cast shadows. Alpha blended materials cast a full
 shadow where their alpha is at least 0.5 and none elsewhere. Renderables that aren't visible cast none.
 
-    gcpak_editor --bake-shadows ember_court.map content/ember_court.gcpak --no-cast sky
+    gcpak_editor --bake-shadows ember_court.map content/ember_court.gcpak --no-cast beacon
+
+BAKING COLLISION
+
+    gcpak_editor --bake-collision PREFAB FILE.gcpak...
+
+The engine finds what a ray or a sphere hits in a collider's mesh with a tree of bounding boxes around the mesh's triangles
+(a BVH). It can build that tree when a collider with the mesh first appears, but for a whole world that is a noticeable pause
+when it is loaded, so the trees can be built here instead. As with shadows, any prefab can be baked, however it was made.
+
+PREFAB and the package files are as for --bake-shadows. The tree of every mesh that one of the prefab's ColliderComponents uses
+is put into one asset named "PREFAB/bvh". The prefab is given a root entity named "collision_bvh" with a CollisionBvhComponent
+that uses it. Both are saved into the package file that the prefab was in. Baking the same prefab again replaces them.
+A mesh that isn't found is left out, with a warning, and has its tree built by the engine as before.
+
+The game has to register gc::CollisionBvhComponent for the baked trees to be used. Nothing else about colliders changes: the
+trees are in the space of their meshes, so the prefab can be put anywhere, its colliders can move, and colliders that aren't
+from a baked prefab work alongside them. Any number of baked prefabs can be loaded at once. The asset has its own copy of the
+positions of the meshes, so bake again if a mesh is changed (compiling a glTF file always does).
+
+    gcpak_editor --bake-collision ember_court.map content/ember_court.gcpak

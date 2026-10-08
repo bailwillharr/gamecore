@@ -27,6 +27,8 @@
 #include <glm/vec4.hpp>
 
 #include <gamecore/gc_collider_component.h>
+#include <gamecore/gc_collision_bvh.h>
+#include <gamecore/gc_collision_bvh_component.h>
 #include <gamecore/gc_collision_system.h>
 #include <gamecore/gc_content.h>
 #include <gamecore/gc_frame_state.h>
@@ -276,7 +278,8 @@ static void compareBoxQueries(gc::World& world, const gc::CollisionSystem& colli
 
 int main()
 {
-    for (const char* const name : {"TransformComponent", "ColliderComponent", "cube", "ball", "plane", "missing"}) {
+    for (const char* const name :
+         {"TransformComponent", "ColliderComponent", "CollisionBvhComponent", "cube", "ball", "plane", "missing", "baked", "baked_plane", "bvh"}) {
         (void)gc::Name(name);
     }
 
@@ -296,6 +299,7 @@ int main()
 
     gc::World world{};
     world.registerComponent<gc::ColliderComponent, gc::ComponentArrayType::SPARSE>();
+    world.registerComponent<gc::CollisionBvhComponent, gc::ComponentArrayType::SPARSE>();
     world.registerSystem<gc::CollisionSystem>(resource_manager);
     gc::CollisionSystem& collision = world.getSystem<gc::CollisionSystem>();
     gc::FrameState frame_state{};
@@ -434,6 +438,108 @@ int main()
     CHECK(collision.getMeshCount() == 0);
     CHECK(collision.getTreeHeight() == 0);
     CHECK(!collision.raycast(gc::Ray{glm::vec3{0.0f}, glm::vec3{1.0f, 0.0f, 0.0f}}).hit);
+
+    //
+    // Baked trees: the same queries, with the trees of the meshes read from COLLISION_BVH assets instead of built
+    //
+
+    const auto removeColliders = [&]() {
+        std::vector<gc::Entity> with_colliders{};
+        world.forEach<gc::ColliderComponent>([&](gc::Entity entity, const gc::ColliderComponent&) { with_colliders.push_back(entity); });
+        for (const gc::Entity entity : with_colliders) {
+            world.deleteEntity(entity);
+        }
+    };
+    const auto addColliders = [&]() {
+        for (int i = 0; i < 200; ++i) {
+            const glm::quat rotation = glm::angleAxis(randomFloat(0.0f, 6.28f), glm::normalize(randomVec3(-1.0f, 1.0f) + glm::vec3{0.0f, 0.0f, 1.5f}));
+            const glm::vec3 scale = (i % 3 == 0) ? randomVec3(0.5f, 4.0f) : glm::vec3{randomFloat(0.5f, 3.0f)};
+            const gc::Entity entity = world.createEntity("collider"_name, gc::ENTITY_NONE, randomVec3(-18.0f, 18.0f), rotation, scale);
+            world.addComponent<gc::ColliderComponent>(entity).setMesh((i % 2 == 0) ? "cube"_name : ((i % 5 == 0) ? "plane"_name : "ball"_name));
+        }
+    };
+    const auto makeBakedData = [&](std::initializer_list<gc::Name> mesh_names) {
+        std::vector<std::pair<gc::Name, gc::CollisionBvh>> meshes{};
+        for (const gc::Name mesh_name : mesh_names) {
+            const gc::ResourceMesh* const mesh = resource_manager.get<gc::ResourceMesh>(mesh_name);
+            meshes.emplace_back(mesh_name, gc::buildCollisionBvh(mesh->vertices.get(), mesh->indices.get()));
+        }
+        return gc::makeCollisionBvhData(meshes);
+    };
+
+    print("Baked collision trees: the asset");
+    // (the resources are views of this data, so it is kept until the end)
+    const std::vector<uint8_t> baked_data = makeBakedData({"cube"_name, "ball"_name});
+    const std::vector<uint8_t> baked_plane_data = makeBakedData({"plane"_name, "cube"_name});
+    {
+        const auto resource = gc::ResourceCollisionBvh::create(baked_data);
+        CHECK(resource.has_value());
+        CHECK(resource && resource->meshes.size() == 2);
+        if (resource && resource->meshes.contains("ball"_name)) {
+            // what comes out of the asset is what went in
+            const gc::ResourceMesh* const mesh = resource_manager.get<gc::ResourceMesh>("ball"_name);
+            const gc::CollisionBvh built = gc::buildCollisionBvh(mesh->vertices.get(), mesh->indices.get());
+            const gc::CollisionBvhView& baked = resource->meshes.at("ball"_name);
+            CHECK(baked.positions.size() == built.positions.size() && baked.positions.size() == mesh->vertices.get().size());
+            CHECK(baked.triangles.size() == built.triangles.size() && baked.triangles.size() == mesh->indices.get().size());
+            CHECK(baked.nodes.size() == built.nodes.size() && !baked.nodes.empty());
+            CHECK(std::equal(baked.triangles.begin(), baked.triangles.end(), built.triangles.begin(), built.triangles.end()));
+            CHECK(std::equal(baked.positions.begin(), baked.positions.end(), built.positions.begin(), built.positions.end()));
+            CHECK(std::equal(baked.nodes.begin(), baked.nodes.end(), built.nodes.begin(), built.nodes.end(),
+                             [](const gc::CollisionBvhNode& a, const gc::CollisionBvhNode& b) {
+                                 return a.box.min == b.box.min && a.box.max == b.box.max && a.first == b.first && a.count == b.count;
+                             }));
+        }
+        // data that has been cut short, or isn't this kind of asset at all, is refused
+        for (const size_t size : {size_t{0}, size_t{7}, size_t{24}, baked_data.size() / 2, baked_data.size() - 1}) {
+            CHECK(!gc::ResourceCollisionBvh::create(std::span<const uint8_t>(baked_data.data(), size)).has_value());
+        }
+        std::vector<uint8_t> wrong_version = baked_data;
+        wrong_version[0] ^= 0xff;
+        CHECK(!gc::ResourceCollisionBvh::create(wrong_version).has_value());
+    }
+    CHECK(!resource_manager.add<gc::ResourceCollisionBvh>(*gc::ResourceCollisionBvh::create(baked_data), "baked"_name).empty());
+    CHECK(!resource_manager.add<gc::ResourceCollisionBvh>(*gc::ResourceCollisionBvh::create(baked_plane_data), "baked_plane"_name).empty());
+
+    print("Baked collision trees: one asset, with two of the three meshes in it");
+    const gc::Entity baked_entity = world.createEntity("bvh"_name);
+    world.addComponent<gc::CollisionBvhComponent>(baked_entity).setBvh("baked"_name);
+    addColliders();
+    world.update(frame_state);
+    CHECK(collision.getColliderCount() == 200);
+    CHECK(collision.getMeshCount() == 3);
+    CHECK(collision.getBakedMeshCount() == 2); // the plane's tree is built
+    compareRaycasts(world, resource_manager, collision, 600, "ray casts with baked trees");
+    compareSpheres(world, resource_manager, collision, 300, "spheres with baked trees");
+    compareBoxQueries(world, collision, 300);
+
+    print("Baked collision trees: two assets at once, with a mesh that is in both");
+    removeColliders();
+    world.update(frame_state);
+    CHECK(collision.getMeshCount() == 0);
+    const gc::Entity baked_plane_entity = world.createEntity("bvh"_name);
+    world.addComponent<gc::CollisionBvhComponent>(baked_plane_entity).setBvh("baked_plane"_name);
+    addColliders();
+    world.update(frame_state);
+    CHECK(collision.getMeshCount() == 3);
+    CHECK(collision.getBakedMeshCount() == 3);
+    compareRaycasts(world, resource_manager, collision, 600, "ray casts with two baked assets");
+    compareSpheres(world, resource_manager, collision, 300, "spheres with two baked assets");
+
+    print("Baked collision trees: an asset is taken away while its trees are in use, and one that doesn't exist (an error is logged)");
+    world.deleteEntity(baked_entity);
+    world.getComponent<gc::CollisionBvhComponent>(baked_plane_entity)->setBvh("missing"_name);
+    world.update(frame_state);
+    CHECK(collision.getBakedMeshCount() == 3); // the colliders that were there keep their trees
+    compareRaycasts(world, resource_manager, collision, 600, "ray casts after the assets have gone");
+    removeColliders();
+    world.update(frame_state);
+    addColliders();
+    world.update(frame_state);
+    CHECK(collision.getMeshCount() == 3);
+    CHECK(collision.getBakedMeshCount() == 0); // new colliders have theirs built
+    compareRaycasts(world, resource_manager, collision, 600, "ray casts with built trees again");
+    compareSpheres(world, resource_manager, collision, 300, "spheres with built trees again");
 
     if (s_failures == 0) {
         print("PASSED ({} checks)", s_checks);

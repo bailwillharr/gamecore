@@ -29,8 +29,10 @@ game registers its components and systems, calls gc::loadPrefab() once, and that
     the court           every wall, floor, ramp and crate: a RenderableComponent, and a ColliderComponent with the same mesh
     materials           one of every kind the renderer has: all three textures, a color texture only, no textures, see-through
                         glass (alpha blended), a grating with holes (alpha tested), and things that glow (emissive)
-    the sky             a huge sphere seen from the inside, with an emissive texture
-    lights              the sun (directional), the sky (ambient), and lamps and a fire (point lights), in lux and candela
+    the sky             a SkyboxComponent: what is seen behind the court, and the light that it gives it. Its cube maps are
+                        made from an HDR panorama (content/textures/skyboxes) and are in content/textures.gcpak
+    lights              the sun (directional), and lamps and a fire (point lights), in lux and candela. Also an ambient
+                        light, which is only drawn when the sky's lighting is turned off (F10, Render menu)
     a camera            looks over the court when there is no player to look through
     baked shadows       a ShadowMapComponent: see below
     where things go     spawn points, pickup spawners and the sentinels' patrol routes. These are components of the game's own
@@ -42,13 +44,14 @@ and makes the meshes, materials and two of the textures itself. The other textur
 found by name, whichever package file they are in.
 
 The engine only draws shadows that were baked into a shadow map beforehand. gcpak_editor can bake one for any prefab that has a
-directional light, so making the map takes two steps:
+directional light, and the collision trees of its meshes, so that the game has nothing to build when it loads the map. So
+making the map takes three steps:
 
     ember_court_mapgen content/ember_court.gcpak
-    gcpak_editor --bake-shadows ember_court.map content/ember_court.gcpak --no-cast sky --no-cast beacon
+    gcpak_editor --bake-shadows ember_court.map content/ember_court.gcpak --no-cast beacon
+    gcpak_editor --bake-collision ember_court.map content/ember_court.gcpak
 
-(The sky and the beacon are left out as the sky isn't really there, and a baked shadow can't turn with the beacon. See
-tools/gcpak_editor/README.) The build does both steps: the ember_court_map target, which ember_court depends on. The map is made
+(The beacon is left out as a baked shadow can't turn with it. See tools/gcpak_editor/README.) The build does all of them: the ember_court_map target, which ember_court depends on. The map is made
 again when the map generator or gcpak_editor changes. content/shaders.gcpak, textures.gcpak and meshes.gcpak have to be there
 already, as for the other games (see tools/gcpak_editor/README).
 

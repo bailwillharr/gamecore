@@ -23,7 +23,9 @@
 #include <gamecore/gc_camera_component.h>
 #include <gamecore/gc_light_component.h>
 #include <gamecore/gc_shadow_map_component.h>
+#include <gamecore/gc_skybox_component.h>
 #include <gamecore/gc_collider_component.h>
+#include <gamecore/gc_collision_bvh_component.h>
 #include <gamecore/gc_render_system.h>
 #include <gamecore/gc_camera_system.h>
 #include <gamecore/gc_light_system.h>
@@ -61,7 +63,10 @@ static void initEditorWorld(gc::App& app, const std::filesystem::path& open_file
     world.registerComponent<gc::CameraComponent, gc::ComponentArrayType::SPARSE>();
     world.registerComponent<gc::LightComponent, gc::ComponentArrayType::SPARSE>();
     world.registerComponent<gc::ShadowMapComponent, gc::ComponentArrayType::SPARSE>();
-    world.registerComponent<gc::ColliderComponent, gc::ComponentArrayType::SPARSE>(); // only so that prefabs with colliders load quietly
+    // only so that prefabs with colliders load quietly
+    world.registerComponent<gc::ColliderComponent, gc::ComponentArrayType::SPARSE>();
+    world.registerComponent<gc::CollisionBvhComponent, gc::ComponentArrayType::SPARSE>();
+    world.registerComponent<gc::SkyboxComponent, gc::ComponentArrayType::SPARSE>();
 
     world.registerSystem<gc::RenderSystem>(resource_manager, render_backend);
     world.registerSystem<gc::CameraSystem>();

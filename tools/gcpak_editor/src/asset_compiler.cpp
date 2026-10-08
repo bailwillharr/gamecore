@@ -24,6 +24,7 @@
 #include <gamecore/gc_crc_table.h>
 #include <gamecore/gc_gen_tangents.h>
 
+#include "environment_baker.h"
 #include "gltf_compiler.h"
 
 static std::string getLowercaseExtension(const std::filesystem::path& path)
@@ -47,6 +48,9 @@ SourceFileKind getSourceFileKind(const std::filesystem::path& path)
     }
     else if (ext == ".gltf" || ext == ".glb") {
         return SourceFileKind::GLTF;
+    }
+    else if (ext == ".hdr") {
+        return SourceFileKind::SKY;
     }
     else {
         return SourceFileKind::UNKNOWN;
@@ -275,6 +279,8 @@ bool compileSourceFile(const std::filesystem::path& path, std::vector<Asset>& as
         break;
     case SourceFileKind::GLTF:
         return compileGltf(path, assets_out);
+    case SourceFileKind::SKY:
+        return compileEnvironment(path, assets_out);
     case SourceFileKind::UNKNOWN:
         GC_ERROR("Don't know how to compile {}", name);
         return false;

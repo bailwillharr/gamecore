@@ -41,6 +41,8 @@
 #include "gamecore/gc_render_material.h"
 #include "gamecore/gc_render_buffer.h"
 #include "gamecore/gc_render_shadow_map.h"
+#include "gamecore/gc_render_environment.h"
+#include "gamecore/gc_render_uploader.h"
 
 struct SDL_Window; // forward-dec
 
@@ -77,6 +79,8 @@ class RenderBackend {
     VkDescriptorSetLayout m_material_set_layout{};
     VkDescriptorSetLayout m_shadow_set_layout{};
     VkSampler m_shadow_sampler{};
+    VkDescriptorSetLayout m_environment_set_layout{};
+    VkSampler m_environment_sampler{};
 
     // pipeline layout for most 3D rendering
     VkPipelineLayout m_world_pipeline_layout{};
@@ -85,6 +89,11 @@ class RenderBackend {
     VkShaderModule m_single_draw_vertex_module{};
     VkShaderModule m_instanced_vertex_module{};
     VkShaderModule m_fragment_module{};
+
+    // The shaders that draw the sky, see setSkyShaders(), and the pipeline that is made from them when a sky is first drawn
+    VkShaderModule m_sky_vertex_module{};
+    VkShaderModule m_sky_fragment_module{};
+    std::unique_ptr<GPUPipeline> m_sky_pipeline{};
 
     // Pipeline variants, indexed by getMaterialPipelineVariant(). One is made the first time a material that needs it is drawn.
     std::array<std::unique_ptr<GPUPipeline>, MATERIAL_PIPELINE_VARIANTS> m_main_pipelines{};
@@ -125,10 +134,11 @@ class RenderBackend {
     uint64_t m_main_timeline_value{};
     uint64_t m_framebuffer_copy_finished_value{}; // there;s only one framebuffer so it's not in FIFStuff
 
-    VkCommandPool m_transfer_cmd_pool{};
     VkSemaphore m_transfer_timeline_semaphore{};
-    uint64_t m_transfer_timeline_value{};
-    
+
+    // Copies the data of textures and meshes to the GPU, and owns the render work thread
+    std::unique_ptr<RenderUploader> m_uploader{};
+
     std::unique_ptr<RenderBuffer> m_frame_uniform_buffer{};
     std::unique_ptr<RenderBuffer> m_instancing_transforms_buffer{};
     
@@ -136,6 +146,9 @@ class RenderBackend {
 
     // A single texel that shadows nothing. Bound when the world has no shadow map, as the shaders always read one.
     std::unique_ptr<RenderShadowMap> m_no_shadow_map{};
+
+    // Black cube maps of a single texel. Bound when the world has no sky, as the shaders always have one to read.
+    std::unique_ptr<RenderEnvironment> m_no_environment{};
 
 #ifdef TRACY_ENABLE
     struct TracyVulkanContext {
@@ -172,11 +185,26 @@ public:
     void setWorldShaders(std::span<const uint8_t> single_draw_vertex_spv, std::span<const uint8_t> instanced_vertex_spv,
                          std::span<const uint8_t> fragment_spv);
 
-    RenderTexture createTexture(std::span<const uint8_t> r8g8b8a8_pak, bool srgb);
-    RenderTexture createCubeTexture(std::array<std::span<const uint8_t>, 6> r8g8b8a8_paks, bool srgb);
+    // What these make can't be drawn with until its data has been uploaded: check isUploaded(). The upload mode says when the
+    // data is read. IMMEDIATE copies it before the function returns, which holds up the frame if there is a lot of it.
+    // BACKGROUND copies it on the render work thread, and the data has to stay valid until the RenderBackend is destroyed.
+    // See RenderUploadMode
+    // Sets the shaders that draw the sky: a vertex shader that covers the screen with one triangle (three vertices, no vertex
+    // buffers) at the far plane, and a fragment shader that reads the sky's cube map (set 3, binding 0). They are given the same
+    // descriptor sets as the world's shaders. Call once, before the first frame. Without them, a sky still lights the world
+    // but isn't seen.
+    void setSkyShaders(std::span<const uint8_t> vertex_spv, std::span<const uint8_t> fragment_spv);
+
+    RenderTexture createTexture(std::span<const uint8_t> r8g8b8a8_pak, bool srgb, RenderUploadMode upload_mode = RenderUploadMode::IMMEDIATE);
+    RenderTexture createCubeTexture(std::array<std::span<const uint8_t>, 6> r8g8b8a8_paks, bool srgb,
+                                    RenderUploadMode upload_mode = RenderUploadMode::IMMEDIATE);
     // r16_pak is the data of a SHADOW_MAP_R16 asset
-    RenderShadowMap createShadowMap(std::span<const uint8_t> r16_pak);
-    RenderMesh createMesh(std::span<const MeshVertex> vertices, std::span<const uint16_t> indices);
+    RenderShadowMap createShadowMap(std::span<const uint8_t> r16_pak, RenderUploadMode upload_mode = RenderUploadMode::IMMEDIATE);
+    // Each is the data of a CUBE_MAP_E5B9G9R9 asset: the sky, its irradiance and its reflections. See SkyboxComponent
+    RenderEnvironment createEnvironment(std::span<const uint8_t> sky_pak, std::span<const uint8_t> irradiance_pak, std::span<const uint8_t> specular_pak,
+                                        RenderUploadMode upload_mode = RenderUploadMode::IMMEDIATE);
+    RenderMesh createMesh(std::span<const MeshVertex> vertices, std::span<const uint16_t> indices,
+                          RenderUploadMode upload_mode = RenderUploadMode::IMMEDIATE);
     // A texture that isn't in 'features' is never sampled, but one still has to be given (any will do).
     RenderMaterial createMaterial(RenderTexture& base_color, RenderTexture& orm, RenderTexture& normal, RenderTexture& emissive, MaterialFeatures features,
                                   MaterialBlendMode blend_mode, const MaterialConstants& constants);
@@ -202,13 +230,18 @@ public:
 
 private:
     // pak is a width, a height, and then the texels
-    RenderTexture createTextureFromPak(std::span<const uint8_t> pak, VkFormat image_format, uint32_t bytes_per_texel, bool generate_mips);
+    RenderTexture createTextureFromPak(std::span<const uint8_t> pak, VkFormat image_format, uint32_t bytes_per_texel, bool generate_mips,
+                                       RenderUploadMode upload_mode);
 
     GPUPipeline createPipeline(VkShaderModule vertex_module, VkShaderModule fragment_module, uint32_t variant,
                                const VkPipelineVertexInputStateCreateInfo& vertex_input_state);
     // variant is from getMaterialPipelineVariant()
     GPUPipeline createMainPipeline(uint32_t variant);
     GPUPipeline createInstancingPipeline(uint32_t variant);
+    GPUPipeline createSkyPipeline();
+
+    // cube_pak is the data of a CUBE_MAP_E5B9G9R9 asset. mip_levels_out is how many mip levels it has
+    RenderTexture createCubeMap(std::span<const uint8_t> cube_pak, RenderUploadMode upload_mode, uint32_t* mip_levels_out = nullptr);
 
     // Makes the pipeline variants that are needed to draw this, if they don't exist yet
     void createMissingPipelines(const WorldDrawData& world_draw_data);

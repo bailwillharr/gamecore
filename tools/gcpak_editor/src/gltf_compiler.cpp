@@ -34,6 +34,7 @@
 #include <gamecore/gc_prefab.h>
 #include <gamecore/gc_renderable_component.h>
 
+#include "prefab_collision_baker.h"
 #include "prefab_shadow_baker.h"
 
 namespace tg = tinygltf;
@@ -138,7 +139,7 @@ public:
 
         const auto prefab_span = m_prefab.getData();
         std::vector<uint8_t> prefab_data(prefab_span.begin(), prefab_span.end());
-        bakeShadows(prefab_data);
+        bakePrefab(prefab_data);
         m_assets.push_back(makeAsset(m_name, std::move(prefab_data), gcpak::GcpakAssetType::PREFAB));
 
         GC_DEBUG("{}: {} entities", m_name, m_prefab.getEntityCount());
@@ -826,10 +827,14 @@ private:
         rotation = glm::normalize(glm::quat_cast(glm::mat3(transform)));
     }
 
-    // If the scene has a directional light, bakes the shadows that the scene's meshes cast in it. The shadow map becomes an asset,
-    // and the prefab gets another root entity with a ShadowMapComponent that uses it. The engine draws those shadows wherever the
-    // prefab is put, as long as the light isn't turned. This is the same bake that any other prefab can be given.
-    void bakeShadows(std::vector<uint8_t>& prefab_data)
+    // What is worked out now so that the engine doesn't have to when it loads the prefab. These are the same bakes that any other
+    // prefab can be given.
+    //  - If the scene has a directional light, the shadows that the scene's meshes cast in it. The shadow map becomes an asset,
+    //    and the prefab gets another root entity with a ShadowMapComponent that uses it. The engine draws those shadows wherever
+    //    the prefab is put, as long as the light isn't turned.
+    //  - The collision trees of the meshes of the scene's colliders. They become one asset, and the prefab gets another root
+    //    entity with a CollisionBvhComponent that uses it.
+    void bakePrefab(std::vector<uint8_t>& prefab_data)
     {
         std::unordered_map<gc::Name, size_t> asset_indices{};
         for (size_t i = 0; i < m_assets.size(); ++i) {
@@ -842,6 +847,10 @@ private:
         Asset shadow_map{};
         if (bakePrefabShadows(m_name, prefab_data, find_asset, PrefabShadowOptions{}, shadow_map) == PrefabShadowResult::BAKED) {
             m_assets.push_back(std::move(shadow_map));
+        }
+        Asset collision_bvh{};
+        if (bakePrefabCollision(m_name, prefab_data, find_asset, collision_bvh) == PrefabCollisionResult::BAKED) {
+            m_assets.push_back(std::move(collision_bvh));
         }
     }
 

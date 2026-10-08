@@ -7,6 +7,17 @@
 
 namespace gc {
 
+// How the data of a resource should be uploaded when a texture or a mesh is made from it (see RenderUploadMode).
+// A resource that was loaded from the content is a view of a mapped .gcpak file, which stays put for as long as the program runs,
+// so it can be read by the render work thread whenever that gets to it. A resource with data of its own (one that the game
+// generated, say) can be deleted or changed at any time, so its data is copied straight away.
+template <typename T>
+RenderUploadMode getRenderUploadMode(const ResourceManager& resource_manager, std::span<const T> resource_data)
+{
+    const std::span<const uint8_t> bytes(reinterpret_cast<const uint8_t*>(resource_data.data()), resource_data.size_bytes());
+    return resource_manager.getContent().contains(bytes) ? RenderUploadMode::BACKGROUND : RenderUploadMode::IMMEDIATE;
+}
+
 class RenderTextureManager {
     struct TextureEntry {
         RenderTexture texture;
@@ -39,7 +50,7 @@ public:
         if (!texture_resource) {
             return nullptr;
         }
-        auto inserted = m_textures.emplace(name, TextureEntry{createRenderTexture(render_backend, *texture_resource), 1});
+        auto inserted = m_textures.emplace(name, TextureEntry{createRenderTexture(resource_manager, render_backend, *texture_resource), 1});
         return &inserted.first->second.texture;
     }
 
@@ -56,9 +67,9 @@ public:
     }
 
 private:
-    RenderTexture createRenderTexture(RenderBackend& render_backend, const ResourceTexture& texture)
+    RenderTexture createRenderTexture(const ResourceManager& resource_manager, RenderBackend& render_backend, const ResourceTexture& texture)
     {
-        return render_backend.createTexture(texture.data.get(), texture.srgb);
+        return render_backend.createTexture(texture.data.get(), texture.srgb, getRenderUploadMode(resource_manager, texture.data.get()));
     }
 };
 

@@ -73,6 +73,73 @@ struct ResourceShadowMap {
     }
 };
 
+// What a cube map asset says about itself. See GcpakAssetType::CUBE_MAP_E5B9G9R9
+struct CubeMapInfo {
+    uint32_t face_size{};
+    uint32_t mip_count{};
+    // The rest is only set for a cube map that is a sky (and not for the irradiance and reflections that go with it). The
+    // illuminances are in the units of the texels: what a texel of 1 is worth is up to whoever draws the sky.
+    glm::vec3 sun_direction{0.0f, 0.0f, 0.0f}; // towards the sun, in the cube map's space. Zero if the sky has no sun
+    float sky_illuminance{};                   // of a surface facing up (+Z), from the whole sky without its sun
+    float sun_illuminance{};                   // of a surface facing the sun, from the sun alone
+};
+
+// A cube map with high dynamic range. See SkyboxComponent
+struct ResourceCubeMap {
+    gct::MaybeOwning<uint8_t> data; // as in the asset
+    CubeMapInfo info{};
+
+    static constexpr size_t HEADER_SIZE = 8 * sizeof(uint32_t);
+
+    // how many texels a cube map has, in all of its faces and mip levels
+    static size_t getTexelCount(uint32_t face_size, uint32_t mip_count)
+    {
+        size_t count = 0;
+        for (uint32_t level = 0; level < mip_count; ++level) {
+            const size_t level_size = face_size >> level;
+            count += 6 * level_size * level_size;
+        }
+        return count;
+    }
+
+    ResourceCubeMap() = default;
+
+    // Empty if the data isn't a whole cube map
+    static std::optional<ResourceCubeMap> create(std::span<const uint8_t> asset_data)
+    {
+        if (asset_data.size() <= HEADER_SIZE) {
+            return {};
+        }
+        std::array<uint32_t, 2> sizes{};
+        std::array<float, 5> sky{};
+        std::memcpy(sizes.data(), asset_data.data(), sizeof(sizes));
+        std::memcpy(sky.data(), asset_data.data() + sizeof(sizes), sizeof(sky));
+
+        ResourceCubeMap cube_map{};
+        cube_map.info.face_size = sizes[0];
+        cube_map.info.mip_count = sizes[1];
+        cube_map.info.sun_direction = glm::vec3{sky[0], sky[1], sky[2]};
+        cube_map.info.sky_illuminance = sky[3];
+        cube_map.info.sun_illuminance = sky[4];
+        // (every level has to have at least a texel, and the sizes are small enough that the sum below can't overflow)
+        if (sizes[0] == 0 || sizes[0] > 32768 || sizes[1] == 0 || sizes[1] > 16 || (sizes[0] >> (sizes[1] - 1)) == 0 ||
+            asset_data.size() != HEADER_SIZE + getTexelCount(sizes[0], sizes[1]) * sizeof(uint32_t)) {
+            return {};
+        }
+        cube_map.data = asset_data;
+        return cube_map;
+    }
+
+    static std::optional<ResourceCubeMap> create(const Content& content_manager, Name name)
+    {
+        const auto asset = content_manager.findAsset(name);
+        if (asset.type != gcpak::GcpakAssetType::CUBE_MAP_E5B9G9R9) {
+            return {};
+        }
+        return create(asset.data);
+    }
+};
+
 struct ResourceMaterial {
     // Any of these can be empty. A material is drawn by a shader that only samples the textures it has.
     Name base_color_texture;
@@ -166,23 +233,22 @@ struct ResourceMesh {
 
     ResourceMesh(std::span<const MeshVertex> vertices, std::span<const uint16_t> indices) : vertices(vertices), indices(indices) {}
 
-    static std::optional<ResourceMesh> create(const Content& content_manager, Name name)
+    // The data of a mesh asset. The vertices and indices are views of it. Empty if the data is too small for its vertices
+    static std::optional<ResourceMesh> create(std::span<const uint8_t> asset_data)
     {
-        const auto asset = content_manager.findAsset(name);
-        if (asset.data.empty() || asset.type != gcpak::GcpakAssetType::MESH_POS12_NORM12_TANG16_UV8_INDEXED16) {
+        if (asset_data.size() <= sizeof(uint16_t)) {
             return {};
         }
 
-        GC_ASSERT(asset.data.size() > sizeof(uint16_t));
-
         uint16_t vertex_count{};
-        std::memcpy(&vertex_count, asset.data.data(), sizeof(uint16_t));
+        std::memcpy(&vertex_count, asset_data.data(), sizeof(uint16_t));
+        if (asset_data.size() < sizeof(uint16_t) + vertex_count * sizeof(MeshVertex)) {
+            return {};
+        }
 
-        const uint8_t* const vertices_location = asset.data.data() + sizeof(uint16_t);
+        const uint8_t* const vertices_location = asset_data.data() + sizeof(uint16_t);
         const uint8_t* const indices_location = vertices_location + vertex_count * sizeof(MeshVertex);
-        const size_t index_count = (asset.data.data() + asset.data.size() - indices_location) / sizeof(uint16_t);
-
-        GC_ASSERT(asset.data.size() == sizeof(uint16_t) + vertex_count * sizeof(MeshVertex) + index_count * sizeof(uint16_t));
+        const size_t index_count = (asset_data.data() + asset_data.size() - indices_location) / sizeof(uint16_t);
 
         const auto vertices_begin = reinterpret_cast<const MeshVertex*>(vertices_location);
         const auto vertices_end = vertices_begin + vertex_count;
@@ -193,6 +259,19 @@ struct ResourceMesh {
         const std::span<const uint16_t> indices(indices_begin, indices_end);
 
         return ResourceMesh(vertices, indices);
+    }
+
+    static std::optional<ResourceMesh> create(const Content& content_manager, Name name)
+    {
+        const auto asset = content_manager.findAsset(name);
+        if (asset.data.empty() || asset.type != gcpak::GcpakAssetType::MESH_POS12_NORM12_TANG16_UV8_INDEXED16) {
+            return {};
+        }
+
+        auto mesh = create(asset.data);
+        GC_ASSERT(mesh.has_value());
+        GC_ASSERT(asset.data.size() == sizeof(uint16_t) + mesh->vertices.get().size_bytes() + mesh->indices.get().size_bytes());
+        return mesh;
     }
 };
 

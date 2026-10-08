@@ -140,12 +140,17 @@ void DebugUI::update(FrameState& frame_state)
                 ImGui::SliderFloat("Ambient scale", &m_ambient_light_scale, 0.0f, 4.0f, "x%.2f");
                 ImGui::EndDisabled();
                 ImGui::MenuItem("Shadows", nullptr, &m_shadows);
+                // Without the sky's light, the world is lit by its ambient lights instead (if it has any)
+                ImGui::MenuItem("Sky lighting (IBL)", nullptr, &m_sky_lighting);
+                ImGui::MenuItem("Draw sky", nullptr, &m_sky_visible);
                 ImGui::SetNextItemWidth(160.0f);
                 ImGui::SliderFloat("Exposure", &m_exposure_compensation, -8.0f, 8.0f, "%+.1f EV");
                 if (ImGui::MenuItem("Reset")) {
                     m_ambient_light = true;
                     m_ambient_light_scale = 1.0f;
                     m_shadows = true;
+                    m_sky_lighting = true;
+                    m_sky_visible = true;
                     m_exposure_compensation = 0.0f;
                 }
                 ImGui::EndMenu();
@@ -176,6 +181,12 @@ void DebugUI::update(FrameState& frame_state)
     frame_state.draw_data.setAmbientLight(m_ambient_light ? frame_state.draw_data.getAmbientLight() * m_ambient_light_scale : glm::vec3{0.0f, 0.0f, 0.0f});
     if (!m_shadows) {
         frame_state.draw_data.setShadowMap(nullptr);
+    }
+    if (!m_sky_lighting) {
+        frame_state.draw_data.setEnvironmentLighting(false);
+    }
+    if (!m_sky_visible) {
+        frame_state.draw_data.setEnvironmentVisible(false);
     }
     frame_state.draw_data.setExposure(frame_state.draw_data.getExposure() * std::exp2(m_exposure_compensation));
 }

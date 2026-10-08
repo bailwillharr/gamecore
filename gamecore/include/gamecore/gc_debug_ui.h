@@ -39,6 +39,8 @@ class DebugUI {
     bool m_ambient_light{true};
     float m_ambient_light_scale{1.0f};
     bool m_shadows{true};
+    bool m_sky_lighting{true}; // image based lighting
+    bool m_sky_visible{true};
     float m_exposure_compensation{0.0f}; // in EV: +1 doubles the brightness
 
 public:

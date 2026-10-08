@@ -77,14 +77,15 @@ add_custom_command(
 )
 
 # The map: content/ember_court.gcpak. The map generator makes the prefab and its meshes, materials and textures, then gcpak_editor
-# bakes the prefab's shadow map into the same file. Made again whenever the map generator or gcpak_editor changes.
+# bakes the prefab's shadow map and collision trees into the same file. Made again whenever the map generator or gcpak_editor changes.
 set(EMBER_COURT_MAP "${PROJECT_SOURCE_DIR}/../content/ember_court.gcpak")
 add_custom_command(
   OUTPUT ${EMBER_COURT_MAP}
   COMMAND ${PROJECT_NAME}_mapgen ${EMBER_COURT_MAP}
-  COMMAND gcpak_editor --bake-shadows ember_court.map ${EMBER_COURT_MAP} --no-cast sky --no-cast beacon
+  COMMAND gcpak_editor --bake-shadows ember_court.map ${EMBER_COURT_MAP} --no-cast beacon
+  COMMAND gcpak_editor --bake-collision ember_court.map ${EMBER_COURT_MAP}
   DEPENDS ${PROJECT_NAME}_mapgen gcpak_editor
-  COMMENT "Generating the Ember Court map and baking its shadows"
+  COMMENT "Generating the Ember Court map and baking its shadows and collision trees"
   VERBATIM
 )
 add_custom_target(${PROJECT_NAME}_map ALL DEPENDS ${EMBER_COURT_MAP})

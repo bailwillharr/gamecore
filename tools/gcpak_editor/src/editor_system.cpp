@@ -21,7 +21,9 @@
 #include <gamecore/gc_camera_component.h>
 #include <gamecore/gc_light_component.h>
 #include <gamecore/gc_shadow_map_component.h>
+#include <gamecore/gc_skybox_component.h>
 #include <gamecore/gc_collider_component.h>
+#include <gamecore/gc_collision_bvh_component.h>
 
 using namespace gc;
 using namespace gc::literals;
@@ -46,6 +48,10 @@ static std::string getAssetTypeString(gcpak::GcpakAssetType type)
         return "Material";
     case GcpakAssetType::SHADOW_MAP_R16:
         return "Shadow map";
+    case GcpakAssetType::COLLISION_BVH:
+        return "Collision trees";
+    case GcpakAssetType::CUBE_MAP_E5B9G9R9:
+        return "Cube map";
     default:
         return "(unknown)";
     }
@@ -312,6 +318,12 @@ static std::string getComponentDisplayName(gc::Name component_name)
     }
     else if (component_name == ColliderComponent::NAME) {
         return "ColliderComponent";
+    }
+    else if (component_name == CollisionBvhComponent::NAME) {
+        return "CollisionBvhComponent";
+    }
+    else if (component_name == SkyboxComponent::NAME) {
+        return "SkyboxComponent";
     }
     else {
         return component_name.getString(); // only readable if the name happens to be known

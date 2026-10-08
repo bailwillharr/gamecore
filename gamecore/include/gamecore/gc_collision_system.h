@@ -11,7 +11,8 @@
 //    only looks at the colliders near it. Colliders are added to, moved in and removed from the tree as the world changes,
 //    without rebuilding it.
 //  - Narrow phase. The triangles of the colliders that the broad phase found are tested. Each mesh has its own tree of triangles,
-//    built once and shared by every collider that uses the mesh.
+//    shared by every collider that uses the mesh. The tree is taken from a baked asset if the world has one with the mesh in it
+//    (see CollisionBvhComponent), which costs nothing. Otherwise it is built from the mesh when its first collider appears.
 //
 // onUpdate() brings the system up to date with the world: new and deleted entities, changed meshes, moved transforms. Queries see
 // the world as it was then, so register the system before the systems that use it (and after nothing that moves colliders, if
@@ -27,6 +28,7 @@
 #include <glm/mat4x4.hpp>
 #include <glm/vec3.hpp>
 
+#include "gamecore/gc_collision_bvh.h"
 #include "gamecore/gc_ecs.h"
 #include "gamecore/gc_name.h"
 
@@ -35,11 +37,6 @@ namespace gc {
 class World;           // forward-dec
 class ResourceManager; // forward-dec
 struct FrameState;     // forward-dec
-
-struct AABB {
-    glm::vec3 min{std::numeric_limits<float>::max()};
-    glm::vec3 max{std::numeric_limits<float>::lowest()};
-};
 
 struct Ray {
     glm::vec3 origin{};
@@ -68,23 +65,17 @@ public:
 
 private:
     // The triangles of a mesh, in a tree. Shared by the colliders that use the mesh
-    struct MeshNode {
-        AABB box;
-        uint32_t first; // if count is zero, the index of the first of the node's two children (the other one follows it).
-                        // Otherwise the node is a leaf, and this is its first triangle in MeshShape::triangles
-        uint32_t count;
-    };
     struct MeshShape {
-        std::vector<glm::vec3> positions{};
-        std::vector<uint32_t> triangles{}; // three indices into positions for each triangle, in the order of the tree's leaves
-        std::vector<MeshNode> nodes{};     // nodes[0] is the root. Empty if the mesh has no triangles
+        CollisionBvhView bvh{}; // the baked tree, or 'built'. Its nodes are empty if the mesh is missing or has no triangles
+        CollisionBvh built{};   // only if the tree wasn't baked
+        bool is_baked{false};
         int ref_count{};
     };
 
     // What the system knows about one entity's collider. The ColliderComponent only names the mesh.
     struct Collider {
         Name mesh{};                // what the component had when it was last looked at
-        const MeshShape* shape{};   // null if the mesh is missing or empty: nothing hits the collider then
+        const MeshShape* shape{};   // null if the collider has no mesh
         glm::mat4 world_matrix{};   // the transform that the rest was worked out from
         glm::mat4 inverse_matrix{}; // world space to the mesh's space
         int32_t tree_node{-1};      // the collider's leaf in the broad phase tree, or -1 if it isn't in it
@@ -103,6 +94,10 @@ private:
     ResourceManager& m_resource_manager;
 
     std::unordered_map<Name, MeshShape> m_shapes{};
+
+    // The trees that were baked: of every COLLISION_BVH asset that a CollisionBvhComponent in the world names
+    std::vector<Name> m_baked_assets{};
+    std::unordered_map<Name, CollisionBvhView> m_baked_meshes{}; // by mesh
     std::unordered_map<Entity, Collider> m_colliders{};
 
     std::vector<TreeNode> m_tree{};
@@ -132,12 +127,13 @@ public:
     // For debugging
     size_t getColliderCount() const { return m_colliders.size(); }
     size_t getMeshCount() const { return m_shapes.size(); }
+    size_t getBakedMeshCount() const; // how many of those meshes have a baked tree, rather than one that had to be built
     int getTreeHeight() const;
 
 private:
+    void findBakedMeshes();
     const MeshShape* acquireShape(Name mesh);
     void releaseShape(Name mesh);
-    static void buildMeshShape(MeshShape& shape);
 
     int32_t allocateTreeNode();
     void insertLeaf(int32_t leaf);

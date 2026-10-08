@@ -55,7 +55,10 @@ class RenderMaterial {
     RenderTexture& m_normal_texture;
     RenderTexture& m_emissive_texture;
 
+    VkDevice m_device;
     GPUDescriptorSet m_descriptor_set;
+    // The descriptor set refers to the images of the textures, which don't exist until the textures have been uploaded
+    mutable bool m_descriptor_set_written = false;
 
     MaterialFeatures m_features;
     MaterialBlendMode m_blend_mode;
@@ -74,6 +77,7 @@ public:
           m_occlusion_roughness_metallic_texture(occlusion_roughness_metallic_texture),
           m_normal_texture(normal_texture),
           m_emissive_texture(emissive_texture),
+          m_device(device),
           m_descriptor_set(std::move(descriptor_set)),
           m_features(features),
           m_blend_mode(blend_mode),
@@ -81,6 +85,85 @@ public:
     {
         GC_ASSERT(features < MATERIAL_FEATURE_COMBINATIONS);
         GC_ASSERT(device);
+
+        GC_TRACE("Created RenderMaterial");
+    }
+
+    RenderMaterial(RenderMaterial&&) = default;
+
+    ~RenderMaterial() { GC_TRACE("Destroying RenderMaterial..."); }
+
+    // Binds descriptor sets and sets the material's constants. Check isUploaded() first
+    void bind(VkCommandBuffer cmd, VkPipelineLayout pipeline_layout, VkSemaphore timeline_semaphore, uint64_t signal_value)
+    {
+        GC_ASSERT(cmd);
+        GC_ASSERT(pipeline_layout);
+        GC_ASSERT(timeline_semaphore);
+        GC_ASSERT(m_descriptor_set_written);
+
+        m_descriptor_set.useResource(timeline_semaphore, signal_value);
+        m_base_color_texture.useResource(timeline_semaphore, signal_value);
+        m_occlusion_roughness_metallic_texture.useResource(timeline_semaphore, signal_value);
+        m_normal_texture.useResource(timeline_semaphore, signal_value);
+        m_emissive_texture.useResource(timeline_semaphore, signal_value);
+
+        const VkDescriptorSet handle = m_descriptor_set.getHandle();
+        vkCmdBindDescriptorSets(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, pipeline_layout, 1, 1, &handle, 0, nullptr);
+        vkCmdPushConstants(cmd, pipeline_layout, VK_SHADER_STAGE_FRAGMENT_BIT, MATERIAL_CONSTANTS_PUSH_CONSTANT_OFFSET, sizeof(MaterialConstants),
+                           &m_constants);
+    }
+
+    // Checks that all textures for this material are uploaded
+    bool isUploaded() const
+    {
+        if (!m_base_color_texture.isUploaded()) {
+            return false;
+        }
+        if (!m_occlusion_roughness_metallic_texture.isUploaded()) {
+            return false;
+        }
+        if (!m_normal_texture.isUploaded()) {
+            return false;
+        }
+        if (!m_emissive_texture.isUploaded()) {
+            return false;
+        }
+        writeDescriptorSet();
+        return true;
+    }
+
+    MaterialFeatures getFeatures() const { return m_features; }
+    MaterialBlendMode getBlendMode() const { return m_blend_mode; }
+    uint32_t getPipelineVariant() const { return getMaterialPipelineVariant(m_features, m_blend_mode); }
+
+    void waitForUpload() const
+    {
+        m_base_color_texture.waitForUpload();
+        m_occlusion_roughness_metallic_texture.waitForUpload();
+        m_normal_texture.waitForUpload();
+        m_emissive_texture.waitForUpload();
+        writeDescriptorSet();
+    }
+
+    uint64_t getLastUsedFrame() const { return m_last_used_frame; }
+    void setLastUsedFrame(uint64_t last_used_frame)
+    {
+        GC_ASSERT(last_used_frame >= m_last_used_frame);
+        m_last_used_frame = last_used_frame;
+    }
+
+    const auto& getBaseColorTexture() const { return m_base_color_texture; }
+    const auto& getORMTexture() const { return m_occlusion_roughness_metallic_texture; }
+    const auto& getNormalTexture() const { return m_normal_texture; }
+
+private:
+    // Points the descriptor set at the textures, the first time this is called. They must all be uploaded
+    void writeDescriptorSet() const
+    {
+        if (m_descriptor_set_written) {
+            return;
+        }
+        m_descriptor_set_written = true;
 
         std::array<VkDescriptorImageInfo, 4> descriptor_image_infos{};
         std::array<VkWriteDescriptorSet, 4> writes{};
@@ -125,74 +208,8 @@ public:
         writes[3].descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
         writes[3].pImageInfo = &descriptor_image_infos[3];
 
-        vkUpdateDescriptorSets(device, static_cast<uint32_t>(writes.size()), writes.data(), 0, nullptr);
-
-        GC_TRACE("Created RenderMaterial");
+        vkUpdateDescriptorSets(m_device, static_cast<uint32_t>(writes.size()), writes.data(), 0, nullptr);
     }
-
-    RenderMaterial(RenderMaterial&&) = default;
-
-    ~RenderMaterial() { GC_TRACE("Destroying RenderMaterial..."); }
-
-    // Binds descriptor sets and sets the material's constants. Check isUploaded() first
-    void bind(VkCommandBuffer cmd, VkPipelineLayout pipeline_layout, VkSemaphore timeline_semaphore, uint64_t signal_value)
-    {
-        GC_ASSERT(cmd);
-        GC_ASSERT(pipeline_layout);
-        GC_ASSERT(timeline_semaphore);
-
-        m_descriptor_set.useResource(timeline_semaphore, signal_value);
-        m_base_color_texture.useResource(timeline_semaphore, signal_value);
-        m_occlusion_roughness_metallic_texture.useResource(timeline_semaphore, signal_value);
-        m_normal_texture.useResource(timeline_semaphore, signal_value);
-        m_emissive_texture.useResource(timeline_semaphore, signal_value);
-
-        const VkDescriptorSet handle = m_descriptor_set.getHandle();
-        vkCmdBindDescriptorSets(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, pipeline_layout, 1, 1, &handle, 0, nullptr);
-        vkCmdPushConstants(cmd, pipeline_layout, VK_SHADER_STAGE_FRAGMENT_BIT, MATERIAL_CONSTANTS_PUSH_CONSTANT_OFFSET, sizeof(MaterialConstants),
-                           &m_constants);
-    }
-
-    // Checks that all textures for this material are uploaded
-    bool isUploaded() const
-    {
-        if (!m_base_color_texture.isUploaded()) {
-            return false;
-        }
-        if (!m_occlusion_roughness_metallic_texture.isUploaded()) {
-            return false;
-        }
-        if (!m_normal_texture.isUploaded()) {
-            return false;
-        }
-        if (!m_emissive_texture.isUploaded()) {
-            return false;
-        }
-        return true;
-    }
-
-    MaterialFeatures getFeatures() const { return m_features; }
-    MaterialBlendMode getBlendMode() const { return m_blend_mode; }
-    uint32_t getPipelineVariant() const { return getMaterialPipelineVariant(m_features, m_blend_mode); }
-
-    void waitForUpload() const
-    {
-        m_base_color_texture.waitForUpload();
-        m_occlusion_roughness_metallic_texture.waitForUpload();
-        m_normal_texture.waitForUpload();
-        m_emissive_texture.waitForUpload();
-    }
-
-    uint64_t getLastUsedFrame() const { return m_last_used_frame; }
-    void setLastUsedFrame(uint64_t last_used_frame)
-    {
-        GC_ASSERT(last_used_frame >= m_last_used_frame);
-        m_last_used_frame = last_used_frame;
-    }
-
-    const auto& getBaseColorTexture() const { return m_base_color_texture; }
-    const auto& getORMTexture() const { return m_occlusion_roughness_metallic_texture; }
-    const auto& getNormalTexture() const { return m_normal_texture; }
 };
 
 } // namespace gc

@@ -12,6 +12,7 @@ class RenderMaterial; // forward-dec
 class RenderMesh;     // forward-dec
 class RenderTexture;  // forward-dec
 class RenderShadowMap; // forward-dec
+class RenderEnvironment; // forward-dec
 
 struct WorldDrawEntry {
     glm::mat4 world_matrix;
@@ -60,6 +61,13 @@ private:
     float m_shadow_normal_bias{};
     float m_shadow_depth_bias{};
 
+    // The sky, and the light it gives. Null if there isn't one
+    RenderEnvironment* m_environment{};
+    glm::mat4 m_environment_matrix{1.0f}; // turns a direction in the world to one in the sky's cube maps
+    float m_environment_scale{};          // the luminance (cd/m^2) of a texel of 1
+    bool m_environment_visible{};         // whether the sky is drawn behind everything
+    bool m_environment_lighting{};        // whether the world is lit by it. If so, ambient light isn't drawn
+
 public:
     void reset()
     {
@@ -71,6 +79,7 @@ public:
         m_point_lights.clear();
         m_ambient_light = glm::vec3{0.0f, 0.0f, 0.0f};
         m_shadow_map = nullptr;
+        m_environment = nullptr;
     }
 
     void drawMesh(const glm::mat4& world_matrix, RenderMesh* const mesh, RenderMaterial* const material)
@@ -107,6 +116,20 @@ public:
         m_shadow_depth_bias = depth_bias;
     }
 
+    // The environment must stay alive until the frame has been submitted. Null removes the sky.
+    // world_to_sky only turns: the sky is infinitely far away. See SkyboxComponent
+    void setEnvironment(RenderEnvironment* environment, const glm::mat4& world_to_sky = glm::mat4{1.0f}, float scale = 0.0f, bool visible = true,
+                        bool lighting = true)
+    {
+        m_environment = environment;
+        m_environment_matrix = world_to_sky;
+        m_environment_scale = scale;
+        m_environment_visible = visible;
+        m_environment_lighting = lighting;
+    }
+    void setEnvironmentVisible(bool visible) { m_environment_visible = visible; }
+    void setEnvironmentLighting(bool lighting) { m_environment_lighting = lighting; }
+
     const auto& getDrawEntries() const { return m_draw_entries; }
     const auto& getInstancedDrawEntries() const { return m_instanced_draw_entries; }
     const auto& getInstancedDrawTransforms() const { return m_instanced_draw_transforms; }
@@ -122,6 +145,11 @@ public:
     const auto& getShadowMatrix() const { return m_shadow_matrix; }
     float getShadowNormalBias() const { return m_shadow_normal_bias; }
     float getShadowDepthBias() const { return m_shadow_depth_bias; }
+    RenderEnvironment* getEnvironment() const { return m_environment; }
+    const auto& getEnvironmentMatrix() const { return m_environment_matrix; }
+    float getEnvironmentScale() const { return m_environment_scale; }
+    bool getEnvironmentVisible() const { return m_environment_visible; }
+    bool getEnvironmentLighting() const { return m_environment_lighting; }
 };
 
 } // namespace gc

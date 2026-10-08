@@ -8,6 +8,7 @@
 #include <charconv>
 #include <filesystem>
 #include <format>
+#include <functional>
 #include <system_error>
 #include <unordered_map>
 #include <vector>
@@ -26,6 +27,7 @@
 #include <gamecore/gc_units.h>
 
 #include "asset_compiler.h"
+#include "prefab_collision_baker.h"
 #include "prefab_shadow_baker.h"
 
 static const char* const USAGE =
@@ -37,6 +39,8 @@ static const char* const USAGE =
     "  gcpak_editor --list FILE.gcpak    list the assets in a package file\n"
     "  gcpak_editor --bake-shadows PREFAB FILE.gcpak... [--resolution N] [--no-cast ENTITY]...\n"
     "                                    bake the shadow map of a prefab that is in one of the package files\n"
+    "  gcpak_editor --bake-collision PREFAB FILE.gcpak...\n"
+    "                                    bake the collision trees of a prefab that is in one of the package files\n"
     "See README for more.";
 
 static const char* getAssetTypeName(gcpak::GcpakAssetType type)
@@ -56,6 +60,10 @@ static const char* getAssetTypeName(gcpak::GcpakAssetType type)
         return "material";
     case gcpak::GcpakAssetType::SHADOW_MAP_R16:
         return "shadow map";
+    case gcpak::GcpakAssetType::COLLISION_BVH:
+        return "collision trees";
+    case gcpak::GcpakAssetType::CUBE_MAP_E5B9G9R9:
+        return "cube map";
     default:
         return "invalid";
     }
@@ -169,13 +177,15 @@ static int pack(const std::vector<std::filesystem::path>& inputs, std::filesyste
     return (total.files_failed == 0) ? EXIT_SUCCESS : EXIT_FAILURE;
 }
 
-// Bakes the shadow map of a prefab that is already in a package file, and saves that file again with the shadow map in it.
+// Bakes something into a prefab that is already in a package file, and saves that file again with the baked asset in it.
 // The first input is the name of the prefab. The rest are package files: the prefab is in one of them, and the meshes,
 // materials and textures that it uses can be in any of them.
-static int bakeShadows(const std::vector<std::filesystem::path>& inputs, const PrefabShadowOptions& options)
+// 'bake' changes the prefab's data and makes the baked asset. It returns false, having said why, if there was nothing to bake.
+using PrefabBake = std::function<bool(const std::string& prefab_name, std::vector<uint8_t>& prefab_data, const AssetLookup& find_asset, Asset& baked_out)>;
+static int bakePrefab(const std::vector<std::filesystem::path>& inputs, const char* option, const PrefabBake& bake)
 {
     if (inputs.size() < 2) {
-        print("--bake-shadows needs the name of a prefab and at least one package file\n{}", USAGE);
+        print("{} needs the name of a prefab and at least one package file\n{}", option, USAGE);
         return EXIT_FAILURE;
     }
     const std::string prefab_name = inputs[0].string();
@@ -218,26 +228,16 @@ static int bakeShadows(const std::vector<std::filesystem::path>& inputs, const P
         const auto it = assets_by_id.find(id);
         return (it != assets_by_id.end()) ? it->second : nullptr;
     };
-    Asset shadow_map{};
-    switch (bakePrefabShadows(prefab_name, prefab->data, find_asset, options, shadow_map)) {
-    case PrefabShadowResult::BAKED:
-        break;
-    case PrefabShadowResult::NO_LIGHT:
-        print("{} has no directional light, so it has no shadows to bake", prefab_name);
-        return EXIT_FAILURE;
-    case PrefabShadowResult::NO_CASTERS:
-        print("Nothing in {} casts a shadow. Are its meshes in the package files that were given?", prefab_name);
-        return EXIT_FAILURE;
-    case PrefabShadowResult::CORRUPT:
-        print("{} is corrupt", prefab_name);
+    Asset baked{};
+    if (!bake(prefab_name, prefab->data, find_asset, baked)) {
         return EXIT_FAILURE;
     }
 
-    const std::string shadow_map_name = shadow_map.name;
-    const size_t shadow_map_size = shadow_map.data.size();
+    const std::string baked_name = baked.name;
+    const size_t baked_size = baked.data.size();
     CompileStats stats{};
     std::vector<Asset> new_assets{};
-    new_assets.push_back(std::move(shadow_map));
+    new_assets.push_back(std::move(baked));
     mergeAssets(prefab_package->assets, std::move(new_assets), stats); // (the pointers into the package's assets are no use after this)
 
     gcpak::GcpakCreator creator{};
@@ -248,9 +248,48 @@ static int bakeShadows(const std::vector<std::filesystem::path>& inputs, const P
         print("Failed to save {}", prefab_package->path.string());
         return EXIT_FAILURE;
     }
-    print("Baked {} ({}) and saved it and {} to {}", shadow_map_name, gc::bytesToHumanReadable(shadow_map_size), prefab_name,
-          prefab_package->path.string());
+    print("Baked {} ({}) and saved it and {} to {}", baked_name, gc::bytesToHumanReadable(baked_size), prefab_name, prefab_package->path.string());
     return EXIT_SUCCESS;
+}
+
+static int bakeShadows(const std::vector<std::filesystem::path>& inputs, const PrefabShadowOptions& options)
+{
+    return bakePrefab(inputs, "--bake-shadows",
+                      [&](const std::string& prefab_name, std::vector<uint8_t>& prefab_data, const AssetLookup& find_asset, Asset& shadow_map) {
+                          switch (bakePrefabShadows(prefab_name, prefab_data, find_asset, options, shadow_map)) {
+                          case PrefabShadowResult::BAKED:
+                              return true;
+                          case PrefabShadowResult::NO_LIGHT:
+                              print("{} has no directional light, so it has no shadows to bake", prefab_name);
+                              return false;
+                          case PrefabShadowResult::NO_CASTERS:
+                              print("Nothing in {} casts a shadow. Are its meshes in the package files that were given?", prefab_name);
+                              return false;
+                          case PrefabShadowResult::CORRUPT:
+                              print("{} is corrupt", prefab_name);
+                              return false;
+                          }
+                          return false;
+                      });
+}
+
+static int bakeCollision(const std::vector<std::filesystem::path>& inputs)
+{
+    return bakePrefab(inputs, "--bake-collision",
+                      [&](const std::string& prefab_name, std::vector<uint8_t>& prefab_data, const AssetLookup& find_asset, Asset& collision_bvh) {
+                          switch (bakePrefabCollision(prefab_name, prefab_data, find_asset, collision_bvh)) {
+                          case PrefabCollisionResult::BAKED:
+                              return true;
+                          case PrefabCollisionResult::NO_COLLIDERS:
+                              print("{} has no colliders whose meshes are in the package files that were given, so it has no collision trees to bake",
+                                    prefab_name);
+                              return false;
+                          case PrefabCollisionResult::CORRUPT:
+                              print("{} is corrupt", prefab_name);
+                              return false;
+                          }
+                          return false;
+                      });
 }
 
 bool isCommandLineRequest(std::span<const std::string> args) { return !args.empty() && args[0].starts_with("-"); }
@@ -259,7 +298,7 @@ int runCommandLine(std::span<const std::string> args)
 {
     attachToParentConsole();
 
-    enum class Mode { NONE, PACK, LIST, BAKE_SHADOWS } mode{Mode::NONE};
+    enum class Mode { NONE, PACK, LIST, BAKE_SHADOWS, BAKE_COLLISION } mode{Mode::NONE};
     std::vector<std::filesystem::path> inputs{};
     std::filesystem::path output{};
     bool append{false};
@@ -276,6 +315,9 @@ int runCommandLine(std::span<const std::string> args)
         }
         else if (arg == "--bake-shadows") {
             mode = Mode::BAKE_SHADOWS;
+        }
+        else if (arg == "--bake-collision") {
+            mode = Mode::BAKE_COLLISION;
         }
         else if (arg == "--resolution") {
             // the size of the shadow map, in texels. A 16384x16384 shadow map is 512 MB
@@ -332,6 +374,8 @@ int runCommandLine(std::span<const std::string> args)
         return listFile(inputs[0]);
     case Mode::BAKE_SHADOWS:
         return bakeShadows(inputs, shadow_options);
+    case Mode::BAKE_COLLISION:
+        return bakeCollision(inputs);
     default:
         print("{}", USAGE);
         return EXIT_FAILURE;
