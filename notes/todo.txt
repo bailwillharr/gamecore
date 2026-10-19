@@ -52,6 +52,26 @@ Collisions (see gc_collision_system.h and tools/collision_test):
 	gamecore_template doesn't use it yet. ember_court does: its character controller (ember_court/src/character.cpp) is what a
 	physics system would replace.
 
+Terrains (see gc_terrain.h, gc_terrain_system.h, gc_render_terrain.h, gcpak_editor --bake-terrain and mars_fissure):
+	No shadows on or from terrains: one baked shadow map can't cover kilometres sharply. Cascaded shadow maps would suit them.
+	A terrain has no texture of its own: its colour is its material tiled across it, darker where it is steep. An albedo (such as a
+	HiRISE orthoimage) could be streamed per tile alongside the heights, into the same kind of cache.
+	Normals are per vertex, from each level's own heights, so far away the shading is as coarse as the geometry. A normal map per
+	tile, from the most detailed heights, would keep distant ground sharp.
+	The level of detail only depends on distance, not on how rough the ground is: flat plains get as many triangles as cliffs.
+	Patches are culled against the view on the CPU. There is no occlusion culling: the far side of a ridge is still drawn.
+	Each terrain's tile cache is one storage buffer of a fixed number of slots (TerrainSystem's slot_count). If it is too small, the
+	terrain is drawn coarser where tiles don't fit.
+	Tiles aren't compressed (Mars Fissure's terrain is 309 MB). They are read from the mapped .gcpak file, so the OS reads the disk on
+	the render work thread.
+	While the levels of detail are frozen (debug), patches still turn into their parents by the real camera's distance.
+	Terrains can be moved and turned, but not scaled.
+	terrain.frag copies pbr.frag's lighting, as shaders can't #include. Fog is in both (and in neither of the sky's shaders).
+	The depth buffer is D32_SFLOAT_S8_UINT where the GPU has it, for reverse Z's precision far away, else D24_UNORM_S8_UINT, which
+	makes distant hills flicker where they overlap.
+
+
+
 Use the same ByteReader and ByteWriter classes engine-wide.
 	No more NetByteReader for network stuff, and also stream usage for file stuff.
 	Just standardise the serialised format used both for file and network.

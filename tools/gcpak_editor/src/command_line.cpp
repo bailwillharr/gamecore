@@ -29,6 +29,7 @@
 #include "asset_compiler.h"
 #include "prefab_collision_baker.h"
 #include "prefab_shadow_baker.h"
+#include "terrain_compiler.h"
 
 static const char* const USAGE =
     "usage:\n"
@@ -41,6 +42,9 @@ static const char* const USAGE =
     "                                    bake the shadow map of a prefab that is in one of the package files\n"
     "  gcpak_editor --bake-collision PREFAB FILE.gcpak...\n"
     "                                    bake the collision trees of a prefab that is in one of the package files\n"
+    "  gcpak_editor --bake-terrain FILE.IMG|FILE.pfm --out FILE.gcpak [--append] [--name NAME] [--spacing METRES]\n"
+    "                              [--tile-quads N] [--fill-level N]\n"
+    "                                    make a terrain from a grid of heights\n"
     "See README for more.";
 
 static const char* getAssetTypeName(gcpak::GcpakAssetType type)
@@ -64,6 +68,8 @@ static const char* getAssetTypeName(gcpak::GcpakAssetType type)
         return "collision trees";
     case gcpak::GcpakAssetType::CUBE_MAP_E5B9G9R9:
         return "cube map";
+    case gcpak::GcpakAssetType::TERRAIN:
+        return "terrain";
     default:
         return "invalid";
     }
@@ -252,6 +258,46 @@ static int bakePrefab(const std::vector<std::filesystem::path>& inputs, const ch
     return EXIT_SUCCESS;
 }
 
+static int bakeTerrain(const std::vector<std::filesystem::path>& inputs, const std::filesystem::path& output, bool append,
+                       const TerrainCompileOptions& options)
+{
+    if (inputs.size() != 1 || output.empty()) {
+        print("--bake-terrain needs one file of heights and --out\n{}", USAGE);
+        return EXIT_FAILURE;
+    }
+
+    std::vector<Asset> assets{};
+    std::error_code ec{};
+    if (append && std::filesystem::exists(output, ec)) {
+        gcpak::GcpakCreator existing{};
+        if (!existing.loadFile(output, ec)) {
+            print("Failed to load {} (or the .txt file that goes with it): {}", output.string(), ec.message());
+            return EXIT_FAILURE;
+        }
+        assets.assign(existing.getAssets().begin(), existing.getAssets().end());
+    }
+
+    std::vector<Asset> terrain{};
+    if (!compileTerrain(inputs[0], options, terrain)) {
+        return EXIT_FAILURE;
+    }
+    CompileStats stats{};
+    mergeAssets(assets, std::move(terrain), stats);
+
+    gcpak::GcpakCreator creator{};
+    size_t total_size{};
+    for (const Asset& asset : assets) {
+        creator.addAsset(asset);
+        total_size += asset.data.size();
+    }
+    if (!creator.saveFile(output)) {
+        print("Failed to save {}", output.string());
+        return EXIT_FAILURE;
+    }
+    print("Saved {} assets ({}) to {}", assets.size(), gc::bytesToHumanReadable(total_size), output.string());
+    return EXIT_SUCCESS;
+}
+
 static int bakeShadows(const std::vector<std::filesystem::path>& inputs, const PrefabShadowOptions& options)
 {
     return bakePrefab(inputs, "--bake-shadows",
@@ -298,12 +344,13 @@ int runCommandLine(std::span<const std::string> args)
 {
     attachToParentConsole();
 
-    enum class Mode { NONE, PACK, LIST, BAKE_SHADOWS, BAKE_COLLISION } mode{Mode::NONE};
+    enum class Mode { NONE, PACK, LIST, BAKE_SHADOWS, BAKE_COLLISION, BAKE_TERRAIN } mode{Mode::NONE};
     std::vector<std::filesystem::path> inputs{};
     std::filesystem::path output{};
     bool append{false};
     bool recursive{true};
     PrefabShadowOptions shadow_options{};
+    TerrainCompileOptions terrain_options{};
 
     for (size_t i = 0; i < args.size(); ++i) {
         const std::string& arg = args[i];
@@ -318,6 +365,34 @@ int runCommandLine(std::span<const std::string> args)
         }
         else if (arg == "--bake-collision") {
             mode = Mode::BAKE_COLLISION;
+        }
+        else if (arg == "--bake-terrain") {
+            mode = Mode::BAKE_TERRAIN;
+        }
+        else if (arg == "--name") {
+            if (i + 1 >= args.size()) {
+                print("{} needs a name\n{}", arg, USAGE);
+                return EXIT_FAILURE;
+            }
+            terrain_options.name = args[++i];
+        }
+        else if (arg == "--spacing") {
+            const std::string value = (i + 1 < args.size()) ? args[++i] : std::string{};
+            terrain_options.spacing = std::strtof(value.c_str(), nullptr);
+            if (!(terrain_options.spacing > 0.0f)) {
+                print("{} needs a distance in metres\n{}", arg, USAGE);
+                return EXIT_FAILURE;
+            }
+        }
+        else if (arg == "--tile-quads" || arg == "--fill-level") {
+            const std::string value = (i + 1 < args.size()) ? args[++i] : std::string{};
+            uint32_t number{};
+            const char* const last = value.data() + value.size();
+            if (value.empty() || std::from_chars(value.data(), last, number).ptr != last) {
+                print("{} needs a number\n{}", arg, USAGE);
+                return EXIT_FAILURE;
+            }
+            (arg == "--tile-quads" ? terrain_options.tile_quads : terrain_options.fill_level) = number;
         }
         else if (arg == "--resolution") {
             // the size of the shadow map, in texels. A 16384x16384 shadow map is 512 MB
@@ -376,6 +451,8 @@ int runCommandLine(std::span<const std::string> args)
         return bakeShadows(inputs, shadow_options);
     case Mode::BAKE_COLLISION:
         return bakeCollision(inputs);
+    case Mode::BAKE_TERRAIN:
+        return bakeTerrain(inputs, output, append, terrain_options);
     default:
         print("{}", USAGE);
         return EXIT_FAILURE;

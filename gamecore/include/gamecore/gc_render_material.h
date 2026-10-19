@@ -49,6 +49,12 @@ struct MaterialConstants {
 // The vertex shader's push constants (the world matrix) come first
 constexpr uint32_t MATERIAL_CONSTANTS_PUSH_CONSTANT_OFFSET = sizeof(glm::mat4);
 
+// The push constants of the pipelines that draw the world are one range that both the vertex and the fragment shaders can see:
+// Vulkan allows a stage only one range, and a terrain's vertex shader has constants on both sides of the material's. So they
+// are always pushed to both stages.
+constexpr VkShaderStageFlags WORLD_PUSH_CONSTANT_STAGES = VK_SHADER_STAGE_VERTEX_BIT | VK_SHADER_STAGE_FRAGMENT_BIT;
+constexpr uint32_t WORLD_PUSH_CONSTANTS_SIZE = 128; // the least that every GPU allows
+
 class RenderMaterial {
     RenderTexture& m_base_color_texture;
     RenderTexture& m_occlusion_roughness_metallic_texture;
@@ -109,7 +115,7 @@ public:
 
         const VkDescriptorSet handle = m_descriptor_set.getHandle();
         vkCmdBindDescriptorSets(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, pipeline_layout, 1, 1, &handle, 0, nullptr);
-        vkCmdPushConstants(cmd, pipeline_layout, VK_SHADER_STAGE_FRAGMENT_BIT, MATERIAL_CONSTANTS_PUSH_CONSTANT_OFFSET, sizeof(MaterialConstants),
+        vkCmdPushConstants(cmd, pipeline_layout, WORLD_PUSH_CONSTANT_STAGES, MATERIAL_CONSTANTS_PUSH_CONSTANT_OFFSET, sizeof(MaterialConstants),
                            &m_constants);
     }
 

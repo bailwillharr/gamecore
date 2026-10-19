@@ -117,6 +117,9 @@ struct FrameUniformData {
     glm::mat4 environment_matrix;    // turns a direction in the world to one in the sky's cube maps
     glm::vec4 environment_params;    // x = the luminance (cd/m^2) of a texel of 1 when lighting with the sky, or 0 if the world isn't lit
                                      // by one. y = the last mip level of the sky's reflections. z = the same as x, for drawing the sky
+    glm::vec4 fog_params;            // x = density (per metre, zero for no fog), y = height falloff (per metre), z = the height that x
+                                     // is at, w = the luminance (cd/m^2) of a texel of 1 of the sky, if things fade to it, else 0
+    glm::vec4 fog_color;             // rgb = luminance (cd/m^2), if things don't fade to the sky
     std::array<PointLightUniformData, WorldDrawData::MAX_POINT_LIGHTS> point_lights;
 };
 static_assert(offsetof(FrameUniformData, camera_position) == 128);
@@ -129,7 +132,9 @@ static_assert(offsetof(FrameUniformData, shadow_matrix) == 208);
 static_assert(offsetof(FrameUniformData, shadow_params) == 272);
 static_assert(offsetof(FrameUniformData, environment_matrix) == 288);
 static_assert(offsetof(FrameUniformData, environment_params) == 352);
-static_assert(offsetof(FrameUniformData, point_lights) == 368);
+static_assert(offsetof(FrameUniformData, fog_params) == 368);
+static_assert(offsetof(FrameUniformData, fog_color) == 384);
+static_assert(offsetof(FrameUniformData, point_lights) == 400);
 static_assert(sizeof(PointLightUniformData) == 32);
 
 // Must match the fragment shader's push constant block
@@ -138,6 +143,9 @@ static_assert(offsetof(MaterialConstants, roughness) == 16);
 static_assert(offsetof(MaterialConstants, metallic) == 20);
 static_assert(offsetof(MaterialConstants, alpha_cutoff) == 24);
 static_assert(offsetof(MaterialConstants, emissive) == 32);
+
+static_assert(MATERIAL_CONSTANTS_PUSH_CONSTANT_OFFSET + sizeof(MaterialConstants) <= TERRAIN_PUSH_CONSTANT_OFFSET);
+static_assert(TERRAIN_PUSH_CONSTANT_OFFSET + sizeof(TerrainPushConstants) <= WORLD_PUSH_CONSTANTS_SIZE);
 
 RenderBackend::RenderBackend(SDL_Window* window_handle)
     : m_device(), m_allocator(m_device), m_swapchain(m_device, window_handle), m_delete_queue(m_device.getHandle(), m_allocator.getHandle())
@@ -165,9 +173,13 @@ RenderBackend::RenderBackend(SDL_Window* window_handle)
 
     // create main descriptor pool for long-lasting static resources
     {
-        std::array<VkDescriptorPoolSize, 1> pool_sizes = {
+        std::array<VkDescriptorPoolSize, 3> pool_sizes = {
             // every material has four textures. A shadow map has one and a sky has three, but there are only ever a few of those
             VkDescriptorPoolSize{VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, 4096},
+            // the frame's uniforms
+            VkDescriptorPoolSize{VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER, 16},
+            // a terrain's tiles
+            VkDescriptorPoolSize{VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, 16},
         };
         VkDescriptorPoolCreateInfo pool_info = {};
         pool_info.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_POOL_CREATE_INFO;
@@ -277,18 +289,31 @@ RenderBackend::RenderBackend(SDL_Window* window_handle)
         GC_CHECKVK(vkCreateDescriptorSetLayout(m_device.getHandle(), &info, nullptr, &m_environment_set_layout));
     }
 
+    {
+        // A terrain's tiles, which its vertex shader reads the heights from
+        VkDescriptorSetLayoutBinding binding{};
+        binding.binding = 0;
+        binding.descriptorType = VK_DESCRIPTOR_TYPE_STORAGE_BUFFER;
+        binding.descriptorCount = 1;
+        binding.stageFlags = VK_SHADER_STAGE_VERTEX_BIT;
+        VkDescriptorSetLayoutCreateInfo info{};
+        info.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_LAYOUT_CREATE_INFO;
+        info.bindingCount = 1;
+        info.pBindings = &binding;
+        GC_CHECKVK(vkCreateDescriptorSetLayout(m_device.getHandle(), &info, nullptr, &m_terrain_set_layout));
+    }
+
     // Pipeline layout. Every pipeline that draws the world uses it, so that descriptor sets stay bound when the pipeline changes.
     {
         const std::array set_layouts{m_frame_set_layout, m_material_set_layout, m_shadow_set_layout, m_environment_set_layout};
 
-        std::array<VkPushConstantRange, 2> push_constant_ranges{};
-        // the world matrix (not used by instanced draws)
+        // One range for both stages (see WORLD_PUSH_CONSTANT_STAGES): the world matrix (not used by instanced draws), the
+        // material's constants, then a terrain's heights (only used by terrains, but in this layout too so that the terrain's is
+        // compatible with it)
+        std::array<VkPushConstantRange, 1> push_constant_ranges{};
         push_constant_ranges[0].offset = 0;
-        push_constant_ranges[0].size = sizeof(glm::mat4);
-        push_constant_ranges[0].stageFlags = VK_SHADER_STAGE_VERTEX_BIT;
-        push_constant_ranges[1].offset = MATERIAL_CONSTANTS_PUSH_CONSTANT_OFFSET;
-        push_constant_ranges[1].size = sizeof(MaterialConstants);
-        push_constant_ranges[1].stageFlags = VK_SHADER_STAGE_FRAGMENT_BIT;
+        push_constant_ranges[0].size = WORLD_PUSH_CONSTANTS_SIZE;
+        push_constant_ranges[0].stageFlags = WORLD_PUSH_CONSTANT_STAGES;
 
         VkPipelineLayoutCreateInfo info{};
         info.sType = VK_STRUCTURE_TYPE_PIPELINE_LAYOUT_CREATE_INFO;
@@ -297,17 +322,27 @@ RenderBackend::RenderBackend(SDL_Window* window_handle)
         info.pushConstantRangeCount = static_cast<uint32_t>(push_constant_ranges.size());
         info.pPushConstantRanges = push_constant_ranges.data();
         GC_CHECKVK(vkCreatePipelineLayout(m_device.getHandle(), &info, nullptr, &m_world_pipeline_layout));
+
+        const std::array terrain_set_layouts{m_frame_set_layout, m_material_set_layout, m_shadow_set_layout, m_environment_set_layout, m_terrain_set_layout};
+        info.setLayoutCount = static_cast<uint32_t>(terrain_set_layouts.size());
+        info.pSetLayouts = terrain_set_layouts.data();
+        GC_CHECKVK(vkCreatePipelineLayout(m_device.getHandle(), &info, nullptr, &m_terrain_pipeline_layout));
     }
 
     // find depth stencil format to use
     {
-        VkFormatProperties depth_format_props{};
-        vkGetPhysicalDeviceFormatProperties(m_device.getPhysicalDevice(), VK_FORMAT_D24_UNORM_S8_UINT,
-                                            &depth_format_props); // NVIDIA Best practices recommend this
-        if (depth_format_props.optimalTilingFeatures & VK_FORMAT_FEATURE_DEPTH_STENCIL_ATTACHMENT_BIT) {
-            m_depth_stencil_attachment_format = VK_FORMAT_D24_UNORM_S8_UINT;
+        // A floating point depth buffer, if there is one. The depth is reversed (1 at the near plane, 0 infinitely far away), which
+        // with floats gives about the same precision at every distance. With 24 bit integers the precision runs out far away: a
+        // few metres apart at a kilometre, which makes a terrain's distant hills flicker where they overlap.
+        for (const VkFormat format : {VK_FORMAT_D32_SFLOAT_S8_UINT, VK_FORMAT_D24_UNORM_S8_UINT}) {
+            VkFormatProperties depth_format_props{};
+            vkGetPhysicalDeviceFormatProperties(m_device.getPhysicalDevice(), format, &depth_format_props);
+            if (depth_format_props.optimalTilingFeatures & VK_FORMAT_FEATURE_DEPTH_STENCIL_ATTACHMENT_BIT) {
+                m_depth_stencil_attachment_format = format;
+                break;
+            }
         }
-        else {
+        if (m_depth_stencil_attachment_format == VK_FORMAT_UNDEFINED) {
             abortGame("Failed to find suitable depth-buffer image format!");
         }
     }
@@ -407,6 +442,10 @@ RenderBackend::~RenderBackend()
     m_sky_pipeline.reset();
     m_frame_uniform_buffer_set.reset();
     m_instancing_transforms_buffer.reset();
+    m_terrain_patches_buffer.reset();
+    for (auto& pipeline : m_terrain_pipelines) {
+        pipeline.reset();
+    }
     m_frame_uniform_buffer.reset();
     for (auto& pipeline : m_main_pipelines) {
         pipeline.reset();
@@ -449,14 +488,18 @@ RenderBackend::~RenderBackend()
     vkDestroyImageView(m_device.getHandle(), m_depth_stencil_attachment_view, nullptr);
     vmaDestroyImage(m_allocator.getHandle(), m_depth_stencil_attachment_image, m_depth_stencil_attachment_allocation);
 
+    vkDestroyShaderModule(m_device.getHandle(), m_terrain_fragment_module, nullptr);
+    vkDestroyShaderModule(m_device.getHandle(), m_terrain_vertex_module, nullptr);
     vkDestroyShaderModule(m_device.getHandle(), m_sky_fragment_module, nullptr);
     vkDestroyShaderModule(m_device.getHandle(), m_sky_vertex_module, nullptr);
     vkDestroyShaderModule(m_device.getHandle(), m_fragment_module, nullptr);
     vkDestroyShaderModule(m_device.getHandle(), m_instanced_vertex_module, nullptr);
     vkDestroyShaderModule(m_device.getHandle(), m_single_draw_vertex_module, nullptr);
 
+    vkDestroyPipelineLayout(m_device.getHandle(), m_terrain_pipeline_layout, nullptr);
     vkDestroyPipelineLayout(m_device.getHandle(), m_world_pipeline_layout, nullptr);
 
+    vkDestroyDescriptorSetLayout(m_device.getHandle(), m_terrain_set_layout, nullptr);
     vkDestroyDescriptorSetLayout(m_device.getHandle(), m_environment_set_layout, nullptr);
     vkDestroySampler(m_device.getHandle(), m_environment_sampler, nullptr);
     vkDestroyDescriptorSetLayout(m_device.getHandle(), m_shadow_set_layout, nullptr);
@@ -616,6 +659,13 @@ void RenderBackend::submitFrame(bool window_resized, const WorldDrawData& world_
             data.environment_params = glm::vec4(world_draw_data.getEnvironmentLighting() ? scale : 0.0f,
                                                 static_cast<float>(environment->getSpecularLevelCount() - 1), scale, 0.0f);
         }
+        {
+            const WorldFog& fog = world_draw_data.getFog();
+            const bool fade_to_sky = fog.use_sky && has_environment;
+            data.fog_params = glm::vec4(std::max(fog.density, 0.0f), std::max(fog.height_falloff, 0.0f), fog.base_height,
+                                        fade_to_sky ? world_draw_data.getEnvironmentScale() : 0.0f);
+            data.fog_color = glm::vec4(fog.color, 0.0f);
+        }
 
         const auto& point_lights = world_draw_data.getPointLights();
         if (point_lights.size() > data.point_lights.size()) {
@@ -665,6 +715,30 @@ void RenderBackend::submitFrame(bool window_resized, const WorldDrawData& world_
         b.srcQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
         b.dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
         b.buffer = m_instancing_transforms_buffer->getBuffer();
+        b.size = VkDeviceSize(buffer_data_size);
+        b.offset = 0;
+        VkDependencyInfo dep{};
+        dep.sType = VK_STRUCTURE_TYPE_DEPENDENCY_INFO;
+        dep.bufferMemoryBarrierCount = 1;
+        dep.pBufferMemoryBarriers = &b;
+        vkCmdPipelineBarrier2(stuff.cmd, &dep);
+    }
+
+    if (!world_draw_data.getTerrainPatches().empty()) {
+        const auto& patches = world_draw_data.getTerrainPatches();
+        const size_t buffer_data_size = patches.size() * sizeof(patches[0]);
+        m_terrain_patches_buffer->writeData(stuff.cmd, m_frame_count, m_main_timeline_semaphore, m_main_timeline_value + 1,
+                                            std::span(reinterpret_cast<const uint8_t*>(patches.data()), buffer_data_size));
+
+        VkBufferMemoryBarrier2 b{};
+        b.sType = VK_STRUCTURE_TYPE_BUFFER_MEMORY_BARRIER_2;
+        b.srcStageMask = VK_PIPELINE_STAGE_2_COPY_BIT;
+        b.srcAccessMask = VK_ACCESS_2_TRANSFER_WRITE_BIT;
+        b.dstStageMask = VK_PIPELINE_STAGE_2_VERTEX_ATTRIBUTE_INPUT_BIT;
+        b.dstAccessMask = VK_ACCESS_2_VERTEX_ATTRIBUTE_READ_BIT;
+        b.srcQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
+        b.dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
+        b.buffer = m_terrain_patches_buffer->getBuffer();
         b.size = VkDeviceSize(buffer_data_size);
         b.offset = 0;
         VkDependencyInfo dep{};
@@ -730,7 +804,8 @@ void RenderBackend::submitFrame(bool window_resized, const WorldDrawData& world_
 
         recordWorldRenderingCommands(stuff.cmd, m_world_pipeline_layout, m_main_pipelines, m_instancing_pipelines, m_main_timeline_semaphore,
                                      m_main_timeline_value + 1, world_draw_data, *m_frame_uniform_buffer_set, *shadow_map, *environment,
-                                     draw_sky ? m_sky_pipeline.get() : nullptr, *m_instancing_transforms_buffer);
+                                     draw_sky ? m_sky_pipeline.get() : nullptr, *m_instancing_transforms_buffer, m_terrain_pipeline_layout,
+                                     m_terrain_pipelines, *m_terrain_patches_buffer);
 
         if (post_render_callback) {
             bool ret = post_render_callback(stuff.cmd);
@@ -865,6 +940,18 @@ void RenderBackend::setSkyShaders(std::span<const uint8_t> vertex_spv, std::span
     m_sky_fragment_module = createShaderModule(m_device.getHandle(), fragment_spv);
 }
 
+void RenderBackend::setTerrainShaders(std::span<const uint8_t> vertex_spv, std::span<const uint8_t> fragment_spv)
+{
+    if (m_terrain_vertex_module) {
+        abortGame("Terrain shaders already set!");
+    }
+    if (vertex_spv.empty() || fragment_spv.empty()) {
+        abortGame("setTerrainShaders() called with empty SPIRV code");
+    }
+    m_terrain_vertex_module = createShaderModule(m_device.getHandle(), vertex_spv);
+    m_terrain_fragment_module = createShaderModule(m_device.getHandle(), fragment_spv);
+}
+
 // One triangle, made by the vertex shader, that is drawn wherever the depth buffer still has nothing in it
 GPUPipeline RenderBackend::createSkyPipeline()
 {
@@ -958,7 +1045,7 @@ GPUPipeline RenderBackend::createSkyPipeline()
 }
 
 GPUPipeline RenderBackend::createPipeline(VkShaderModule vertex_module, VkShaderModule fragment_module, uint32_t variant,
-                                          const VkPipelineVertexInputStateCreateInfo& vertex_input_state)
+                                          const VkPipelineVertexInputStateCreateInfo& vertex_input_state, VkPipelineLayout layout)
 {
     ZoneScoped;
 
@@ -1114,7 +1201,7 @@ GPUPipeline RenderBackend::createPipeline(VkShaderModule vertex_module, VkShader
     info.pDepthStencilState = &depth_stencil_state;
     info.pColorBlendState = &color_blend_state;
     info.pDynamicState = &dynamic_state;
-    info.layout = m_world_pipeline_layout;
+    info.layout = layout;
     info.renderPass = VK_NULL_HANDLE;
     info.subpass = 0;
     info.basePipelineHandle = VK_NULL_HANDLE;
@@ -1163,7 +1250,7 @@ GPUPipeline RenderBackend::createMainPipeline(uint32_t variant)
     vertex_input_state.vertexAttributeDescriptionCount = static_cast<uint32_t>(vertex_input_attributes.size());
     vertex_input_state.pVertexAttributeDescriptions = vertex_input_attributes.data();
 
-    return createPipeline(m_single_draw_vertex_module, m_fragment_module, variant, vertex_input_state);
+    return createPipeline(m_single_draw_vertex_module, m_fragment_module, variant, vertex_input_state, m_world_pipeline_layout);
 }
 
 GPUPipeline RenderBackend::createInstancingPipeline(uint32_t variant)
@@ -1229,7 +1316,44 @@ GPUPipeline RenderBackend::createInstancingPipeline(uint32_t variant)
     vertex_input_state.vertexAttributeDescriptionCount = static_cast<uint32_t>(vertex_input_attributes.size());
     vertex_input_state.pVertexAttributeDescriptions = vertex_input_attributes.data();
 
-    return createPipeline(m_instanced_vertex_module, m_fragment_module, variant, vertex_input_state);
+    return createPipeline(m_instanced_vertex_module, m_fragment_module, variant, vertex_input_state, m_world_pipeline_layout);
+}
+
+GPUPipeline RenderBackend::createTerrainPipeline(MaterialFeatures features)
+{
+    if (!m_terrain_vertex_module || !m_terrain_fragment_module) {
+        abortGame("setTerrainShaders() must be called before a terrain is drawn");
+    }
+
+    // There is no vertex buffer, only the patches, one per instance (see TerrainPatch)
+    VkVertexInputBindingDescription binding{};
+    binding.binding = 0;
+    binding.stride = static_cast<uint32_t>(sizeof(TerrainPatch));
+    binding.inputRate = VK_VERTEX_INPUT_RATE_INSTANCE;
+
+    std::array<VkVertexInputAttributeDescription, 3> attributes{};
+    attributes[0].binding = 0;
+    attributes[0].location = 0;
+    attributes[0].format = VK_FORMAT_R32G32B32A32_UINT;
+    attributes[0].offset = static_cast<uint32_t>(offsetof(TerrainPatch, tile));
+    attributes[1].binding = 0;
+    attributes[1].location = 1;
+    attributes[1].format = VK_FORMAT_R32G32B32A32_SFLOAT;
+    attributes[1].offset = static_cast<uint32_t>(offsetof(TerrainPatch, x));
+    attributes[2].binding = 0;
+    attributes[2].location = 2;
+    attributes[2].format = VK_FORMAT_R32G32_SFLOAT;
+    attributes[2].offset = static_cast<uint32_t>(offsetof(TerrainPatch, morph_start));
+
+    VkPipelineVertexInputStateCreateInfo vertex_input_state{};
+    vertex_input_state.sType = VK_STRUCTURE_TYPE_PIPELINE_VERTEX_INPUT_STATE_CREATE_INFO;
+    vertex_input_state.vertexBindingDescriptionCount = 1;
+    vertex_input_state.pVertexBindingDescriptions = &binding;
+    vertex_input_state.vertexAttributeDescriptionCount = static_cast<uint32_t>(attributes.size());
+    vertex_input_state.pVertexAttributeDescriptions = attributes.data();
+
+    return createPipeline(m_terrain_vertex_module, m_terrain_fragment_module, getMaterialPipelineVariant(features, MaterialBlendMode::NONE),
+                          vertex_input_state, m_terrain_pipeline_layout);
 }
 
 void RenderBackend::createMissingPipelines(const WorldDrawData& world_draw_data)
@@ -1248,6 +1372,13 @@ void RenderBackend::createMissingPipelines(const WorldDrawData& world_draw_data)
             GC_DEBUG("Creating instancing pipeline for material features {:#05b}, blend mode {}", entry.material->getFeatures(),
                      static_cast<uint32_t>(entry.material->getBlendMode()));
             m_instancing_pipelines[variant] = std::make_unique<GPUPipeline>(createInstancingPipeline(variant));
+        }
+    }
+    for (const auto& entry : world_draw_data.getTerrainDrawEntries()) {
+        const MaterialFeatures features = entry.material->getFeatures();
+        if (!m_terrain_pipelines[features]) [[unlikely]] {
+            GC_DEBUG("Creating terrain pipeline for material features {:#05b}", features);
+            m_terrain_pipelines[features] = std::make_unique<GPUPipeline>(createTerrainPipeline(features));
         }
     }
 }
@@ -1394,6 +1525,82 @@ RenderMesh RenderBackend::createMesh(std::span<const MeshVertex> vertices, std::
     return RenderMesh(std::move(managed_buffer), std::move(upload), static_cast<VkDeviceSize>(vertices_size), VK_INDEX_TYPE_UINT16, num_indices);
 }
 
+RenderTerrain RenderBackend::createTerrain(uint32_t tile_quads, uint32_t slot_count)
+{
+    GC_ASSERT(tile_quads >= 4 && (tile_quads & (tile_quads - 1)) == 0);
+
+    // All of the slots are in one storage buffer, which can't be bigger than the GPU allows
+    const VkDeviceSize slot_size = static_cast<VkDeviceSize>(tile_quads + 1) * (tile_quads + 1) * sizeof(uint32_t);
+    const VkDeviceSize max_range = m_device.getProperties().props.properties.limits.maxStorageBufferRange;
+    if (slot_count * slot_size > max_range) {
+        const uint32_t fewer = static_cast<uint32_t>(max_range / slot_size);
+        GC_WARN("A terrain's tile cache can't have {} slots, as the GPU's storage buffers can't be that big. It has {} instead", slot_count, fewer);
+        slot_count = fewer;
+    }
+    GC_ASSERT(slot_count > 0);
+
+    VkBuffer tiles{};
+    VmaAllocation tiles_allocation{};
+    {
+        VkBufferCreateInfo buffer_info{};
+        buffer_info.sType = VK_STRUCTURE_TYPE_BUFFER_CREATE_INFO;
+        buffer_info.size = slot_count * slot_size;
+        buffer_info.usage = VK_BUFFER_USAGE_TRANSFER_DST_BIT | VK_BUFFER_USAGE_STORAGE_BUFFER_BIT;
+        buffer_info.sharingMode = VK_SHARING_MODE_EXCLUSIVE;
+        VmaAllocationCreateInfo alloc_info{};
+        alloc_info.usage = VMA_MEMORY_USAGE_AUTO_PREFER_DEVICE;
+        alloc_info.priority = 0.5f;
+        GC_CHECKVK(vmaCreateBuffer(m_allocator.getHandle(), &buffer_info, &alloc_info, &tiles, &tiles_allocation, nullptr));
+    }
+    GPUBuffer tiles_buffer(m_delete_queue, tiles, tiles_allocation);
+
+    const std::vector<uint32_t> indices = RenderTerrain::makePatchIndices(tile_quads);
+    VkBuffer index_buffer{};
+    VmaAllocation index_allocation{};
+    {
+        VkBufferCreateInfo buffer_info{};
+        buffer_info.sType = VK_STRUCTURE_TYPE_BUFFER_CREATE_INFO;
+        buffer_info.size = indices.size() * sizeof(uint32_t);
+        buffer_info.usage = VK_BUFFER_USAGE_TRANSFER_DST_BIT | VK_BUFFER_USAGE_INDEX_BUFFER_BIT;
+        buffer_info.sharingMode = VK_SHARING_MODE_EXCLUSIVE;
+        VmaAllocationCreateInfo alloc_info{};
+        alloc_info.usage = VMA_MEMORY_USAGE_AUTO;
+        alloc_info.priority = 0.5f;
+        GC_CHECKVK(vmaCreateBuffer(m_allocator.getHandle(), &buffer_info, &alloc_info, &index_buffer, &index_allocation, nullptr));
+    }
+    GPUBuffer indices_buffer(m_delete_queue, index_buffer, index_allocation);
+    RenderUploader::Sources sources{};
+    sources.push_back(std::span(reinterpret_cast<const uint8_t*>(indices.data()), indices.size() * sizeof(uint32_t)));
+    RenderUpload indices_upload = m_uploader->uploadBuffer(index_buffer, sources, RenderUploadMode::IMMEDIATE);
+
+    VkDescriptorSet descriptor_set{};
+    {
+        VkDescriptorSetAllocateInfo info{};
+        info.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_ALLOCATE_INFO;
+        info.descriptorPool = m_main_descriptor_pool;
+        info.descriptorSetCount = 1;
+        info.pSetLayouts = &m_terrain_set_layout;
+        GC_CHECKVK(vkAllocateDescriptorSets(m_device.getHandle(), &info, &descriptor_set));
+
+        VkDescriptorBufferInfo buffer_info{};
+        buffer_info.buffer = tiles;
+        buffer_info.offset = 0;
+        buffer_info.range = VK_WHOLE_SIZE;
+        VkWriteDescriptorSet write{};
+        write.sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
+        write.dstSet = descriptor_set;
+        write.dstBinding = 0;
+        write.descriptorCount = 1;
+        write.descriptorType = VK_DESCRIPTOR_TYPE_STORAGE_BUFFER;
+        write.pBufferInfo = &buffer_info;
+        vkUpdateDescriptorSets(m_device.getHandle(), 1, &write, 0, nullptr);
+    }
+
+    GC_DEBUG("Created a terrain tile cache of {} slots ({})", slot_count, bytesToHumanReadable(slot_count * slot_size));
+    return RenderTerrain(*m_uploader, m_delete_queue, tile_quads, slot_count, std::move(tiles_buffer), std::move(indices_buffer), std::move(indices_upload),
+                         static_cast<uint32_t>(indices.size()), GPUDescriptorSet(m_delete_queue, m_main_descriptor_pool, descriptor_set));
+}
+
 // textures passed as parameters must outlive the material!
 RenderMaterial RenderBackend::createMaterial(RenderTexture& base_color, RenderTexture& orm, RenderTexture& normal, RenderTexture& emissive,
                                              MaterialFeatures features, MaterialBlendMode blend_mode, const MaterialConstants& constants)
@@ -1486,6 +1693,10 @@ void RenderBackend::recreateFramesInFlightResources()
     constexpr VkDeviceSize INSTANCING_BUFFER_INITIAL_SIZE = sizeof(glm::mat4) * 100; // 100 instances
     m_instancing_transforms_buffer = std::make_unique<RenderBuffer>(m_delete_queue, m_allocator.getHandle(), static_cast<uint32_t>(m_fif.size()),
                                                                     INSTANCING_BUFFER_INITIAL_SIZE, VK_BUFFER_USAGE_VERTEX_BUFFER_BIT);
+
+    constexpr VkDeviceSize TERRAIN_PATCHES_BUFFER_INITIAL_SIZE = sizeof(TerrainPatch) * 1024;
+    m_terrain_patches_buffer = std::make_unique<RenderBuffer>(m_delete_queue, m_allocator.getHandle(), static_cast<uint32_t>(m_fif.size()),
+                                                              TERRAIN_PATCHES_BUFFER_INITIAL_SIZE, VK_BUFFER_USAGE_VERTEX_BUFFER_BIT);
     {
         VkDescriptorSet ds{};
         VkDescriptorSetAllocateInfo info{};

@@ -14,6 +14,10 @@
 //    shared by every collider that uses the mesh. The tree is taken from a baked asset if the world has one with the mesh in it
 //    (see CollisionBvhComponent), which costs nothing. Otherwise it is built from the mesh when its first collider appears.
 //
+// Terrains (TerrainComponent, see gc_terrain.h) are colliders too, if their components say so. They are leaves of the same broad
+// phase tree. Their narrow phase is the terrain's own: it walks a ray through the cells of its tiles, which are already a tree
+// (each node knows the heights under it), so there is nothing to build or bake for them either.
+//
 // onUpdate() brings the system up to date with the world: new and deleted entities, changed meshes, moved transforms. Queries see
 // the world as it was then, so register the system before the systems that use it (and after nothing that moves colliders, if
 // that matters: otherwise queries are a frame behind for the things that moved).
@@ -37,6 +41,7 @@ namespace gc {
 class World;           // forward-dec
 class ResourceManager; // forward-dec
 struct FrameState;     // forward-dec
+struct ResourceTerrain; // forward-dec
 
 struct Ray {
     glm::vec3 origin{};
@@ -82,13 +87,24 @@ private:
         uint64_t last_seen{};       // the update in which the entity last had a ColliderComponent
     };
 
+    // What the system knows about one entity's terrain
+    struct TerrainCollider {
+        Name terrain{};                   // what the component had when it was last looked at
+        const ResourceTerrain* resource{}; // null if it couldn't be loaded
+        glm::mat4 world_matrix{};
+        glm::mat4 inverse_matrix{};
+        int32_t tree_node{-1};
+        uint64_t last_seen{};
+    };
+
     // One node of the broad phase tree. A leaf is a collider. Any other node has two children and bounds both of them.
     struct TreeNode {
         AABB box;
         int32_t parent;
         int32_t child1; // -1 if the node is a leaf
         int32_t child2;
-        Entity entity; // leaves only
+        Entity entity;   // leaves only
+        bool is_terrain; // leaves only: the entity's TerrainCollider, rather than its Collider
     };
 
     ResourceManager& m_resource_manager;
@@ -99,6 +115,7 @@ private:
     std::vector<Name> m_baked_assets{};
     std::unordered_map<Name, CollisionBvhView> m_baked_meshes{}; // by mesh
     std::unordered_map<Entity, Collider> m_colliders{};
+    std::unordered_map<Entity, TerrainCollider> m_terrains{};
 
     std::vector<TreeNode> m_tree{};
     std::vector<int32_t> m_free_tree_nodes{};
@@ -126,12 +143,16 @@ public:
 
     // For debugging
     size_t getColliderCount() const { return m_colliders.size(); }
+    size_t getTerrainCount() const { return m_terrains.size(); }
     size_t getMeshCount() const { return m_shapes.size(); }
     size_t getBakedMeshCount() const; // how many of those meshes have a baked tree, rather than one that had to be built
     int getTreeHeight() const;
 
 private:
     void findBakedMeshes();
+    void updateTerrains();
+    // Puts a leaf in the broad phase tree with this box, or moves it there, or takes it out if the box is empty. Returns the leaf
+    int32_t placeLeaf(int32_t tree_node, const std::optional<AABB>& box, Entity entity, bool is_terrain);
     const MeshShape* acquireShape(Name mesh);
     void releaseShape(Name mesh);
 

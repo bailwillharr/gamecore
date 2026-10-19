@@ -277,6 +277,8 @@ add_subdirectory(temple_explorer)
 
 add_subdirectory(ember_court)
 
+add_subdirectory(mars_fissure)
+
 add_subdirectory(dedicated_server)
 
 add_subdirectory(tools/gcpak_editor)

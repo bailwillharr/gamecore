@@ -1,0 +1,71 @@
+Mars Fissure: walk, or fly, over a piece of Mars at full size. Shows the engine's terrains.
+
+The ground is a HiRISE digital terrain model of a fissure east of Olympus Mons (DTEEC_046252_1975_046107_1975_A01, 17.2 N
+233.3 E): 6244 x 12235 heights, 1.01 m apart, so 6.3 x 12.4 km, from 961 to 1263 m above Mars's datum. It is drawn and walked
+on at 1:1, at a metre per sample near the camera, all the way to the horizon. Eight survey beacons are spread over it: one at the
+bottom of the fissure, one on the highest ground, and six others. Find them all.
+
+    mars_fissure                    walk from the rim of the fissure
+    mars_fissure --fly              start flying
+    mars_fissure --levels           colour the terrain's levels of detail
+    mars_fissure --detail 600       draw full detail out to 600 m (300 is the default)
+    mars_fissure --spawn 3000 9000  start 3 km east and 9 km north of the scan's south west corner
+    mars_fissure --flythrough 60 syncmode=3
+                                    fly a set route for 60 seconds, logging the frame times and what the terrain streamed, then
+                                    quit (see src/flythrough.h). syncmode=3 turns vsync off
+
+Controls:
+    Mouse               look
+    W A S D             walk (Shift: run, Space: jump. Mars's gravity is 38% of Earth's)
+    F                   fly or walk. Flying: Space or E up, Q down, Shift 10 times faster (400 m/s), Ctrl 10 times slower
+    R                   back to the start
+    L                   colour the levels of detail
+    K                   freeze the levels of detail where they are, then fly away to look at them
+    [ ]                 less or more detail
+    H                   hide the controls
+    F10                 debug windows. Windows > Terrain shows what is drawn and streamed, and has the same settings
+    F11                 full screen
+    Escape              quit
+
+THE CONTENT
+
+    content/mars_terrain.gcpak  the terrain, baked from the DTM by gcpak_editor (309 MB)
+    content/mars.gcpak          the ground's material, and the sky, made by mars_fissure_contentgen (contentgen/main.cpp)
+    content/shaders.gcpak       as for the other games. It must have terrain.vert and terrain.frag in it:
+                                    gcpak_editor --pack content/shader_src --out content/shaders.gcpak
+
+The DTM isn't in the repository: it is 300 MB. Download DTEEC_046252_1975_046107_1975_A01.IMG from https://www.uahirise.org/dtm/
+(or the PDS) and set the CMake variable MARS_DTM to where it is. The build then bakes it (the mars_fissure_terrain target):
+
+    gcpak_editor --bake-terrain DTEEC_046252_1975_046107_1975_A01.IMG --out content/mars_terrain.gcpak --name mars_fissure.terrain
+
+which takes a few seconds in a release build. It is baked again only if the DTM or the baker changes. Without MARS_DTM, the
+target isn't made, and the game says so when it starts. The rest is made by the mars_fissure_content target whenever the content
+generator or gcpak_editor changes:
+
+    mars_fissure_contentgen content/mars.gcpak mars_sky.hdr
+    gcpak_editor --pack mars_sky.hdr --out content/mars.gcpak --append
+
+Nothing was photographed: the sky is a model of a dusty Martian sky (butterscotch, with a bluish glow round the sun), and the
+ground is dust and pebbles made with noise. The DTM only has heights, so the colour of the ground is the same everywhere apart
+from where it is steep (rock) and some large, faint blotches.
+
+WHAT IT SHOWS
+
+    Terrains            a TerrainComponent names a TERRAIN asset. The TerrainSystem chooses levels of detail for the camera
+                        (CDLOD: detailed near, coarse far, turning smoothly from one into the next) and streams the tiles it needs
+                        into a cache in GPU memory, from the mapped .gcpak file, on the render work thread. Only ~800 of the
+                        terrain's 19,113 tiles are in GPU memory at once at walking speed, a few thousand when flying around. The
+                        whole terrain is one instanced draw. See gamecore/include/gamecore/gc_terrain_system.h
+    Collisions          the CollisionSystem collides with the terrain using the same tiles that are drawn near the camera, so the
+                        explorer walks on exactly what is seen. Nothing is built when the game starts. See src/explorer.cpp
+    The sky and haze    a SkyboxComponent lights the ground with the sky, and a FogComponent fades the distance (and the edge of
+                        the scan) into it
+    Point lights        the beacons' lamps light the ground around them
+
+WHAT ISN'T THERE
+
+No shadows: the engine's only shadows are baked into one shadow map per world, and a 12 km world would need one far too big to be
+sharp. Cascaded shadow maps would suit terrain. The terrain has no texture of its own (HiRISE's orthoimages would give it one,
+streamed with the tiles), so its colour doesn't vary as the real ground's does. The scan's edges are where the world ends: you
+can walk off them, and are put back.

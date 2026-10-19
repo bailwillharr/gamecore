@@ -14,4 +14,13 @@ The same queries are then made with the trees of the meshes baked into COLLISION
 than built: with some of the meshes baked and some not, with two assets at once, and after the assets are taken away. The asset
 format is checked too: that what is read back is what was built, and that damaged data is refused.
 
+Last, terrains (gc::TerrainComponent): a small terrain is made from a grid of hills with cliffs, a hole in its data and a corner
+missing, so that it has tiles at several levels and parts where only the coarse levels are stored. The tree is checked (every
+node's bounds hold its tiles and its children's, every tile has one parent), and the heights where there was data are what the
+data said. Then, with the terrain moved and turned, ray casts (straight down, grazing the hills, and in every direction) and
+sphere overlaps are compared with slow versions that go through every cell of the most detailed tile at each point, found
+straight from the tree. Spheres under the ground are checked to be pushed straight up out of it.
+
+    collision_test --terrain-only      only the terrain tests (a second or two)
+
 No window is opened. The exit code is zero if every check passed.

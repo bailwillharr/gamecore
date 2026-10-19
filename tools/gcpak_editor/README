@@ -36,6 +36,8 @@ No window is opened, so this also works before content/shaders.gcpak exists.
     gcpak_editor --list FILE.gcpak
     gcpak_editor --bake-shadows PREFAB FILE.gcpak... [--resolution N] [--no-cast ENTITY]...
     gcpak_editor --bake-collision PREFAB FILE.gcpak...
+    gcpak_editor --bake-terrain FILE.IMG|FILE.pfm --out FILE.gcpak [--append] [--name NAME] [--spacing METRES]
+                 [--tile-quads N] [--fill-level N]
 
     --pack PATH...      Compile these source files. For a directory, every source file in it. Other files are ignored.
     --out FILE.gcpak    Where to save. Can be left out when packing a single directory: content/textures is saved to
@@ -48,6 +50,7 @@ No window is opened, so this also works before content/shaders.gcpak exists.
                         Bake the shadow map of a prefab. See BAKING SHADOWS below
     --bake-collision PREFAB FILE.gcpak...
                         Bake the collision trees of a prefab. See BAKING COLLISION below
+    --bake-terrain FILE Make a terrain from a grid of heights. See TERRAINS below
 
 The exit code is zero if every file compiled. The package file is still saved if some didn't.
 (On Windows the editor isn't a console program. Its output shows up in the console it was started from, but the console doesn't
@@ -152,3 +155,35 @@ from a baked prefab work alongside them. Any number of baked prefabs can be load
 positions of the meshes, so bake again if a mesh is changed (compiling a glTF file always does).
 
     gcpak_editor --bake-collision ember_court.map content/ember_court.gcpak
+
+TERRAINS
+
+    gcpak_editor --bake-terrain FILE.IMG|FILE.pfm --out FILE.gcpak [--append] [--name NAME] [--spacing METRES]
+                 [--tile-quads N] [--fill-level N]
+
+A terrain (see gamecore/include/gamecore/gc_terrain.h) is a height field cut into tiles at several levels of detail, which the
+engine streams into GPU memory as the camera moves (gc::TerrainSystem) and collides with (gc::CollisionSystem). It is made from a
+grid of heights, one asset named NAME (FILE's name with ".terrain" after it, if not given). The grid is read from:
+
+    .IMG    a PDS3 image: a digital terrain model as NASA's Planetary Data System publishes them, such as HiRISE's DTEEC_*.IMG
+            files. The label at the start says how big the grid is, where the samples are, which value means there is no data,
+            and how far apart the samples are (MAP_SCALE). Only 32 bit little endian floats (PC_REAL) can be read. The first
+            line is the north edge, which becomes the terrain's +y edge.
+    .pfm    a portable float map with one channel, rows from the bottom up. NaN is no data. Give --spacing, as it doesn't say.
+
+    --spacing METRES    the distance between samples, if the file doesn't say (or to override it)
+    --tile-quads N      grid cells along a tile's side, a power of two (64). Smaller tiles are culled and streamed more finely, but
+                        there are more of them to draw
+    --fill-level N      where the source has no data (around the edges of a scan), only the tiles of this level and above are
+                        stored (3: an eighth of the detail). 0 stores every tile everywhere
+
+There are enough levels for a top level tile to be about as big as the grid's shorter side. The grid is made a whole number of
+top level tiles, and everything that had no data, including the extra, is filled with a smooth surface that meets the data
+around it. Each level above the first is the one below it smoothed a little and with every other sample. Heights are stored in
+16 bits from the lowest to the highest, with a normal for each sample. Each tile also knows the lowest and highest heights under
+it, and how far the gaps between it and a neighbour drawn at another level can be, for its skirts.
+
+Mars Fissure's terrain, a 6244 x 12235 HiRISE DTM, is 309 MB and takes a few seconds in a release build (see
+mars_fissure/README):
+
+    gcpak_editor --bake-terrain DTEEC_046252_1975_046107_1975_A01.IMG --out content/mars_terrain.gcpak --name mars_fissure.terrain

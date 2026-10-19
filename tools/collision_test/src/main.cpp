@@ -8,6 +8,7 @@
 #include <cstdint>
 #include <cstdio>
 #include <cstdlib>
+#include <cstring>
 
 #include <algorithm>
 #include <array>
@@ -35,6 +36,9 @@
 #include <gamecore/gc_gen_mesh.h>
 #include <gamecore/gc_resource_manager.h>
 #include <gamecore/gc_resources.h>
+#include <gamecore/gc_terrain.h>
+#include <gamecore/gc_terrain_builder.h>
+#include <gamecore/gc_terrain_component.h>
 #include <gamecore/gc_transform_component.h>
 #include <gamecore/gc_world.h>
 
@@ -276,10 +280,326 @@ static void compareBoxQueries(gc::World& world, const gc::CollisionSystem& colli
     CHECK(wrong == 0);
 }
 
-int main()
+//
+// Terrains: the surface is the most detailed tile at each point. The slow versions go through every cell of every tile that is
+// part of that surface, found straight from the tree.
+//
+
+static void appendTerrainTriangles(const gc::ResourceTerrain& terrain, const gc::TerrainNodeRef& node, const glm::dmat4& matrix, gc::Entity entity,
+                                   std::vector<Triangle>& triangles)
 {
+    const uint32_t quads = terrain.header.tile_quads;
+    const uint32_t side = quads + 1;
+    const double cell = static_cast<double>(terrain.header.sample_spacing) * static_cast<double>(1u << node.level);
+    const double node_x = static_cast<double>(node.x) * quads * cell;
+    const double node_y = static_cast<double>(node.y) * quads * cell;
+    const auto tile = terrain.getTile(node.index);
+    const auto corner = [&](uint32_t i, uint32_t j) {
+        const double height = static_cast<double>(terrain.header.height_offset) +
+                              static_cast<double>(tile[j * side + i] & 0xffff) * static_cast<double>(terrain.header.height_scale);
+        return glm::dvec3(matrix * glm::dvec4(node_x + i * cell, node_y + j * cell, height, 1.0));
+    };
+    for (uint32_t quarter = 0; quarter < 4; ++quarter) {
+        const uint32_t child = (node.level > 0) ? terrain.nodes[node.index].children[quarter] : gc::TERRAIN_NO_NODE;
+        if (child != gc::TERRAIN_NO_NODE) {
+            appendTerrainTriangles(terrain, terrain.getChild(node, quarter), matrix, entity, triangles);
+            continue;
+        }
+        const uint32_t x0 = (quarter & 1) ? quads / 2 : 0;
+        const uint32_t y0 = (quarter & 2) ? quads / 2 : 0;
+        for (uint32_t j = y0; j < y0 + quads / 2; ++j) {
+            for (uint32_t i = x0; i < x0 + quads / 2; ++i) {
+                triangles.push_back(Triangle{corner(i, j), corner(i + 1, j), corner(i + 1, j + 1), entity});
+                triangles.push_back(Triangle{corner(i, j), corner(i + 1, j + 1), corner(i, j + 1), entity});
+            }
+        }
+    }
+}
+
+static std::vector<Triangle> getTerrainTriangles(const gc::ResourceTerrain& terrain, const glm::mat4& matrix, gc::Entity entity)
+{
+    std::vector<Triangle> triangles{};
+    for (uint32_t y = 0; y < terrain.header.root_count_y; ++y) {
+        for (uint32_t x = 0; x < terrain.header.root_count_x; ++x) {
+            appendTerrainTriangles(terrain, terrain.getRoot(x, y), glm::dmat4(matrix), entity, triangles);
+        }
+    }
+    return triangles;
+}
+
+static void testTerrains(gc::ResourceManager& resource_manager)
+{
+    print("Terrains: making one");
+    // Hills, with a hole in the data and a corner missing, like the edges of a scan
+    constexpr uint32_t WIDTH = 301;
+    constexpr uint32_t HEIGHT = 213;
+    constexpr float SPACING = 0.75f;
+    std::vector<float> heights(static_cast<size_t>(WIDTH) * HEIGHT);
+    uint32_t data_count = 0;
+    for (uint32_t y = 0; y < HEIGHT; ++y) {
+        for (uint32_t x = 0; x < WIDTH; ++x) {
+            const float fx = static_cast<float>(x);
+            const float fy = static_cast<float>(y);
+            float h = 20.0f * std::sin(fx * 0.05f) * std::cos(fy * 0.07f) + 3.0f * std::sin(fx * 0.31f + fy * 0.17f) + 100.0f;
+            if ((x % 37 == 0 && y % 11 < 3)) {
+                h += 6.0f; // cliffs
+            }
+            const bool hole = (fx - 120.0f) * (fx - 120.0f) + (fy - 90.0f) * (fy - 90.0f) < 30.0f * 30.0f;
+            const bool corner = x > 230 && y > 160;
+            heights[static_cast<size_t>(y) * WIDTH + x] = (hole || corner) ? std::numeric_limits<float>::quiet_NaN() : h;
+            data_count += (hole || corner) ? 0 : 1;
+        }
+    }
+    gc::TerrainBuildInput input{};
+    input.width = WIDTH;
+    input.height = HEIGHT;
+    input.heights = heights;
+    input.sample_spacing = SPACING;
+    input.tile_quads = 16;
+    input.fill_level = 2;
+    gc::TerrainBuildInfo info{};
+    std::string error{};
+    // (kept until the end, as the resource is a view of it)
+    static std::vector<uint8_t> s_data{};
+    s_data = gc::makeTerrainData(input, &info, &error);
+    CHECK(!s_data.empty());
+    if (s_data.empty()) {
+        print("    {}", error);
+        return;
+    }
+    print("    {} levels, {} x {} top level tiles, {} tiles", info.level_count, info.root_count_x, info.root_count_y, info.node_count);
+    CHECK(info.level_count == 4);
+    CHECK(info.filled_samples > 0);
+
+    // data that has been cut short, or changed where it matters, is refused
+    for (const size_t size : {size_t{0}, size_t{63}, size_t{64}, s_data.size() / 2, s_data.size() - 1}) {
+        CHECK(!gc::ResourceTerrain::create(std::span<const uint8_t>(s_data.data(), size)).has_value());
+    }
+    {
+        std::vector<uint8_t> wrong_version = s_data;
+        wrong_version[0] ^= 0xff;
+        CHECK(!gc::ResourceTerrain::create(wrong_version).has_value());
+        std::vector<uint8_t> bad_child = s_data;
+        const uint32_t huge = 0x7fffffff;
+        std::memcpy(bad_child.data() + sizeof(gc::TerrainHeader) + offsetof(gc::TerrainNode, children), &huge, sizeof(huge));
+        CHECK(!gc::ResourceTerrain::create(bad_child).has_value());
+    }
+    const std::optional<gc::ResourceTerrain> created = gc::ResourceTerrain::create(s_data);
+    CHECK(created.has_value());
+    if (!created) {
+        return;
+    }
+    const gc::ResourceTerrain& terrain = *created;
+    CHECK(terrain.header.data_min_x == 0 && terrain.header.data_max_x == WIDTH && terrain.header.data_min_y == 0 && terrain.header.data_max_y == HEIGHT);
+
+    print("Terrains: the tree");
+    {
+        // Every node's bounds hold its tile and its children. Every tile has a parent, except the top level's
+        int wrong = 0;
+        std::vector<int> parents(terrain.nodes.size(), 0);
+        std::vector<std::pair<gc::TerrainNodeRef, gc::AABB>> stack{};
+        for (uint32_t y = 0; y < terrain.header.root_count_y; ++y) {
+            for (uint32_t x = 0; x < terrain.header.root_count_x; ++x) {
+                const gc::TerrainNodeRef root = terrain.getRoot(x, y);
+                stack.emplace_back(root, terrain.getNodeBounds(root));
+                parents[root.index] = 1;
+            }
+        }
+        while (!stack.empty()) {
+            const auto [node, parent_box] = stack.back();
+            stack.pop_back();
+            const gc::AABB box = terrain.getNodeBounds(node);
+            wrong += (box.min.z >= parent_box.min.z && box.max.z <= parent_box.max.z) ? 0 : 1;
+            wrong += (terrain.nodes[node.index].skirt_depth > 0.0f) ? 0 : 1;
+            for (const uint32_t sample : terrain.getTile(node.index)) {
+                const float h = terrain.decodeHeight(sample);
+                wrong += (h >= box.min.z && h <= box.max.z) ? 0 : 1;
+            }
+            for (uint32_t quarter = 0; quarter < 4 && node.level > 0; ++quarter) {
+                const gc::TerrainNodeRef child = terrain.getChild(node, quarter);
+                if (child.index != gc::TERRAIN_NO_NODE) {
+                    ++parents[child.index];
+                    stack.emplace_back(child, box);
+                }
+            }
+        }
+        CHECK(wrong == 0);
+        CHECK(std::all_of(parents.begin(), parents.end(), [](int count) { return count == 1; }));
+        // where there is no data, only the levels from fill_level up are stored
+        CHECK(info.nodes_per_level[0] < (WIDTH / 16 + 1) * (HEIGHT / 16 + 1));
+    }
+
+    print("Terrains: heights");
+    {
+        // where there was data, the ground is where the data said, to the precision that heights are stored in
+        int wrong = 0;
+        for (uint32_t y = 0; y < HEIGHT; y += 3) {
+            for (uint32_t x = 0; x < WIDTH; x += 3) {
+                const float expected = heights[static_cast<size_t>(y) * WIDTH + x];
+                const std::optional<float> h = terrain.getHeight(static_cast<float>(x) * SPACING, static_cast<float>(y) * SPACING);
+                if (!h) {
+                    ++wrong;
+                }
+                else if (std::isfinite(expected) && std::abs(*h - expected) > terrain.header.height_scale) {
+                    ++wrong;
+                }
+            }
+        }
+        CHECK(wrong == 0);
+        CHECK(!terrain.getHeight(-1.0f, 5.0f).has_value());
+        CHECK(!terrain.getHeight(5.0f, terrain.getSize().y + 1.0f).has_value());
+    }
+
+    CHECK(!resource_manager.add<gc::ResourceTerrain>(gc::ResourceTerrain(terrain), "terrain"_name).empty());
+
+    // (components are registered in the same order in every World)
+    gc::World world{};
+    world.registerComponent<gc::ColliderComponent, gc::ComponentArrayType::SPARSE>();
+    world.registerComponent<gc::CollisionBvhComponent, gc::ComponentArrayType::SPARSE>();
+    world.registerComponent<gc::TerrainComponent, gc::ComponentArrayType::SPARSE>();
+    world.registerSystem<gc::CollisionSystem>(resource_manager);
+    gc::CollisionSystem& collision = world.getSystem<gc::CollisionSystem>();
+    gc::FrameState frame_state{};
+
+    // moved and turned, as a terrain's entity can be
+    const glm::vec3 position{-60.0f, 25.0f, -95.0f};
+    const glm::quat rotation = glm::angleAxis(0.4f, glm::vec3{0.0f, 0.0f, 1.0f});
+    const gc::Entity entity = world.createEntity("terrain"_name, gc::ENTITY_NONE, position, rotation);
+    world.addComponent<gc::TerrainComponent>(entity).setTerrain("terrain"_name);
+    const gc::Entity cube = world.createEntity("cube"_name, gc::ENTITY_NONE, glm::vec3{0.0f, 0.0f, 10.0f});
+    world.addComponent<gc::ColliderComponent>(cube).setMesh("cube"_name);
+    world.update(frame_state);
+    CHECK(collision.getTerrainCount() == 1);
+    CHECK(collision.getColliderAABB(entity).has_value());
+
+    const glm::mat4 matrix = world.getComponent<gc::TransformComponent>(entity)->getWorldMatrix();
+    std::vector<Triangle> triangles = getTerrainTriangles(terrain, matrix, entity);
+    const std::vector<Triangle> cube_triangles = getWorldTriangles(world, resource_manager);
+    triangles.insert(triangles.end(), cube_triangles.begin(), cube_triangles.end());
+    print("    {} triangles", triangles.size());
+    const glm::vec2 size = terrain.getSize();
+    const auto random_point_over = [&](float min_z, float max_z) {
+        const glm::vec3 local{randomFloat(-10.0f, size.x + 10.0f), randomFloat(-10.0f, size.y + 10.0f), randomFloat(min_z, max_z)};
+        return glm::vec3(matrix * glm::vec4(local, 1.0f));
+    };
+
+    print("Terrains: ray casts");
+    {
+        constexpr int RAY_COUNT = 400;
+        int hits = 0;
+        int wrong = 0;
+        for (int i = 0; i < RAY_COUNT; ++i) {
+            gc::Ray ray{};
+            ray.origin = random_point_over(terrain.header.min_height - 20.0f, terrain.header.max_height + 40.0f);
+            // straight down, nearly flat (grazing the hills), and anything
+            ray.direction = (i % 4 == 0) ? glm::vec3{0.0f, 0.0f, -1.0f}
+                                         : ((i % 4 == 1) ? glm::vec3{randomFloat(-1.0f, 1.0f), randomFloat(-1.0f, 1.0f), randomFloat(-0.05f, 0.02f)}
+                                                         : randomVec3(-1.0f, 1.0f));
+            if (glm::length(ray.direction) < 0.1f) {
+                continue;
+            }
+            const glm::dvec3 direction = glm::normalize(glm::dvec3(ray.direction));
+            double expected = std::numeric_limits<double>::max();
+            for (const Triangle& triangle : triangles) {
+                const double t = slowRayTriangle(glm::dvec3(ray.origin), direction, triangle);
+                if (t >= 0.0 && t < expected) {
+                    expected = t;
+                }
+            }
+            const bool expected_hit = expected < std::numeric_limits<double>::max();
+            const gc::RaycastHit hit = collision.raycast(ray);
+            hits += hit.hit ? 1 : 0;
+            if (hit.hit != expected_hit) {
+                ++wrong;
+            }
+            else if (hit.hit) {
+                const bool distance_ok = std::abs(static_cast<double>(hit.distance) - expected) < 2.0e-2;
+                const bool normal_ok = std::abs(glm::length(hit.normal) - 1.0f) < 1.0e-3f && glm::dot(hit.normal, glm::vec3(direction)) <= 1.0e-4f;
+                wrong += (distance_ok && normal_ok) ? 0 : 1;
+            }
+        }
+        print("    {} rays, {} hit, {} differ from the slow version", RAY_COUNT, hits, wrong);
+        CHECK(wrong <= RAY_COUNT / 200);
+        CHECK(hits > RAY_COUNT / 4);
+        // a short ray stops short
+        const glm::vec3 above = glm::vec3(matrix * glm::vec4(50.0f, 50.0f, terrain.header.max_height + 5.0f, 1.0f));
+        CHECK(collision.raycast(gc::Ray{above, glm::vec3{0.0f, 0.0f, -1.0f}}).hit);
+        CHECK(!collision.raycast(gc::Ray{above, glm::vec3{0.0f, 0.0f, -1.0f}}, 1.0f).hit);
+        CHECK(!collision.raycast(gc::Ray{above, glm::vec3{0.0f, 0.0f, -1.0f}}, 1000.0f, entity).hit);
+    }
+
+    print("Terrains: spheres");
+    {
+        constexpr int SPHERE_COUNT = 200;
+        int contact_count = 0;
+        int wrong = 0;
+        for (int i = 0; i < SPHERE_COUNT; ++i) {
+            const glm::vec3 local_xy{randomFloat(0.0f, size.x), randomFloat(0.0f, size.y), 0.0f};
+            const float ground = terrain.getHeight(local_xy.x, local_xy.y).value_or(0.0f);
+            const float radius = randomFloat(0.2f, 3.0f);
+            const glm::vec3 centre = glm::vec3(matrix * glm::vec4(local_xy.x, local_xy.y, ground + randomFloat(-1.0f, 3.0f), 1.0f));
+            const float local_z = glm::vec3(glm::inverse(matrix) * glm::vec4(centre, 1.0f)).z;
+
+            std::vector<gc::SphereContact> contacts{};
+            collision.overlapSphere(centre, radius, contacts, cube);
+            contact_count += static_cast<int>(contacts.size());
+            bool ok = contacts.size() <= 1;
+            if (local_z < ground) {
+                // under the ground: pushed straight up, out of it
+                ok = ok && contacts.size() == 1;
+                if (!contacts.empty()) {
+                    ok = ok && std::abs(contacts[0].depth - (radius + ground - local_z)) < 1.0e-2f;
+                    ok = ok && glm::distance(contacts[0].normal, glm::vec3{0.0f, 0.0f, 1.0f}) < 1.0e-3f;
+                }
+                wrong += ok ? 0 : 1;
+                continue;
+            }
+            double expected = std::numeric_limits<double>::max();
+            for (const Triangle& triangle : triangles) {
+                if (triangle.entity == entity) {
+                    expected = std::min(expected, glm::distance(slowClosestPoint(glm::dvec3(centre), triangle), glm::dvec3(centre)));
+                }
+            }
+            if (expected < static_cast<double>(radius)) {
+                ok = ok && contacts.size() == 1;
+                if (!contacts.empty()) {
+                    ok = ok && std::abs(static_cast<double>(radius - contacts[0].depth) - expected) < 1.0e-2;
+                    ok = ok && glm::distance(contacts[0].position + contacts[0].normal * (radius - contacts[0].depth), centre) < 1.0e-2f;
+                }
+            }
+            else {
+                ok = ok && (contacts.empty() || contacts[0].depth < 1.0e-3f);
+            }
+            wrong += ok ? 0 : 1;
+        }
+        print("    {} spheres, {} contacts, {} differ from the slow version", SPHERE_COUNT, contact_count, wrong);
+        CHECK(wrong == 0);
+        CHECK(contact_count > SPHERE_COUNT / 4);
+    }
+
+    print("Terrains: turning collision off, and removing the terrain");
+    world.getComponent<gc::TerrainComponent>(entity)->setCollision(false);
+    world.update(frame_state);
+    CHECK(collision.getTerrainCount() == 0);
+    const glm::vec3 above = glm::vec3(matrix * glm::vec4(50.0f, 50.0f, terrain.header.max_height + 5.0f, 1.0f));
+    CHECK(!collision.raycast(gc::Ray{above, glm::vec3{0.0f, 0.0f, -1.0f}}, 500.0f, cube).hit);
+    world.getComponent<gc::TerrainComponent>(entity)->setCollision(true);
+    world.update(frame_state);
+    CHECK(collision.raycast(gc::Ray{above, glm::vec3{0.0f, 0.0f, -1.0f}}, 500.0f, cube).hit);
+    world.deleteEntity(entity);
+    world.update(frame_state);
+    CHECK(collision.getTerrainCount() == 0);
+    CHECK(!collision.raycast(gc::Ray{above, glm::vec3{0.0f, 0.0f, -1.0f}}, 500.0f, cube).hit);
+}
+
+// --terrain-only skips the tests of meshes
+int main(int argc, char* argv[])
+{
+    const bool terrain_only = (argc > 1 && std::string(argv[1]) == "--terrain-only");
+
     for (const char* const name :
-         {"TransformComponent", "ColliderComponent", "CollisionBvhComponent", "cube", "ball", "plane", "missing", "baked", "baked_plane", "bvh"}) {
+         {"TransformComponent", "ColliderComponent", "CollisionBvhComponent", "TerrainComponent", "cube", "ball", "plane", "missing", "baked", "baked_plane",
+          "bvh", "terrain"}) {
         (void)gc::Name(name);
     }
 
@@ -296,6 +616,12 @@ int main()
     resource_manager.add<gc::ResourceMesh>(gc::genCubeMesh(), "cube"_name);
     resource_manager.add<gc::ResourceMesh>(gc::genSphereMesh(12), "ball"_name);
     resource_manager.add<gc::ResourceMesh>(gc::genPlaneMesh(), "plane"_name);
+
+    if (terrain_only) {
+        testTerrains(resource_manager);
+        print("{} ({} of {} checks failed)", (s_failures == 0) ? "PASSED" : "FAILED", s_failures, s_checks);
+        return (s_failures == 0) ? EXIT_SUCCESS : EXIT_FAILURE;
+    }
 
     gc::World world{};
     world.registerComponent<gc::ColliderComponent, gc::ComponentArrayType::SPARSE>();
@@ -540,6 +866,8 @@ int main()
     CHECK(collision.getBakedMeshCount() == 0); // new colliders have theirs built
     compareRaycasts(world, resource_manager, collision, 600, "ray casts with built trees again");
     compareSpheres(world, resource_manager, collision, 300, "spheres with built trees again");
+
+    testTerrains(resource_manager);
 
     if (s_failures == 0) {
         print("PASSED ({} checks)", s_checks);

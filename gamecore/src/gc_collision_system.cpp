@@ -19,128 +19,16 @@
 #include "gamecore/gc_frame_state.h"
 #include "gamecore/gc_resource_manager.h"
 #include "gamecore/gc_resources.h"
+#include "gamecore/gc_terrain.h"
+#include "gamecore/gc_terrain_component.h"
 #include "gamecore/gc_transform_component.h"
 #include "gamecore/gc_world.h"
+
+#include "gc_collision_math.h"
 
 namespace gc {
 
 namespace {
-
-AABB boxUnion(const AABB& a, const AABB& b) { return AABB{glm::min(a.min, b.min), glm::max(a.max, b.max)}; }
-
-void boxExpand(AABB& box, const glm::vec3& point)
-{
-    box.min = glm::min(box.min, point);
-    box.max = glm::max(box.max, point);
-}
-
-// the surface area: boxes with less of it are hit by fewer rays, which is what makes a good tree
-float boxArea(const AABB& box)
-{
-    const glm::vec3 size = box.max - box.min;
-    return 2.0f * (size.x * size.y + size.y * size.z + size.z * size.x);
-}
-
-bool boxesOverlap(const AABB& a, const AABB& b)
-{
-    return a.min.x <= b.max.x && a.max.x >= b.min.x && a.min.y <= b.max.y && a.max.y >= b.min.y && a.min.z <= b.max.z && a.max.z >= b.min.z;
-}
-
-// the box around a box that has been transformed
-AABB transformBox(const AABB& box, const glm::mat4& matrix)
-{
-    AABB result{};
-    for (int corner = 0; corner < 8; ++corner) {
-        const glm::vec3 point{(corner & 1) ? box.max.x : box.min.x, (corner & 2) ? box.max.y : box.min.y, (corner & 4) ? box.max.z : box.min.z};
-        boxExpand(result, glm::vec3(matrix * glm::vec4(point, 1.0f)));
-    }
-    return result;
-}
-
-// Whether the ray gets into the box before it has gone max_t. entry_t is how far along the ray it does (zero if it starts inside).
-// inverse_direction is 1 / direction, which is infinite for the axes the ray doesn't move along.
-bool rayHitsBox(const glm::vec3& origin, const glm::vec3& inverse_direction, const AABB& box, float max_t, float& entry_t)
-{
-    // Thank you https://tavianator.com/cgit/dimension.git/tree/libdimension/bvh/bvh.c
-    float t_min = 0.0f;
-    float t_max = max_t;
-    for (int axis = 0; axis < 3; ++axis) {
-        const float t1 = (box.min[axis] - origin[axis]) * inverse_direction[axis];
-        const float t2 = (box.max[axis] - origin[axis]) * inverse_direction[axis];
-        // written so that a NaN (zero times infinity, when the ray lies in one of the box's faces) leaves the range alone
-        t_min = std::max(t_min, std::min(t1, t2));
-        t_max = std::min(t_max, std::max(t1, t2));
-    }
-    entry_t = t_min;
-    return t_max >= t_min;
-}
-
-// Moller-Trumbore. Hits either side of the triangle. t is in units of the direction's length.
-bool rayHitsTriangle(const glm::vec3& origin, const glm::vec3& direction, const glm::vec3& a, const glm::vec3& b, const glm::vec3& c, float& t)
-{
-    const glm::vec3 edge1 = b - a;
-    const glm::vec3 edge2 = c - a;
-    const glm::vec3 p = glm::cross(direction, edge2);
-    const float determinant = glm::dot(edge1, p);
-    if (determinant == 0.0f) {
-        return false; // parallel to the triangle, or the triangle has no area
-    }
-    const float inverse_determinant = 1.0f / determinant;
-    const glm::vec3 to_origin = origin - a;
-    const float u = glm::dot(to_origin, p) * inverse_determinant;
-    if (!(u >= 0.0f && u <= 1.0f)) {
-        return false;
-    }
-    const glm::vec3 q = glm::cross(to_origin, edge1);
-    const float v = glm::dot(direction, q) * inverse_determinant;
-    if (!(v >= 0.0f && u + v <= 1.0f)) {
-        return false;
-    }
-    t = glm::dot(edge2, q) * inverse_determinant;
-    return t >= 0.0f;
-}
-
-// From "Real-Time Collision Detection" by Christer Ericson
-glm::vec3 closestPointOnTriangle(const glm::vec3& p, const glm::vec3& a, const glm::vec3& b, const glm::vec3& c)
-{
-    const glm::vec3 ab = b - a;
-    const glm::vec3 ac = c - a;
-    const glm::vec3 ap = p - a;
-    const float d1 = glm::dot(ab, ap);
-    const float d2 = glm::dot(ac, ap);
-    if (d1 <= 0.0f && d2 <= 0.0f) {
-        return a;
-    }
-    const glm::vec3 bp = p - b;
-    const float d3 = glm::dot(ab, bp);
-    const float d4 = glm::dot(ac, bp);
-    if (d3 >= 0.0f && d4 <= d3) {
-        return b;
-    }
-    const float vc = d1 * d4 - d3 * d2;
-    if (vc <= 0.0f && d1 >= 0.0f && d3 <= 0.0f) {
-        return a + ab * (d1 / (d1 - d3));
-    }
-    const glm::vec3 cp = p - c;
-    const float d5 = glm::dot(ab, cp);
-    const float d6 = glm::dot(ac, cp);
-    if (d6 >= 0.0f && d5 <= d6) {
-        return c;
-    }
-    const float vb = d5 * d2 - d1 * d6;
-    if (vb <= 0.0f && d2 >= 0.0f && d6 <= 0.0f) {
-        return a + ac * (d2 / (d2 - d6));
-    }
-    const float va = d3 * d6 - d5 * d4;
-    if (va <= 0.0f && (d4 - d3) >= 0.0f && (d5 - d6) >= 0.0f) {
-        return b + (c - b) * ((d4 - d3) / ((d4 - d3) + (d5 - d6)));
-    }
-    const float denominator = va + vb + vc;
-    if (denominator == 0.0f) {
-        return a; // the triangle has no area
-    }
-    return a + ab * (vb / denominator) + ac * (vc / denominator);
-}
 
 // Trees of triangles are balanced, so their depth is about log2 of the number of triangles
 constexpr size_t MESH_STACK_SIZE = 64;
@@ -178,25 +66,11 @@ void CollisionSystem::onUpdate([[maybe_unused]] FrameState& frame_state)
         collider.world_matrix = world_matrix;
         collider.inverse_matrix = glm::inverse(world_matrix);
 
-        // Move the collider's box in the broad phase tree by taking it out and putting it back in
-        if (collider.tree_node != -1) {
-            removeLeaf(collider.tree_node);
-        }
+        std::optional<AABB> box{};
         if (collider.shape && !collider.shape->bvh.nodes.empty()) {
-            if (collider.tree_node == -1) {
-                collider.tree_node = allocateTreeNode();
-            }
-            TreeNode& leaf = m_tree[collider.tree_node];
-            leaf.box = transformBox(collider.shape->bvh.nodes[0].box, world_matrix);
-            leaf.child1 = -1;
-            leaf.child2 = -1;
-            leaf.entity = entity;
-            insertLeaf(collider.tree_node);
+            box = transformBox(collider.shape->bvh.nodes[0].box, world_matrix);
         }
-        else if (collider.tree_node != -1) {
-            m_free_tree_nodes.push_back(collider.tree_node);
-            collider.tree_node = -1;
-        }
+        collider.tree_node = placeLeaf(collider.tree_node, box, entity, false);
     });
 
     // Forget the colliders of entities that were deleted, or that lost their ColliderComponent
@@ -214,6 +88,78 @@ void CollisionSystem::onUpdate([[maybe_unused]] FrameState& frame_state)
             ++it;
         }
     }
+
+    updateTerrains();
+}
+
+void CollisionSystem::updateTerrains()
+{
+    if (m_world.isComponentRegistered(TerrainComponent::NAME)) {
+        m_world.forEach<TransformComponent, TerrainComponent>([&](Entity entity, const TransformComponent& t, const TerrainComponent& c) {
+            if (!c.m_collision) {
+                return; // (forgotten below)
+            }
+            const auto [it, is_new] = m_terrains.try_emplace(entity);
+            TerrainCollider& terrain = it->second;
+            terrain.last_seen = m_update_count;
+
+            bool changed = is_new;
+            if (c.m_terrain != terrain.terrain) {
+                terrain.terrain = c.m_terrain;
+                terrain.resource = c.m_terrain.empty() ? nullptr : m_resource_manager.get<ResourceTerrain>(c.m_terrain);
+                if (!terrain.resource && !c.m_terrain.empty()) {
+                    GC_ERROR("Could not load the terrain {} of a TerrainComponent", c.m_terrain);
+                }
+                changed = true;
+            }
+            const glm::mat4 world_matrix = t.getWorldMatrix();
+            if (!changed && world_matrix == terrain.world_matrix) {
+                return;
+            }
+            terrain.world_matrix = world_matrix;
+            terrain.inverse_matrix = glm::inverse(world_matrix);
+            std::optional<AABB> box{};
+            if (terrain.resource) {
+                box = transformBox(terrain.resource->getBounds(), world_matrix);
+            }
+            terrain.tree_node = placeLeaf(terrain.tree_node, box, entity, true);
+        });
+    }
+
+    for (auto it = m_terrains.begin(); it != m_terrains.end();) {
+        if (it->second.last_seen != m_update_count) {
+            placeLeaf(it->second.tree_node, std::nullopt, it->first, true);
+            it = m_terrains.erase(it);
+        }
+        else {
+            ++it;
+        }
+    }
+}
+
+int32_t CollisionSystem::placeLeaf(int32_t tree_node, const std::optional<AABB>& box, Entity entity, bool is_terrain)
+{
+    // A leaf is moved by taking it out of the tree and putting it back in
+    if (tree_node != -1) {
+        removeLeaf(tree_node);
+    }
+    if (!box) {
+        if (tree_node != -1) {
+            m_free_tree_nodes.push_back(tree_node);
+        }
+        return -1;
+    }
+    if (tree_node == -1) {
+        tree_node = allocateTreeNode();
+    }
+    TreeNode& leaf = m_tree[tree_node];
+    leaf.box = *box;
+    leaf.child1 = -1;
+    leaf.child2 = -1;
+    leaf.entity = entity;
+    leaf.is_terrain = is_terrain;
+    insertLeaf(tree_node);
+    return tree_node;
 }
 
 RaycastHit CollisionSystem::raycast(const Ray& ray, float max_distance, Entity ignore) const
@@ -230,7 +176,7 @@ RaycastHit CollisionSystem::raycast(const Ray& ray, float max_distance, Entity i
 
     float nearest = max_distance;
     glm::vec3 local_normal{};
-    const Collider* hit_collider = nullptr;
+    const glm::mat4* hit_inverse_matrix = nullptr; // of what was hit
 
     std::vector<int32_t> stack{};
     stack.reserve(64);
@@ -263,6 +209,22 @@ RaycastHit CollisionSystem::raycast(const Ray& ray, float max_distance, Entity i
         }
 
         if (node.entity == ignore) {
+            continue;
+        }
+
+        if (node.is_terrain) {
+            // The terrain finds its own nearest hit, in its own space
+            const TerrainCollider& terrain = m_terrains.at(node.entity);
+            const glm::vec3 local_origin = glm::vec3(terrain.inverse_matrix * glm::vec4(ray.origin, 1.0f));
+            const glm::vec3 local_direction = glm::mat3(terrain.inverse_matrix) * direction;
+            float t{};
+            glm::vec3 normal{};
+            if (terrain.resource->raycast(local_origin, local_direction, nearest, t, normal) && t < nearest) {
+                nearest = t;
+                local_normal = normal;
+                hit_inverse_matrix = &terrain.inverse_matrix;
+                result.entity = node.entity;
+            }
             continue;
         }
 
@@ -299,19 +261,19 @@ RaycastHit CollisionSystem::raycast(const Ray& ray, float max_distance, Entity i
                 if (rayHitsTriangle(local_origin, local_direction, a, b, c, t) && t < nearest) {
                     nearest = t;
                     local_normal = glm::cross(b - a, c - a);
-                    hit_collider = &collider;
+                    hit_inverse_matrix = &collider.inverse_matrix;
                     result.entity = node.entity;
                 }
             }
         }
     }
 
-    if (hit_collider) {
+    if (hit_inverse_matrix) {
         result.hit = true;
         result.distance = nearest;
         result.position = ray.origin + direction * nearest;
         // normals are transformed by the inverse transpose
-        result.normal = glm::normalize(glm::transpose(glm::mat3(hit_collider->inverse_matrix)) * local_normal);
+        result.normal = glm::normalize(glm::transpose(glm::mat3(*hit_inverse_matrix)) * local_normal);
         if (glm::dot(result.normal, direction) > 0.0f) {
             result.normal = -result.normal;
         }
@@ -346,45 +308,72 @@ void CollisionSystem::overlapSphere(const glm::vec3& centre, float radius, std::
             continue;
         }
 
-        // Narrow phase. The triangles near the sphere are found in the mesh's space, then tested in world space: the sphere
-        // wouldn't be a sphere in the mesh's space if the entity is scaled.
-        const Collider& collider = m_colliders.at(node.entity);
-        const CollisionBvhView& shape = collider.shape->bvh;
-        const AABB local_box = transformBox(sphere_box, collider.inverse_matrix);
-
         float nearest_squared = radius * radius;
         glm::vec3 nearest_point{};
         glm::vec3 nearest_triangle_normal{};
         bool found = false;
+        const auto test_triangle = [&](const glm::vec3& a, const glm::vec3& b, const glm::vec3& c) {
+            const glm::vec3 point = closestPointOnTriangle(centre, a, b, c);
+            const glm::vec3 to_centre = centre - point;
+            const float distance_squared = glm::dot(to_centre, to_centre);
+            if (distance_squared < nearest_squared) {
+                nearest_squared = distance_squared;
+                nearest_point = point;
+                nearest_triangle_normal = glm::cross(b - a, c - a);
+                found = true;
+            }
+        };
 
-        std::array<uint32_t, MESH_STACK_SIZE> mesh_stack{};
-        size_t mesh_stack_size = 0;
-        mesh_stack[mesh_stack_size++] = 0;
-        while (mesh_stack_size > 0) {
-            const CollisionBvhNode& mesh_node = shape.nodes[mesh_stack[--mesh_stack_size]];
-            if (!boxesOverlap(mesh_node.box, local_box)) {
+        if (node.is_terrain) {
+            const TerrainCollider& terrain = m_terrains.at(node.entity);
+            const glm::vec3 local_centre = glm::vec3(terrain.inverse_matrix * glm::vec4(centre, 1.0f));
+            const std::optional<float> ground = terrain.resource->getHeight(local_centre.x, local_centre.y);
+            if (ground && local_centre.z < *ground) {
+                // Under the ground: a terrain is solid all the way down, so the sphere is pushed straight up out of it (its
+                // nearest triangle could be anywhere, or out of reach)
+                SphereContact contact{};
+                contact.entity = node.entity;
+                contact.position = glm::vec3(terrain.world_matrix * glm::vec4(local_centre.x, local_centre.y, *ground, 1.0f));
+                contact.normal = glm::normalize(glm::vec3(terrain.world_matrix[2]));
+                contact.depth = radius + (*ground - local_centre.z);
+                contacts_out.push_back(contact);
                 continue;
             }
-            if (mesh_node.count == 0) {
-                if (mesh_stack_size + 2 <= mesh_stack.size()) {
-                    mesh_stack[mesh_stack_size++] = mesh_node.first;
-                    mesh_stack[mesh_stack_size++] = mesh_node.first + 1;
+            // (like a mesh's, the triangles are tested in world space)
+            std::vector<glm::vec3> corners{};
+            terrain.resource->getTriangles(transformBox(sphere_box, terrain.inverse_matrix), corners);
+            for (size_t i = 0; i + 2 < corners.size(); i += 3) {
+                test_triangle(glm::vec3(terrain.world_matrix * glm::vec4(corners[i], 1.0f)), glm::vec3(terrain.world_matrix * glm::vec4(corners[i + 1], 1.0f)),
+                              glm::vec3(terrain.world_matrix * glm::vec4(corners[i + 2], 1.0f)));
+            }
+        }
+        else {
+            // Narrow phase. The triangles near the sphere are found in the mesh's space, then tested in world space: the sphere
+            // wouldn't be a sphere in the mesh's space if the entity is scaled.
+            const Collider& collider = m_colliders.at(node.entity);
+            const CollisionBvhView& shape = collider.shape->bvh;
+            const AABB local_box = transformBox(sphere_box, collider.inverse_matrix);
+
+            std::array<uint32_t, MESH_STACK_SIZE> mesh_stack{};
+            size_t mesh_stack_size = 0;
+            mesh_stack[mesh_stack_size++] = 0;
+            while (mesh_stack_size > 0) {
+                const CollisionBvhNode& mesh_node = shape.nodes[mesh_stack[--mesh_stack_size]];
+                if (!boxesOverlap(mesh_node.box, local_box)) {
+                    continue;
                 }
-                continue;
-            }
-            for (uint32_t i = 0; i < mesh_node.count; ++i) {
-                const uint16_t* const indices = &shape.triangles[static_cast<size_t>(mesh_node.first + i) * 3];
-                const glm::vec3 a = glm::vec3(collider.world_matrix * glm::vec4(shape.positions[indices[0]], 1.0f));
-                const glm::vec3 b = glm::vec3(collider.world_matrix * glm::vec4(shape.positions[indices[1]], 1.0f));
-                const glm::vec3 c = glm::vec3(collider.world_matrix * glm::vec4(shape.positions[indices[2]], 1.0f));
-                const glm::vec3 point = closestPointOnTriangle(centre, a, b, c);
-                const glm::vec3 to_centre = centre - point;
-                const float distance_squared = glm::dot(to_centre, to_centre);
-                if (distance_squared < nearest_squared) {
-                    nearest_squared = distance_squared;
-                    nearest_point = point;
-                    nearest_triangle_normal = glm::cross(b - a, c - a);
-                    found = true;
+                if (mesh_node.count == 0) {
+                    if (mesh_stack_size + 2 <= mesh_stack.size()) {
+                        mesh_stack[mesh_stack_size++] = mesh_node.first;
+                        mesh_stack[mesh_stack_size++] = mesh_node.first + 1;
+                    }
+                    continue;
+                }
+                for (uint32_t i = 0; i < mesh_node.count; ++i) {
+                    const uint16_t* const indices = &shape.triangles[static_cast<size_t>(mesh_node.first + i) * 3];
+                    test_triangle(glm::vec3(collider.world_matrix * glm::vec4(shape.positions[indices[0]], 1.0f)),
+                                  glm::vec3(collider.world_matrix * glm::vec4(shape.positions[indices[1]], 1.0f)),
+                                  glm::vec3(collider.world_matrix * glm::vec4(shape.positions[indices[2]], 1.0f)));
                 }
             }
         }
@@ -437,6 +426,9 @@ void CollisionSystem::queryAABB(const AABB& box, std::vector<Entity>& entities_o
 std::optional<AABB> CollisionSystem::getColliderAABB(Entity entity) const
 {
     if (const auto it = m_colliders.find(entity); it != m_colliders.end() && it->second.tree_node != -1) {
+        return m_tree[it->second.tree_node].box;
+    }
+    if (const auto it = m_terrains.find(entity); it != m_terrains.end() && it->second.tree_node != -1) {
         return m_tree[it->second.tree_node].box;
     }
     return {};
@@ -610,6 +602,7 @@ void CollisionSystem::insertLeaf(int32_t leaf)
     m_tree[new_parent].child1 = sibling;
     m_tree[new_parent].child2 = leaf;
     m_tree[new_parent].entity = ENTITY_NONE;
+    m_tree[new_parent].is_terrain = false;
     m_tree[sibling].parent = new_parent;
     m_tree[leaf].parent = new_parent;
     if (old_parent == -1) {

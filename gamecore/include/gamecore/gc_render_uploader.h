@@ -136,8 +136,9 @@ private:
         // Zero if the data is only the first mip level, and the others are generated from it. Otherwise the data is every mip
         // level, largest first, and this is the size of a texel in bytes
         uint32_t texel_size{};
-        // Otherwise a buffer that exists already:
+        // Otherwise a buffer that exists already, and where in it the data goes:
         VkBuffer buffer{};
+        VkDeviceSize buffer_offset{};
 
         // made on the work thread (or by the caller, for RenderUploadMode::IMMEDIATE)
         VkBuffer staging_buffer{};
@@ -199,8 +200,9 @@ public:
     RenderUpload uploadImageLevels(VkFormat format, uint32_t texel_size, uint32_t width, uint32_t height, uint32_t mip_levels, bool cube_map,
                                    const Sources& sources, RenderUploadMode mode);
 
-    // Uploads to the start of a buffer, which ends up ready to be read as vertices and indices
-    RenderUpload uploadBuffer(VkBuffer buffer, const Sources& sources, RenderUploadMode mode);
+    // Uploads to a buffer, from 'offset' on, which ends up ready to be read as vertices and indices, or by vertex shaders as a
+    // storage buffer. The buffer can be in use by the GPU elsewhere, as long as nothing is reading or writing this part of it.
+    RenderUpload uploadBuffer(VkBuffer buffer, const Sources& sources, RenderUploadMode mode, VkDeviceSize offset = 0);
 
     // Tells the GPU to copy every staging buffer that the work thread has filled since this was last called. Call once a frame.
     void submitFinishedUploads();

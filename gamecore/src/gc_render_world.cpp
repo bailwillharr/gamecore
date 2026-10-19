@@ -16,6 +16,7 @@
 #include "gamecore/gc_gpu_resources.h"
 #include "gamecore/gc_render_environment.h"
 #include "gamecore/gc_render_shadow_map.h"
+#include "gamecore/gc_render_terrain.h"
 
 namespace gc {
 
@@ -23,7 +24,8 @@ void recordWorldRenderingCommands(VkCommandBuffer cmd, VkPipelineLayout pipeline
                                   std::span<const std::unique_ptr<GPUPipeline>> instancing_pipelines, VkSemaphore timeline_semaphore,
                                   uint64_t signal_value, const WorldDrawData& draw_data, GPUDescriptorSet& frame_uniform_buffer_set,
                                   RenderShadowMap& shadow_map, RenderEnvironment& environment, GPUPipeline* sky_pipeline,
-                                  RenderBuffer& instance_transforms_buffer)
+                                  RenderBuffer& instance_transforms_buffer, VkPipelineLayout terrain_pipeline_layout,
+                                  std::span<const std::unique_ptr<GPUPipeline>> terrain_pipelines, RenderBuffer& terrain_patches_buffer)
 {
     GC_ASSERT(cmd);
     GC_ASSERT(pipeline_layout);
@@ -72,7 +74,7 @@ void recordWorldRenderingCommands(VkCommandBuffer cmd, VkPipelineLayout pipeline
                 last_bound_mesh = entry.mesh;
             }
 
-            vkCmdPushConstants(cmd, pipeline_layout, VK_SHADER_STAGE_VERTEX_BIT, 0, sizeof(glm::mat4), &entry.world_matrix);
+            vkCmdPushConstants(cmd, pipeline_layout, WORLD_PUSH_CONSTANT_STAGES, 0, sizeof(glm::mat4), &entry.world_matrix);
             vkCmdDrawIndexed(cmd, entry.mesh->getNumIndices(), 1, 0, 0, 0);
         }
     };
@@ -121,6 +123,45 @@ void recordWorldRenderingCommands(VkCommandBuffer cmd, VkPipelineLayout pipeline
                 vkCmdDrawIndexed(cmd, entry.mesh->getNumIndices(), entry.instance_count, 0, 0, entry.transform_offset);
             }
         }
+    }
+
+    // Terrains: each is one instanced draw of a patch's grid, an instance for each patch. The pipelines' layout only adds the
+    // terrain's tiles (set 4) to the world's, so the other descriptor sets stay bound.
+    if (!draw_data.getTerrainDrawEntries().empty()) {
+        {
+            VkDeviceSize offset{0};
+            VkBuffer buffer = terrain_patches_buffer.getBuffer();
+            vkCmdBindVertexBuffers(cmd, 0, 1, &buffer, &offset);
+        }
+        for (const WorldTerrainDrawEntry& entry : draw_data.getTerrainDrawEntries()) {
+            GC_ASSERT(entry.terrain);
+            GC_ASSERT(entry.material);
+            if (entry.patch_count == 0 || !entry.terrain->isReady() || !entry.material->isUploaded()) {
+                continue;
+            }
+            GPUPipeline* const pipeline = terrain_pipelines[entry.material->getFeatures()].get();
+            GC_ASSERT(pipeline);
+            if (last_bound_pipeline != pipeline) {
+                pipeline->useResource(timeline_semaphore, signal_value);
+                vkCmdBindPipeline(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, pipeline->getHandle());
+                last_bound_pipeline = pipeline;
+            }
+            entry.material->bind(cmd, terrain_pipeline_layout, timeline_semaphore, signal_value);
+            last_bound_material = entry.material;
+            entry.terrain->bind(cmd, terrain_pipeline_layout, timeline_semaphore, signal_value);
+
+            const TerrainPushConstants terrain_constants{entry.height_offset, entry.height_scale, entry.terrain->getTileQuads() + 1,
+                                                         entry.terrain->getTileQuads() / 2};
+            vkCmdPushConstants(cmd, terrain_pipeline_layout, WORLD_PUSH_CONSTANT_STAGES, 0, sizeof(glm::mat4), &entry.world_matrix);
+            vkCmdPushConstants(cmd, terrain_pipeline_layout, WORLD_PUSH_CONSTANT_STAGES, TERRAIN_PUSH_CONSTANT_OFFSET, sizeof(terrain_constants),
+                               &terrain_constants);
+            vkCmdDrawIndexed(cmd, entry.terrain->getIndexCount(), entry.patch_count, 0, 0, entry.first_patch);
+
+            const auto patches = std::span(draw_data.getTerrainPatches()).subspan(entry.first_patch, entry.patch_count);
+            entry.terrain->markDrawn(patches, timeline_semaphore, signal_value);
+        }
+        // the terrain bound its own index buffer and patches over the meshes'
+        last_bound_mesh = nullptr;
     }
 
     // The sky: one triangle that covers the screen, as far away as anything can be, so it is only drawn where nothing else was

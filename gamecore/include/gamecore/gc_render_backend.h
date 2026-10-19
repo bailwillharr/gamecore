@@ -42,6 +42,7 @@
 #include "gamecore/gc_render_buffer.h"
 #include "gamecore/gc_render_shadow_map.h"
 #include "gamecore/gc_render_environment.h"
+#include "gamecore/gc_render_terrain.h"
 #include "gamecore/gc_render_uploader.h"
 
 struct SDL_Window; // forward-dec
@@ -81,9 +82,13 @@ class RenderBackend {
     VkSampler m_shadow_sampler{};
     VkDescriptorSetLayout m_environment_set_layout{};
     VkSampler m_environment_sampler{};
+    VkDescriptorSetLayout m_terrain_set_layout{};
 
     // pipeline layout for most 3D rendering
     VkPipelineLayout m_world_pipeline_layout{};
+    // The same, with the tiles of a terrain in set 4. Sets 0 to 3 and the push constants are the same as the world's, so that
+    // they stay bound when going from one to the other.
+    VkPipelineLayout m_terrain_pipeline_layout{};
 
     // The shaders that draw the world, see setWorldShaders()
     VkShaderModule m_single_draw_vertex_module{};
@@ -94,6 +99,11 @@ class RenderBackend {
     VkShaderModule m_sky_vertex_module{};
     VkShaderModule m_sky_fragment_module{};
     std::unique_ptr<GPUPipeline> m_sky_pipeline{};
+
+    // The shaders that draw terrains, see setTerrainShaders(), and their pipelines, one for each combination of MaterialFeatures
+    VkShaderModule m_terrain_vertex_module{};
+    VkShaderModule m_terrain_fragment_module{};
+    std::array<std::unique_ptr<GPUPipeline>, MATERIAL_FEATURE_COMBINATIONS> m_terrain_pipelines{};
 
     // Pipeline variants, indexed by getMaterialPipelineVariant(). One is made the first time a material that needs it is drawn.
     std::array<std::unique_ptr<GPUPipeline>, MATERIAL_PIPELINE_VARIANTS> m_main_pipelines{};
@@ -141,6 +151,7 @@ class RenderBackend {
 
     std::unique_ptr<RenderBuffer> m_frame_uniform_buffer{};
     std::unique_ptr<RenderBuffer> m_instancing_transforms_buffer{};
+    std::unique_ptr<RenderBuffer> m_terrain_patches_buffer{};
     
     std::unique_ptr<GPUDescriptorSet> m_frame_uniform_buffer_set{}; // permanently points to m_frame_uniform_buffer
 
@@ -195,6 +206,14 @@ public:
     // but isn't seen.
     void setSkyShaders(std::span<const uint8_t> vertex_spv, std::span<const uint8_t> fragment_spv);
 
+    // Sets the shaders that draw terrains (see RenderTerrain and TerrainPatch). The vertex shader gets a TerrainPatch as per-instance
+    // attributes (locations 0, 1 and 2: the first four uints, then four floats, then two), the terrain's tiles as a storage buffer
+    // (set 4, binding 0) and, in its push constants, the world matrix (offset 0) and the terrain's height offset, height scale,
+    // samples along a tile's side and quads along a patch's side (offset 112). The fragment shader has the same descriptor sets
+    // and specialization constants as the world's (see setWorldShaders()), with the material's constants at offset 64.
+    // Call once, before the first frame that draws a terrain.
+    void setTerrainShaders(std::span<const uint8_t> vertex_spv, std::span<const uint8_t> fragment_spv);
+
     RenderTexture createTexture(std::span<const uint8_t> r8g8b8a8_pak, bool srgb, RenderUploadMode upload_mode = RenderUploadMode::IMMEDIATE);
     RenderTexture createCubeTexture(std::array<std::span<const uint8_t>, 6> r8g8b8a8_paks, bool srgb,
                                     RenderUploadMode upload_mode = RenderUploadMode::IMMEDIATE);
@@ -205,6 +224,9 @@ public:
                                         RenderUploadMode upload_mode = RenderUploadMode::IMMEDIATE);
     RenderMesh createMesh(std::span<const MeshVertex> vertices, std::span<const uint16_t> indices,
                           RenderUploadMode upload_mode = RenderUploadMode::IMMEDIATE);
+    // A cache of slot_count tiles of a terrain, of tile_quads quads along each side. Fewer slots are made if the GPU can't have a
+    // storage buffer that big.
+    RenderTerrain createTerrain(uint32_t tile_quads, uint32_t slot_count);
     // A texture that isn't in 'features' is never sampled, but one still has to be given (any will do).
     RenderMaterial createMaterial(RenderTexture& base_color, RenderTexture& orm, RenderTexture& normal, RenderTexture& emissive, MaterialFeatures features,
                                   MaterialBlendMode blend_mode, const MaterialConstants& constants);
@@ -234,10 +256,11 @@ private:
                                        RenderUploadMode upload_mode);
 
     GPUPipeline createPipeline(VkShaderModule vertex_module, VkShaderModule fragment_module, uint32_t variant,
-                               const VkPipelineVertexInputStateCreateInfo& vertex_input_state);
+                               const VkPipelineVertexInputStateCreateInfo& vertex_input_state, VkPipelineLayout layout);
     // variant is from getMaterialPipelineVariant()
     GPUPipeline createMainPipeline(uint32_t variant);
     GPUPipeline createInstancingPipeline(uint32_t variant);
+    GPUPipeline createTerrainPipeline(MaterialFeatures features);
     GPUPipeline createSkyPipeline();
 
     // cube_pak is the data of a CUBE_MAP_E5B9G9R9 asset. mip_levels_out is how many mip levels it has

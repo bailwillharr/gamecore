@@ -179,13 +179,14 @@ RenderUpload RenderUploader::uploadImageLevels(VkFormat format, uint32_t texel_s
     return startUpload(std::move(upload), mode);
 }
 
-RenderUpload RenderUploader::uploadBuffer(VkBuffer buffer, const Sources& sources, RenderUploadMode mode)
+RenderUpload RenderUploader::uploadBuffer(VkBuffer buffer, const Sources& sources, RenderUploadMode mode, VkDeviceSize offset)
 {
     GC_ASSERT(buffer);
 
     Upload upload{};
     upload.sources = sources;
     upload.buffer = buffer;
+    upload.buffer_offset = offset;
     return startUpload(std::move(upload), mode);
 }
 
@@ -534,7 +535,7 @@ void RenderUploader::recordBufferCopy(VkCommandBuffer cmd, const Upload& upload)
 {
     VkBufferCopy region{};
     region.srcOffset = 0;
-    region.dstOffset = 0;
+    region.dstOffset = upload.buffer_offset;
     region.size = upload.size;
     vkCmdCopyBuffer(cmd, upload.staging_buffer, upload.buffer, 1, &region);
 
@@ -542,12 +543,12 @@ void RenderUploader::recordBufferCopy(VkCommandBuffer cmd, const Upload& upload)
     barrier.sType = VK_STRUCTURE_TYPE_BUFFER_MEMORY_BARRIER_2;
     barrier.srcStageMask = VK_PIPELINE_STAGE_2_COPY_BIT;
     barrier.srcAccessMask = VK_ACCESS_2_TRANSFER_WRITE_BIT;
-    barrier.dstStageMask = VK_PIPELINE_STAGE_2_VERTEX_INPUT_BIT;
-    barrier.dstAccessMask = VK_ACCESS_2_INDEX_READ_BIT | VK_ACCESS_2_VERTEX_ATTRIBUTE_READ_BIT;
+    barrier.dstStageMask = VK_PIPELINE_STAGE_2_VERTEX_INPUT_BIT | VK_PIPELINE_STAGE_2_VERTEX_SHADER_BIT;
+    barrier.dstAccessMask = VK_ACCESS_2_INDEX_READ_BIT | VK_ACCESS_2_VERTEX_ATTRIBUTE_READ_BIT | VK_ACCESS_2_SHADER_STORAGE_READ_BIT;
     barrier.srcQueueFamilyIndex = m_queue_family_index;
     barrier.dstQueueFamilyIndex = m_queue_family_index;
     barrier.buffer = upload.buffer;
-    barrier.offset = 0;
+    barrier.offset = upload.buffer_offset;
     barrier.size = upload.size;
     VkDependencyInfo dependency{};
     dependency.sType = VK_STRUCTURE_TYPE_DEPENDENCY_INFO;

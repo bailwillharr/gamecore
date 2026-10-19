@@ -134,6 +134,18 @@ public:
     }
 };
 
+// Keeps track of when the GPU has finished with something that isn't a Vulkan object of its own, such as part of a buffer.
+// It has nothing to delete.
+class GPUUseTracker : public GPUResource {
+public:
+    explicit GPUUseTracker(GPUResourceDeleteQueue& delete_queue) : GPUResource(delete_queue) {}
+    GPUUseTracker(const GPUUseTracker&) = delete;
+    GPUUseTracker(GPUUseTracker&& other) noexcept : GPUResource(std::move(other)) {}
+
+    GPUUseTracker& operator=(const GPUUseTracker&) = delete;
+    GPUUseTracker& operator=(GPUUseTracker&&) = delete;
+};
+
 class GPUPipeline : public GPUResource {
     VkPipeline m_handle;
 

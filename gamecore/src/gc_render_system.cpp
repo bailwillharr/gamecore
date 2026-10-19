@@ -9,6 +9,7 @@
 
 #include <tracy/Tracy.hpp>
 
+#include "gamecore/gc_fog_component.h"
 #include "gamecore/gc_renderable_component.h"
 #include "gamecore/gc_resources.h"
 #include "gamecore/gc_shadow_map_component.h"
@@ -149,6 +150,19 @@ void RenderSystem::onUpdate(FrameState& frame_state)
             // The asset only says how bright each part of the sky is compared to the rest. The component says how bright it all is
             const float scale = (m_environment_info.sky_illuminance > 0.0f) ? c.m_illuminance / m_environment_info.sky_illuminance : 1.0f;
             frame_state.draw_data.setEnvironment(m_environment.get(), glm::mat4(glm::transpose(sky_to_world)), scale, c.m_visible, c.m_lighting);
+        });
+    }
+
+    // Haze. A world that doesn't use it doesn't have to register the component.
+    if (m_world.isComponentRegistered(FogComponent::NAME)) {
+        m_world.forEach<TransformComponent, FogComponent>([&]([[maybe_unused]] Entity entity, const TransformComponent& t, const FogComponent& c) {
+            WorldFog fog{};
+            fog.density = c.m_density;
+            fog.height_falloff = c.m_height_falloff;
+            fog.base_height = t.getWorldMatrix()[3].z;
+            fog.color = c.m_color;
+            fog.use_sky = c.m_use_sky;
+            frame_state.draw_data.setFog(fog);
         });
     }
 

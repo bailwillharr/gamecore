@@ -13,6 +13,7 @@ class RenderMesh;     // forward-dec
 class RenderTexture;  // forward-dec
 class RenderShadowMap; // forward-dec
 class RenderEnvironment; // forward-dec
+class RenderTerrain;  // forward-dec
 
 struct WorldDrawEntry {
     glm::mat4 world_matrix;
@@ -33,6 +34,43 @@ struct WorldInstancedDrawEntry {
     RenderMaterial* material;
 };
 
+// One square patch of a terrain, drawn from a tile in a RenderTerrain: one instance of the terrain's instanced draw. The vertex
+// shader (content/shader_src/terrain.vert) reads the heights from the tile. See TerrainSystem for how patches are chosen.
+// This is the layout of the per-instance vertex attributes.
+struct TerrainPatch {
+    uint32_t tile;          // the offset of the patch's tile in the RenderTerrain's buffer, in samples
+    uint32_t parent_tile;   // the same, for the tile of the level above, which the patch turns into with distance. Itself at the top
+    uint32_t origin;        // bits 0-11: the x of the patch's first sample in its tile, 12-23: y, 24-27: the level, 28: draw the
+                            // level's colour instead of the material (for debugging)
+    uint32_t parent_origin; // the x (low 16 bits) and y (high 16) of the tile's first sample in its parent's tile, in the parent's samples
+    float x;                // where the patch's first sample is in the terrain's space, in metres
+    float y;
+    float spacing;     // between the patch's samples, in metres
+    float skirt_depth; // see TerrainNode
+    float morph_start; // the distance from the camera at which the patch starts turning into its parent (in world units)
+    float morph_end;   // and is its parent. The same as morph_start for a patch that never turns
+};
+static_assert(sizeof(TerrainPatch) == 40);
+
+struct WorldTerrainDrawEntry {
+    RenderTerrain* terrain;
+    RenderMaterial* material;
+    glm::mat4 world_matrix;
+    float height_offset; // see TerrainHeader
+    float height_scale;
+    uint32_t first_patch; // in getTerrainPatches()
+    uint32_t patch_count;
+};
+
+// Haze, see FogComponent
+struct WorldFog {
+    float density{};        // per metre, at base_height. Zero: no fog
+    float height_falloff{}; // per metre
+    float base_height{};
+    glm::vec3 color{};      // luminance (cd/m^2), used if there is no sky to fade to
+    bool use_sky{};
+};
+
 class WorldDrawData {
 public:
     // How many point lights the renderer can draw with. Any more than this are left out.
@@ -43,6 +81,9 @@ private:
 
     std::vector<WorldInstancedDrawEntry> m_instanced_draw_entries{};
     std::vector<glm::mat4> m_instanced_draw_transforms{};
+
+    std::vector<WorldTerrainDrawEntry> m_terrain_draw_entries{};
+    std::vector<TerrainPatch> m_terrain_patches{};
 
     glm::mat4 m_projection_matrix{};
     glm::mat4 m_view_matrix{};
@@ -68,18 +109,23 @@ private:
     bool m_environment_visible{};         // whether the sky is drawn behind everything
     bool m_environment_lighting{};        // whether the world is lit by it. If so, ambient light isn't drawn
 
+    WorldFog m_fog{};
+
 public:
     void reset()
     {
         m_draw_entries.clear();
         m_instanced_draw_entries.clear();
         m_instanced_draw_transforms.clear();
+        m_terrain_draw_entries.clear();
+        m_terrain_patches.clear();
         m_directional_light_direction = glm::vec3{0.0f, 0.0f, 1.0f};
         m_directional_light_color = glm::vec3{0.0f, 0.0f, 0.0f};
         m_point_lights.clear();
         m_ambient_light = glm::vec3{0.0f, 0.0f, 0.0f};
         m_shadow_map = nullptr;
         m_environment = nullptr;
+        m_fog = WorldFog{};
     }
 
     void drawMesh(const glm::mat4& world_matrix, RenderMesh* const mesh, RenderMaterial* const material)
@@ -92,6 +138,17 @@ public:
         const auto instance_count = static_cast<uint32_t>(transforms.size());
         m_instanced_draw_entries.emplace_back(transform_offset, instance_count, mesh, material);
         m_instanced_draw_transforms.insert(m_instanced_draw_transforms.end(), transforms.begin(), transforms.end());
+    }
+
+    // The terrain and the material must stay alive until the frame has been submitted. Patches whose tiles haven't been uploaded
+    // must not be given.
+    void drawTerrain(RenderTerrain* const terrain, RenderMaterial* const material, const glm::mat4& world_matrix, float height_offset,
+                     float height_scale, std::span<const TerrainPatch> patches)
+    {
+        const auto first_patch = static_cast<uint32_t>(m_terrain_patches.size());
+        m_terrain_draw_entries.emplace_back(terrain, material, world_matrix, height_offset, height_scale, first_patch,
+                                            static_cast<uint32_t>(patches.size()));
+        m_terrain_patches.insert(m_terrain_patches.end(), patches.begin(), patches.end());
     }
 
     void setProjectionMatrix(const glm::mat4& projection_matrix) { m_projection_matrix = projection_matrix; }
@@ -128,11 +185,14 @@ public:
         m_environment_lighting = lighting;
     }
     void setEnvironmentVisible(bool visible) { m_environment_visible = visible; }
+    void setFog(const WorldFog& fog) { m_fog = fog; }
     void setEnvironmentLighting(bool lighting) { m_environment_lighting = lighting; }
 
     const auto& getDrawEntries() const { return m_draw_entries; }
     const auto& getInstancedDrawEntries() const { return m_instanced_draw_entries; }
     const auto& getInstancedDrawTransforms() const { return m_instanced_draw_transforms; }
+    const auto& getTerrainDrawEntries() const { return m_terrain_draw_entries; }
+    const auto& getTerrainPatches() const { return m_terrain_patches; }
 
     const auto& getProjectionMatrix() const { return m_projection_matrix; }
     const auto& getViewMatrix() const { return m_view_matrix; }
@@ -150,6 +210,7 @@ public:
     float getEnvironmentScale() const { return m_environment_scale; }
     bool getEnvironmentVisible() const { return m_environment_visible; }
     bool getEnvironmentLighting() const { return m_environment_lighting; }
+    const WorldFog& getFog() const { return m_fog; }
 };
 
 } // namespace gc

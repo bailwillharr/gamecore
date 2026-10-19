@@ -20,6 +20,8 @@ set(SRC_FILES
   "src/prefab_file.cpp"
   "src/environment_baker.h"
   "src/environment_baker.cpp"
+  "src/terrain_compiler.h"
+  "src/terrain_compiler.cpp"
   "src/command_line.h"
   "src/command_line.cpp"
 )

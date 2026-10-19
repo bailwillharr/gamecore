@@ -50,6 +50,11 @@ set(SRC_FILES
   "src/gc_byte_reader.cpp"
   "src/gc_byte_writer.cpp"
   "src/gc_asset_data.cpp"
+  "src/gc_collision_math.h"
+  "src/gc_terrain.cpp"
+  "src/gc_terrain_builder.cpp"
+  "src/gc_terrain_system.cpp"
+  "src/gc_render_terrain.cpp"
 )
 
 # Public API includes
@@ -123,6 +128,12 @@ set(INCLUDE_FILES
   "include/gamecore/gc_byte_reader.h"
   "include/gamecore/gc_byte_writer.h"
   "include/gamecore/gc_asset_data.h"
+  "include/gamecore/gc_terrain.h"
+  "include/gamecore/gc_terrain_builder.h"
+  "include/gamecore/gc_terrain_component.h"
+  "include/gamecore/gc_terrain_system.h"
+  "include/gamecore/gc_render_terrain.h"
+  "include/gamecore/gc_fog_component.h"
 )
 
 # gamecore is a static library

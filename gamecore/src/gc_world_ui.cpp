@@ -18,11 +18,13 @@
 #include "gamecore/gc_camera_component.h"
 #include "gamecore/gc_collider_component.h"
 #include "gamecore/gc_collision_bvh_component.h"
+#include "gamecore/gc_fog_component.h"
 #include "gamecore/gc_light_component.h"
 #include "gamecore/gc_renderable_component.h"
 #include "gamecore/gc_replication.h"
 #include "gamecore/gc_shadow_map_component.h"
 #include "gamecore/gc_skybox_component.h"
+#include "gamecore/gc_terrain_component.h"
 #include "gamecore/gc_transform_component.h"
 #include "gamecore/gc_transform_system.h"
 #include "gamecore/gc_world.h"
@@ -162,6 +164,31 @@ void viewCollisionBvh(World& world, Entity entity)
     textName("Baked trees", c.m_bvh);
 }
 
+void viewTerrain(World& world, Entity entity)
+{
+    TerrainComponent& t = *world.getComponent<TerrainComponent>(entity);
+    textName("Terrain", t.m_terrain);
+    textName("Material", t.m_material);
+    ImGui::DragFloat("Detail distance", &t.m_detail_distance, 1.0f, 1.0f, 1.0e5f, "%.0f m", ImGuiSliderFlags_Logarithmic);
+    ImGui::Checkbox("Visible", &t.m_visible);
+    ImGui::Checkbox("Collision", &t.m_collision);
+}
+
+void viewFog(World& world, Entity entity)
+{
+    FogComponent& f = *world.getComponent<FogComponent>(entity);
+    float visibility = (f.m_density > 0.0f) ? 1.0f / f.m_density : 0.0f;
+    if (ImGui::DragFloat("1 / density", &visibility, 10.0f, 1.0f, 1.0e7f, "%.0f m", ImGuiSliderFlags_Logarithmic)) {
+        f.m_density = (visibility > 0.0f) ? 1.0f / visibility : 0.0f;
+    }
+    float scale_height = (f.m_height_falloff > 0.0f) ? 1.0f / f.m_height_falloff : 0.0f;
+    if (ImGui::DragFloat("1 / height falloff", &scale_height, 10.0f, 0.0f, 1.0e6f, (scale_height > 0.0f) ? "%.0f m" : "even", ImGuiSliderFlags_Logarithmic)) {
+        f.m_height_falloff = (scale_height > 0.0f) ? 1.0f / scale_height : 0.0f;
+    }
+    ImGui::ColorEdit3("Color", &f.m_color.r, ImGuiColorEditFlags_Float | ImGuiColorEditFlags_HDR);
+    ImGui::Checkbox("Fades to the sky", &f.m_use_sky);
+}
+
 void viewReplicated(World& world, Entity entity)
 {
     const ReplicatedComponent& r = *world.getComponent<ReplicatedComponent>(entity);
@@ -188,6 +215,8 @@ void registerEngineViewers()
     viewers.try_emplace(ColliderComponent::NAME, viewCollider);
     viewers.try_emplace(CollisionBvhComponent::NAME, viewCollisionBvh);
     viewers.try_emplace(ReplicatedComponent::NAME, viewReplicated);
+    viewers.try_emplace(TerrainComponent::NAME, viewTerrain);
+    viewers.try_emplace(FogComponent::NAME, viewFog);
 }
 
 // For components that have no viewer

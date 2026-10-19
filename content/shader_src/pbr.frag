@@ -50,6 +50,9 @@ layout(set = 0, binding = 0) uniform FrameUniformBuffer {
     mat4 environment_matrix;          // turns a direction in the world to one in the sky's cube maps
     vec4 environment_params;          // x = the luminance (cd/m^2) of a texel of 1, or 0 if the world isn't lit by a sky.
                                       // y = the last mip level of the sky's reflections
+    vec4 fog_params;                  // x = density (per metre, zero for no fog), y = height falloff (per metre), z = the height that x
+                                      // is at, w = the luminance (cd/m^2) of a texel of 1 of the sky, if things fade to it, else 0
+    vec4 fog_color;                   // rgb = luminance (cd/m^2) that things fade to, if not the sky
     PointLight point_lights[MAX_POINT_LIGHTS];
 } frame_uniform_buffer;
 
@@ -211,6 +214,35 @@ float directionalLightVisibility(vec3 position, vec3 N, vec3 Li)
 	return lit / 9.0;
 }
 
+// Fades a luminance into the fog (see FogComponent) between the camera and 'position'. Returns how much of it is still seen.
+// The fog is density * exp(-falloff * (height - base)) per metre, which can be added up along the line exactly.
+float applyFog(inout vec3 luminance, vec3 position)
+{
+    float density = frame_uniform_buffer.fog_params.x;
+    if (density <= 0.0) {
+        return 1.0;
+    }
+    float falloff = frame_uniform_buffer.fog_params.y;
+    vec3 to_point = position - frame_uniform_buffer.camera_position;
+    float distance = length(to_point);
+    float density_at_camera = density * exp(-falloff * (frame_uniform_buffer.camera_position.z - frame_uniform_buffer.fog_params.z));
+    float rise = falloff * to_point.z;
+    float optical_depth = density_at_camera * distance * ((abs(rise) > 1.0e-4) ? (1.0 - exp(-rise)) / rise : 1.0);
+    float transmittance = exp(-optical_depth);
+
+    vec3 fog_luminance = frame_uniform_buffer.fog_color.rgb;
+    if (frame_uniform_buffer.fog_params.w > 0.0) {
+        // The light that the haze scatters towards the camera is about what the sky looks like that way, near the horizon
+        vec3 direction = to_point / max(distance, 1.0e-3);
+        direction.z = max(direction.z, 0.03);
+        vec3 sky_direction = mat3(frame_uniform_buffer.environment_matrix) * normalize(direction);
+        fog_luminance = textureLod(environmentSpecularSampler, sky_direction, 0.6 * frame_uniform_buffer.environment_params.y).rgb *
+                        frame_uniform_buffer.fog_params.w;
+    }
+    luminance = mix(fog_luminance, luminance, transmittance);
+    return transmittance;
+}
+
 // What one light adds. Li is the direction towards the light and Lradiance is the illuminance (lux) of a surface facing it.
 vec3 shadeLight(vec3 Li, vec3 Lradiance, vec3 N, vec3 Lo, float cosLo, vec3 F0, vec3 albedo, float roughness, float metalness)
 {
@@ -343,6 +375,7 @@ void main()
 
     // luminance, in cd/m^2
     vec3 total_lighting = directLighting + ambient;
+    float fog_transmittance = applyFog(total_lighting, vin.position);
 
     // The light that the material gives off itself. It isn't lit by anything and doesn't light anything: it is just added to what
     // is seen. It is added after the exposure, so that something that glows looks the same in a dark world as in a bright one:
@@ -351,6 +384,7 @@ void main()
     if (USE_EMISSIVE_TEXTURE) {
         emissive *= texture(materialSetEmissiveSampler, vin.texcoord).rgb; // an sRGB texture, so this is linear
     }
+    emissive *= fog_transmittance;
 
     // Tone map. The curve is divided by its value at the white point so that white maps to 1.
     const float ExposureBias = 2.0;

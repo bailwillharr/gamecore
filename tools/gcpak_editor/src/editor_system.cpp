@@ -52,6 +52,8 @@ static std::string getAssetTypeString(gcpak::GcpakAssetType type)
         return "Collision trees";
     case GcpakAssetType::CUBE_MAP_E5B9G9R9:
         return "Cube map";
+    case GcpakAssetType::TERRAIN:
+        return "Terrain";
     default:
         return "(unknown)";
     }

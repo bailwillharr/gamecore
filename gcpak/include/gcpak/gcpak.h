@@ -93,6 +93,16 @@ enum class GcpakAssetType : std::uint32_t {
                            // +Z -Z, laid out as Vulkan's cube maps are, one uint32_t per texel in the format
                            // VK_FORMAT_E5B9G9R9_UFLOAT_PACK32. Each level is half the size of the one before.
                            // See gc::SkyboxComponent
+    TERRAIN = 10, // A height field, cut into tiles at several levels of detail for streaming. A header of 64 bytes: ten uint32_t
+                  // (the version (1), the number of quads along a tile's side, the number of levels, the number of nodes at the top
+                  // level along x and along y, the number of nodes, and the first and last+1 sample of the source data along x
+                  // and along y), then five floats (the distance between samples, the height of a sample of 0, the height
+                  // a step of 1 adds, and the lowest and highest heights), then a uint32_t that is zero. Then the nodes of a
+                  // quadtree, 32 bytes each: the lowest
+                  // and highest heights under the node, the depth of its skirts (all floats), its four children (uint32_t indices
+                  // into the nodes, 0xffffffff for none) and a uint32_t of flags. The top level's nodes come first. Then each
+                  // node's tile, in the same order: (quads + 1)^2 samples, rows first, one uint32_t each: the height in the low
+                  // 16 bits, then the normal's x and y (int8_t each, of 127). See gc::ResourceTerrain
 };
 
 struct GcpakAssetEntry {
