@@ -35,6 +35,9 @@
 #include <gamecore/gc_terrain_component.h>
 #include <gamecore/gc_terrain_system.h>
 #include <gamecore/gc_transform_component.h>
+#include <gamecore/gc_ui.h>
+#include <gamecore/gc_ui_component.h>
+#include <gamecore/gc_ui_system.h>
 #include <gamecore/gc_window.h>
 #include <gamecore/gc_world.h>
 
@@ -262,6 +265,7 @@ int buildAndStartGame(gc::App& app, const Options& options)
     world.registerComponent<gc::TerrainComponent, gc::ComponentArrayType::SPARSE>();
     world.registerComponent<ExplorerComponent, gc::ComponentArrayType::SPARSE>();
     world.registerComponent<BeaconComponent, gc::ComponentArrayType::SPARSE>();
+    world.registerComponent<gc::UIComponent, gc::ComponentArrayType::SPARSE>(); // the HUD
 
     // The terrain, at 1:1: its corner (the south west of the scan) at the world's origin, with its heights as the scan has them,
     // in metres above Mars's datum
@@ -327,8 +331,9 @@ int buildAndStartGame(gc::App& app, const Options& options)
     if (flythrough) {
         world.registerSystem<FlythroughSystem>(app, *terrain, terrain_system, explorer, sites, options.flythrough_seconds);
     }
-    world.registerSystem<HudSystem>(app.debugUI(), terrain_system, *terrain, flythrough ? nullptr : &world.getSystem<ExplorerSystem>(),
+    world.registerSystem<HudSystem>(app.ui(), app.debugUI(), terrain_system, *terrain, flythrough ? nullptr : &world.getSystem<ExplorerSystem>(),
                                     world.getSystem<BeaconSystem>(), explorer);
+    world.registerSystem<gc::UISystem>(app.ui()); // (after the HUD, which makes the data model that its document uses)
 
     app.window().setWindowVisibility(true);
     app.run();

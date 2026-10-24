@@ -19,6 +19,7 @@ class Content;         // forward-dec
 class Window;          // forward-dec
 class RenderBackend;   // forward-dec
 class DebugUI;         // forward-dec
+class UI;              // forward-dec
 class World;           // forward-dec
 class ResourceManager; // forward-dec
 class Net;             // forward-dec
@@ -46,6 +47,7 @@ class App {
     std::unique_ptr<RenderBackend> m_render_backend{};
     std::unique_ptr<DebugUI> m_debug_ui{};
     bool m_recapture_mouse{}; // the mouse was captured when the debug UI was shown, so capture it again when it is hidden
+    std::unique_ptr<UI> m_ui{}; // (before the World, whose systems may use it)
     std::unique_ptr<World> m_world{};
     std::unique_ptr<ResourceManager> m_resource_manager{};
     std::unique_ptr<Net> m_net{};
@@ -74,6 +76,7 @@ public:
     Window& window();
     RenderBackend& renderBackend();
     DebugUI& debugUI();
+    UI& ui(); // the game's UI (see gc_ui.h). Only when there is a window
     World& world();
     ResourceManager& resourceManager();
     Net& net();

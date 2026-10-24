@@ -64,6 +64,24 @@ struct SphereContact {
     float depth{};        // how far the sphere is inside the collider's surface
 };
 
+// What CollisionSystem::drawDebug() draws. The debug UI's Collision menu sets these.
+struct CollisionDebugDrawOptions {
+    bool collider_boxes{};    // the world space box of each collider and terrain: the leaves of the broad phase tree
+    bool broad_phase_tree{};  // the rest of the broad phase tree
+    int broad_phase_level{-1}; // only the nodes this deep (the root is 0), or -1 for all of them
+    bool mesh_triangles{};    // every collider's triangles, as the narrow phase sees them
+    bool mesh_trees{};        // the boxes of each collider's tree of triangles, wherever the collider is
+    int mesh_tree_level{-1};  // as broad_phase_level
+    float max_distance{200.0f}; // from the camera. Only the trees that are nearer than this are drawn into
+    int max_lines{100'000};     // in all, so that a big mesh doesn't stop the game
+};
+
+// How much drawDebug() drew
+struct CollisionDebugDrawStats {
+    int lines{};
+    bool hit_max_lines{};
+};
+
 class CollisionSystem : public System {
 public:
     static constexpr auto NAME = Name::createConstexpr("CollisionSystem");
@@ -147,6 +165,11 @@ public:
     size_t getMeshCount() const { return m_shapes.size(); }
     size_t getBakedMeshCount() const; // how many of those meshes have a baked tree, rather than one that had to be built
     int getTreeHeight() const;
+
+    // Draws the colliders, as the options say, over the top of the world with ImGui's background draw list (so nothing hides
+    // them, but ImGui's windows are on top). view and projection are the camera's (see WorldDrawData). Lines are drawn as the
+    // system was at the last onUpdate(), so call it after the world's update.
+    CollisionDebugDrawStats drawDebug(const CollisionDebugDrawOptions& options, const glm::mat4& view, const glm::mat4& projection) const;
 
 private:
     void findBakedMeshes();

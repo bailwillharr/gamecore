@@ -1,0 +1,53 @@
+<rml>
+<head>
+	<title>Mars Fissure HUD</title>
+	<link type="text/rcss" href="ui_base.rcss"/>
+	<link type="text/rcss" href="mars_hud.rcss"/>
+</head>
+<!-- What mars_fissure's HudSystem shows (mars_fissure/src/hud.cpp). The values come from its data model, "mars_hud". -->
+<body class="overlay" data-model="mars_hud">
+	<!-- markers over the beacons, so that they can be found from a long way off (under everything else) -->
+	<div id="markers">
+		<div class="marker" data-for="marker : markers" data-class-found="marker.found"
+			data-style-left="marker.x + 'px'" data-style-top="marker.y + 'px'">
+			<div class="ring"></div>
+			<div class="label">{{marker.label}}</div>
+		</div>
+	</div>
+
+	<div id="explorer" class="panel">
+		<div class="title">Mars</div>
+		<div class="subtitle">A fissure east of Olympus Mons, 17.2 N 233.3 E</div>
+		<div class="source">HiRISE DTM DTEEC_046252_1975_046107_1975_A01, 1 m apart, at 1:1</div>
+
+		<div class="rows">
+			<div class="row"><span class="label">Mode</span><span class="value">{{mode}}</span><span class="extra" data-if="has_explorer">{{speed}}</span></div>
+			<div class="row"><span class="label">Position</span><span class="value">{{position}}</span></div>
+			<div class="row"><span class="label">Elevation</span><span class="value">{{elevation}}</span></div>
+		</div>
+
+		<div class="survey">
+			<div class="survey-heading"><span class="label">Survey beacons</span><span class="count">{{found}} of {{total}}</span></div>
+			<div class="survey-bar"><div class="survey-fill" data-style-width="(found_fraction * 100) + '%'"></div></div>
+			<div class="nearest" data-if="has_nearest">Nearest: <span class="value">{{nearest}}</span></div>
+			<div class="complete" data-if="complete">{{complete_text}}</div>
+		</div>
+	</div>
+
+	<div id="stats" class="panel">
+		<div class="fps">{{fps}}</div>
+		<div>{{patches}}</div>
+		<div>{{tiles}}</div>
+		<div>{{streamed}}</div>
+		<div data-class-warning="detail_warning">{{detail}}</div>
+	</div>
+
+	<div id="controls" class="panel" data-if="show_help &amp;&amp; has_explorer">
+		<div><span class="key">Mouse</span> look <span class="key">W A S D</span> walk <span class="key">Shift</span> run <span class="key">Space</span> jump</div>
+		<div><span class="key">F</span> fly / walk, flying: <span class="key">Space</span>/<span class="key">E</span> up <span class="key">Q</span> down <span class="key">Shift</span> x10 <span class="key">Ctrl</span> x0.1</div>
+		<div><span class="key">R</span> back to the start</div>
+		<div><span class="key">L</span> colour the levels of detail <span class="key">K</span> freeze them <span class="key">[</span> <span class="key">]</span> less / more detail</div>
+		<div><span class="key">F10</span> debug windows (Windows &gt; Terrain) <span class="key">H</span> hide this</div>
+	</div>
+</body>
+</rml>

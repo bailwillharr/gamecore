@@ -70,6 +70,8 @@ static const char* getAssetTypeName(gcpak::GcpakAssetType type)
         return "cube map";
     case gcpak::GcpakAssetType::TERRAIN:
         return "terrain";
+    case gcpak::GcpakAssetType::RAW:
+        return "file";
     default:
         return "invalid";
     }

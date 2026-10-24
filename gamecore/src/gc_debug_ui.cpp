@@ -155,6 +155,42 @@ void DebugUI::update(FrameState& frame_state)
                 }
                 ImGui::EndMenu();
             }
+            if (ImGui::BeginMenu("Collision", m_has_collision_system)) {
+                ImGui::MenuItem("Collider boxes", nullptr, &m_collision_draw.collider_boxes);
+                ImGui::SetItemTooltip("Each collider's world space box: the leaves of the broad phase tree.\nGreen: meshes. Orange: terrains.");
+                ImGui::MenuItem("Broad phase tree", nullptr, &m_collision_draw.broad_phase_tree);
+                ImGui::BeginDisabled(!m_collision_draw.broad_phase_tree);
+                ImGui::SetNextItemWidth(160.0f);
+                ImGui::SliderInt("Level##broad", &m_collision_draw.broad_phase_level, -1, 32, m_collision_draw.broad_phase_level < 0 ? "All" : "%d");
+                ImGui::EndDisabled();
+                ImGui::Separator();
+                ImGui::MenuItem("Mesh triangles", nullptr, &m_collision_draw.mesh_triangles);
+                ImGui::SetItemTooltip("The triangles that the narrow phase tests");
+                ImGui::MenuItem("Mesh trees", nullptr, &m_collision_draw.mesh_trees);
+                ImGui::SetItemTooltip("The boxes of each mesh's tree of triangles (baked or built).\nBoxes only a few pixels across are left out, as are the boxes inside them.");
+                ImGui::BeginDisabled(!m_collision_draw.mesh_trees);
+                ImGui::SetNextItemWidth(160.0f);
+                ImGui::SliderInt("Level##mesh", &m_collision_draw.mesh_tree_level, -1, 32, m_collision_draw.mesh_tree_level < 0 ? "All" : "%d");
+                ImGui::EndDisabled();
+                ImGui::Separator();
+                ImGui::SetNextItemWidth(160.0f);
+                ImGui::SliderFloat("Max distance", &m_collision_draw.max_distance, 1.0f, 10000.0f, "%.0f", ImGuiSliderFlags_Logarithmic);
+                ImGui::SetNextItemWidth(160.0f);
+                ImGui::SliderInt("Max lines", &m_collision_draw.max_lines, 1000, 1'000'000, "%d", ImGuiSliderFlags_Logarithmic);
+                if (m_collision_draw_stats.hit_max_lines) {
+                    ImGui::TextColored(ImVec4(1.0f, 0.6f, 0.2f, 1.0f), "%d lines (too many: the furthest were left out)", m_collision_draw_stats.lines);
+                }
+                else {
+                    ImGui::TextDisabled("%d lines", m_collision_draw_stats.lines);
+                }
+                if (ImGui::MenuItem("Hide all")) {
+                    m_collision_draw.collider_boxes = false;
+                    m_collision_draw.broad_phase_tree = false;
+                    m_collision_draw.mesh_triangles = false;
+                    m_collision_draw.mesh_trees = false;
+                }
+                ImGui::EndMenu();
+            }
 
             // on the right hand side
             const std::string stats = std::format("{:.2f} ms ({} fps)   F10: hide", frame_state.average_frame_time * 1000.0,
@@ -189,6 +225,16 @@ void DebugUI::update(FrameState& frame_state)
         frame_state.draw_data.setEnvironmentVisible(false);
     }
     frame_state.draw_data.setExposure(frame_state.draw_data.getExposure() * std::exp2(m_exposure_compensation));
+}
+
+void DebugUI::drawCollision(const CollisionSystem* collision_system, const WorldDrawData& draw_data)
+{
+    // Like the Render menu, what is drawn stays drawn while the debug UI is hidden
+    m_has_collision_system = collision_system != nullptr;
+    m_collision_draw_stats = {};
+    if (collision_system) {
+        m_collision_draw_stats = collision_system->drawDebug(m_collision_draw, draw_data.getViewMatrix(), draw_data.getProjectionMatrix());
+    }
 }
 
 bool* DebugUI::getWindowOpen(const char* name)

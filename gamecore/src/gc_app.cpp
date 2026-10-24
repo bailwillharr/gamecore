@@ -20,7 +20,9 @@
 #include "gamecore/gc_content.h"
 #include "gamecore/gc_window.h"
 #include "gamecore/gc_render_backend.h"
+#include "gamecore/gc_collision_system.h"
 #include "gamecore/gc_debug_ui.h"
+#include "gamecore/gc_ui.h"
 #include "gamecore/gc_world.h"
 #include "gamecore/gc_world_draw_data.h"
 #include "gamecore/gc_frame_state.h"
@@ -104,6 +106,8 @@ App::App(const AppInitOptions& options)
         m_window = std::make_unique<Window>(window_init_info);
         m_render_backend = std::make_unique<RenderBackend>(m_window->getHandle());
         m_debug_ui = std::make_unique<DebugUI>(m_window->getHandle(), m_render_backend->getInfo(), m_save_directory / "imgui.ini");
+        // (content/ui is where the UI's files are before they are packaged. It's only there in a development build)
+        m_ui = std::make_unique<UI>(m_window->getHandle(), *m_render_backend, *m_content, m_application_directory / "content" / "ui");
     }
 
     GC_TRACE("Initialised Application");
@@ -179,6 +183,12 @@ DebugUI& App::debugUI()
     return *m_debug_ui;
 }
 
+UI& App::ui()
+{
+    GC_ASSERT(m_ui);
+    return *m_ui;
+}
+
 World& App::world()
 {
     GC_ASSERT(m_world);
@@ -225,8 +235,13 @@ void App::run()
         if (m_window) {
             // whether the mouse was captured at the end of the last frame
             const bool mouse_captured = frame_state.window_state && frame_state.window_state->getIsMouseCaptured();
-            frame_state.window_state = &m_window->processEvents(
-                [debug_ui = this->m_debug_ui.get(), mouse_captured](SDL_Event& ev) { debug_ui->windowEventInterceptor(ev, mouse_captured); });
+            // ImGui (the debug UI) is on top, so it has the first look at each event, then the game's UI
+            frame_state.window_state = &m_window->processEvents([debug_ui = this->m_debug_ui.get(), ui = this->m_ui.get(), mouse_captured](SDL_Event& ev) {
+                debug_ui->windowEventInterceptor(ev, mouse_captured);
+                if (ev.type != 0) {
+                    ui->processEvent(ev, mouse_captured);
+                }
+            });
             {
                 if (frame_state.window_state->getKeyDown(SDL_SCANCODE_ESCAPE)) {
                     m_window->pushQuitEvent();
@@ -272,9 +287,15 @@ void App::run()
 
         m_world->update(frame_state);
 
+        if (m_ui) {
+            m_ui->update(frame_state.ui_draw_data);
+        }
+
         if (m_debug_ui) {
             renderWorldUI(*m_world, m_debug_ui->getWindowOpen("World"));
+            m_ui->drawDebugWindow(m_debug_ui->getWindowOpen("UI"));
             renderNetUI(*m_net, m_debug_ui->getWindowOpen("Network"));
+            m_debug_ui->drawCollision(m_world->findSystem<CollisionSystem>(), frame_state.draw_data);
             m_debug_ui->update(frame_state);
             m_debug_ui->render();
         }
@@ -284,9 +305,10 @@ void App::run()
             if (frame_state.window_state) {
                 resized = frame_state.window_state->getResizedFlag();
             }
-            m_render_backend->submitFrame(resized, frame_state.draw_data, DebugUI::postRenderCallback);
+            m_render_backend->submitFrame(resized, frame_state.draw_data, &frame_state.ui_draw_data, DebugUI::postRenderCallback);
         }
         frame_state.draw_data.reset();
+        frame_state.ui_draw_data.reset();
 
         if (m_render_backend) {
             m_render_backend->cleanupGPUResources();

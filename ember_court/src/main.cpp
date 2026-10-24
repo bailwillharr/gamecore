@@ -30,7 +30,7 @@ int main(int argc, char* argv[])
     init_options.version = "v0.1.0";
     init_options.headless = isHeadless(options);
     // Only the package files that the game uses, rather than everything in the content directory
-    init_options.pak_files_override = {"shaders.gcpak", "textures.gcpak", "meshes.gcpak", "ember_court.gcpak"};
+    init_options.pak_files_override = {"shaders.gcpak", "textures.gcpak", "meshes.gcpak", "ember_court.gcpak", "ui.gcpak"};
 
     gc::App::initialise(init_options);
 

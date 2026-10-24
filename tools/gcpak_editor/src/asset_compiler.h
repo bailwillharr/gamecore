@@ -27,6 +27,7 @@ enum class SourceFileKind {
     MESH,    // .obj
     GLTF,    // .gltf .glb          becomes a prefab, along with the meshes, materials and textures it uses
     SKY,     // .hdr                a panorama of a sky. Becomes three cube maps: the sky, and the light it gives. See environment_baker.h
+    RAW,     // .rml .rcss .ttf .otf  copied as it is (the UI's documents, style sheets and fonts)
 };
 
 struct CompileStats {

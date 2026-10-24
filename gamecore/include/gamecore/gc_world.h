@@ -190,6 +190,19 @@ public:
         return static_cast<T&>(*m_systems[system_index]);
     }
 
+    // Null if the system isn't registered. Unlike getSystem(), this can be asked about a system that the game never registers:
+    // it looks for the system by name, so it doesn't give the system an index (which would have to be the next one registered).
+    template <ValidDerivedSystem T>
+    T* findSystem()
+    {
+        for (size_t i = 0; i < m_system_names.size(); ++i) {
+            if (m_system_names[i] == T::NAME) {
+                return static_cast<T*>(m_systems[i].get());
+            }
+        }
+        return nullptr;
+    }
+
     template <ValidComponent... Ts, typename Func>
     void forEach(Func&& func)
     {

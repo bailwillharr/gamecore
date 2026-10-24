@@ -43,6 +43,7 @@
 #include "gamecore/gc_render_shadow_map.h"
 #include "gamecore/gc_render_environment.h"
 #include "gamecore/gc_render_terrain.h"
+#include "gamecore/gc_render_ui.h"
 #include "gamecore/gc_render_uploader.h"
 
 struct SDL_Window; // forward-dec
@@ -50,6 +51,7 @@ struct SDL_Window; // forward-dec
 namespace gc {
 
 class WorldDrawData; // forward-dec
+class UIDrawData;    // forward-dec
 
 // Handles and settings needed for setting up ImGui's Vulkan backend
 struct RenderBackendInfo {
@@ -109,6 +111,15 @@ class RenderBackend {
     std::array<std::unique_ptr<GPUPipeline>, MATERIAL_PIPELINE_VARIANTS> m_main_pipelines{};
     std::array<std::unique_ptr<GPUPipeline>, MATERIAL_PIPELINE_VARIANTS> m_instancing_pipelines{};
 
+    // The game's UI (see UIDrawData). The pipelines are made by setUIShaders(). Without them the UI isn't drawn.
+    VkSampler m_ui_sampler{};
+    VkDescriptorSetLayout m_ui_set_layout{};
+    VkPipelineLayout m_ui_pipeline_layout{};
+    VkShaderModule m_ui_vertex_module{};
+    VkShaderModule m_ui_fragment_module{};
+    std::array<std::unique_ptr<GPUPipeline>, static_cast<size_t>(UIPipelineKind::COUNT)> m_ui_pipelines{};
+    std::unique_ptr<RenderUITexture> m_ui_white_texture{}; // bound for UI draws without a texture
+
     VkSampleCountFlagBits m_msaa_samples{};
 
     uint64_t m_frame_count{};
@@ -152,7 +163,9 @@ class RenderBackend {
     std::unique_ptr<RenderBuffer> m_frame_uniform_buffer{};
     std::unique_ptr<RenderBuffer> m_instancing_transforms_buffer{};
     std::unique_ptr<RenderBuffer> m_terrain_patches_buffer{};
-    
+    std::unique_ptr<RenderBuffer> m_ui_vertex_buffer{};
+    std::unique_ptr<RenderBuffer> m_ui_index_buffer{};
+
     std::unique_ptr<GPUDescriptorSet> m_frame_uniform_buffer_set{}; // permanently points to m_frame_uniform_buffer
 
     // A single texel that shadows nothing. Bound when the world has no shadow map, as the shaders always read one.
@@ -182,7 +195,9 @@ public:
     void setSyncMode(RenderSyncMode mode);
 
     /* Renders to framebuffer and presents framebuffer to the screen */
-    void submitFrame(bool window_resized, const WorldDrawData& world_draw_data, bool (*postRenderCallback)(VkCommandBuffer cmd) = nullptr);
+    // The UI (if there is one) is drawn over the world, then the post render callback (ImGui) over that.
+    void submitFrame(bool window_resized, const WorldDrawData& world_draw_data, const UIDrawData* ui_draw_data = nullptr,
+                     bool (*postRenderCallback)(VkCommandBuffer cmd) = nullptr);
 
     /* Destroys any GPU resources that have been added to the delete queue and are not in use */
     void cleanupGPUResources();
@@ -213,6 +228,14 @@ public:
     // and specialization constants as the world's (see setWorldShaders()), with the material's constants at offset 64.
     // Call once, before the first frame that draws a terrain.
     void setTerrainShaders(std::span<const uint8_t> vertex_spv, std::span<const uint8_t> fragment_spv);
+
+    // Sets the shaders that draw the UI (content/shader_src/ui.vert and ui.frag) and makes its pipelines. Call once. See UIDrawData
+    void setUIShaders(std::span<const uint8_t> vertex_spv, std::span<const uint8_t> fragment_spv);
+    bool hasUIShaders() const { return m_ui_vertex_module != VK_NULL_HANDLE; }
+
+    // A texture for the UI. The texels are RGBA8, sRGB encoded with the alpha premultiplied, as RmlUi's are. They are copied before
+    // this returns.
+    std::unique_ptr<RenderUITexture> createUITexture(std::span<const uint8_t> texels, uint32_t width, uint32_t height, bool generate_mips);
 
     RenderTexture createTexture(std::span<const uint8_t> r8g8b8a8_pak, bool srgb, RenderUploadMode upload_mode = RenderUploadMode::IMMEDIATE);
     RenderTexture createCubeTexture(std::array<std::span<const uint8_t>, 6> r8g8b8a8_paks, bool srgb,
@@ -262,6 +285,7 @@ private:
     GPUPipeline createInstancingPipeline(uint32_t variant);
     GPUPipeline createTerrainPipeline(MaterialFeatures features);
     GPUPipeline createSkyPipeline();
+    GPUPipeline createUIPipeline(UIPipelineKind kind);
 
     // cube_pak is the data of a CUBE_MAP_E5B9G9R9 asset. mip_levels_out is how many mip levels it has
     RenderTexture createCubeMap(std::span<const uint8_t> cube_pak, RenderUploadMode upload_mode, uint32_t* mip_levels_out = nullptr);

@@ -1,0 +1,45 @@
+<rml>
+<head>
+	<title>Ember Court HUD</title>
+	<link type="text/rcss" href="ui_base.rcss"/>
+	<link type="text/rcss" href="ember_court_hud.rcss"/>
+</head>
+<!-- What ember_court's HudSystem shows (ember_court/src/hud.cpp). The values come from its data model, "ember_hud". -->
+<body class="overlay" data-model="ember_hud">
+	<div id="scoreboard" class="panel">
+		<div class="heading">Ember Court</div>
+		<p class="waiting" data-if="waiting">Waiting for the server...</p>
+		<table data-if="!waiting">
+			<thead>
+				<tr><td class="name">Player</td><td>Embers</td><td>Deaths</td></tr>
+			</thead>
+			<tbody>
+				<tr data-for="row : rows" data-class-you="row.local">
+					<td class="name">{{row.name}}</td><td>{{row.score}}</td><td>{{row.deaths}}</td>
+				</tr>
+			</tbody>
+		</table>
+		<p class="controls"><span class="key">WASD</span> move <span class="key">Space</span> jump <span class="key">Mouse</span> look and throw <span class="key">F10</span> debug</p>
+	</div>
+
+	<div id="killfeed">
+		<div class="kill" data-for="kill : kills" data-style-opacity="kill.opacity">
+			<span class="killer">{{kill.killer}}</span> burned <span class="victim">{{kill.victim}}</span>
+		</div>
+	</div>
+
+	<div id="vitals" data-if="alive">
+		<div class="health-bar">
+			<div class="health-fill" data-class-low="health_fraction &lt; 0.35" data-style-width="(health_fraction * 100) + '%'"></div>
+			<div class="health-text">{{health}}</div>
+		</div>
+		<div class="embers"><span class="ember-icon"></span>{{score}}</div>
+	</div>
+
+	<div id="crosshair" data-if="alive" data-class-hit="hit">
+		<div class="dot"></div>
+		<div class="cross a"></div>
+		<div class="cross b"></div>
+	</div>
+</body>
+</rml>

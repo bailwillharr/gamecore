@@ -8,6 +8,7 @@
 
 #include <algorithm>
 #include <fstream>
+#include <iterator>
 #include <memory>
 #include <optional>
 #include <sstream>
@@ -51,6 +52,9 @@ SourceFileKind getSourceFileKind(const std::filesystem::path& path)
     }
     else if (ext == ".hdr") {
         return SourceFileKind::SKY;
+    }
+    else if (ext == ".rml" || ext == ".rcss" || ext == ".ttf" || ext == ".otf") {
+        return SourceFileKind::RAW;
     }
     else {
         return SourceFileKind::UNKNOWN;
@@ -255,6 +259,24 @@ static std::vector<uint8_t> compileObjMesh(const std::filesystem::path& path)
 }
 
 //
+// Files that are packaged as they are
+//
+
+static std::vector<uint8_t> readRawFile(const std::filesystem::path& path)
+{
+    std::ifstream file(path, std::ios::binary);
+    if (!file) {
+        GC_ERROR("Failed to open {}", path.filename().string());
+        return {};
+    }
+    std::vector<uint8_t> data((std::istreambuf_iterator<char>(file)), std::istreambuf_iterator<char>());
+    if (data.empty()) {
+        GC_ERROR("{} is empty", path.filename().string());
+    }
+    return data;
+}
+
+//
 //
 //
 
@@ -281,6 +303,10 @@ bool compileSourceFile(const std::filesystem::path& path, std::vector<Asset>& as
         return compileGltf(path, assets_out);
     case SourceFileKind::SKY:
         return compileEnvironment(path, assets_out);
+    case SourceFileKind::RAW:
+        data = readRawFile(path);
+        type = gcpak::GcpakAssetType::RAW;
+        break;
     case SourceFileKind::UNKNOWN:
         GC_ERROR("Don't know how to compile {}", name);
         return false;

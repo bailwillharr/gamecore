@@ -1,0 +1,224 @@
+/* Ember Court's HUD (ember_court_hud.rml). Sizes are in dp, so it looks the same at any resolution. */
+
+body
+{
+	font-size: 15dp;
+}
+
+.panel
+{
+	background-color: #140a06b8;
+	border: 1dp #ff8a3d50;
+	border-radius: 8dp;
+	padding: 10dp 14dp;
+}
+
+/* the scoreboard, top left */
+
+#scoreboard
+{
+	position: absolute;
+	left: 16dp;
+	top: 16dp;
+	width: 290dp;
+}
+
+.heading
+{
+	font-size: 13dp;
+	font-weight: bold;
+	color: #ffb15c;
+	padding-bottom: 6dp;
+	margin-bottom: 6dp;
+	border-bottom: 1dp #ff8a3d40;
+}
+
+.waiting
+{
+	color: #ffffffb0;
+	font-style: italic;
+}
+
+table
+{
+	width: 100%;
+}
+
+thead td
+{
+	font-size: 12dp;
+	color: #ffffff90;
+	padding-bottom: 3dp;
+}
+
+td
+{
+	text-align: right;
+	padding: 2dp 0dp;
+}
+
+td.name
+{
+	text-align: left;
+	width: 50%;
+}
+
+tr.you td
+{
+	color: #ffcf6e;
+	font-weight: bold;
+}
+
+.controls
+{
+	margin-top: 10dp;
+	font-size: 12dp;
+	color: #ffffffa0;
+	line-height: 20dp;
+}
+
+.key
+{
+	color: #ffe2b8;
+	background-color: #ffffff1c;
+	border-radius: 3dp;
+	padding: 1dp 5dp;
+	margin-left: 4dp;
+}
+
+/* who burned who, top right. The HUD fades each line out */
+
+#killfeed
+{
+	position: absolute;
+	right: 16dp;
+	top: 16dp;
+	display: flex;
+	flex-direction: column;
+	align-items: flex-end;
+}
+
+.kill
+{
+	background-color: #140a06b0;
+	border-radius: 5dp;
+	padding: 5dp 12dp;
+	margin-bottom: 5dp;
+	font-size: 14dp;
+}
+
+.killer { color: #ffcf6e; font-weight: bold; }
+.victim { color: #ff7a5c; font-weight: bold; }
+
+/* health and embers, bottom left */
+
+#vitals
+{
+	position: absolute;
+	left: 16dp;
+	bottom: 16dp;
+	display: flex;
+	align-items: center;
+}
+
+.health-bar
+{
+	position: relative;
+	width: 240dp;
+	height: 24dp;
+	border-radius: 12dp;
+	border: 1dp #ffffff38;
+	background-color: #000000a0;
+	overflow: hidden; /* (the fill is clipped to the rounded bar) */
+}
+
+.health-fill
+{
+	height: 100%;
+	decorator: linear-gradient(90deg, #ff4d1a, #ffc53a);
+	transition: width 0.2s cubic-out;
+}
+
+.health-fill.low
+{
+	decorator: linear-gradient(90deg, #8f0a0a, #ff3b1f);
+	animation: 0.7s cubic-in-out infinite alternate pulse;
+}
+
+@keyframes pulse
+{
+	from { opacity: 1; }
+	to { opacity: 0.5; }
+}
+
+.health-text
+{
+	position: absolute;
+	left: 0dp;
+	right: 0dp;
+	top: 0dp;
+	height: 24dp;
+	line-height: 24dp;
+	text-align: center;
+	font-size: 14dp;
+	font-weight: bold;
+	font-effect: shadow(1dp 1dp #000000c0);
+}
+
+.embers
+{
+	margin-left: 14dp;
+	font-size: 18dp;
+	font-weight: bold;
+	color: #ffcf6e;
+	font-effect: glow(2dp 4dp 0dp 0dp #ff6a0080);
+}
+
+.ember-icon
+{
+	display: inline-block;
+	width: 12dp;
+	height: 12dp;
+	margin-right: 7dp;
+	border-radius: 6dp;
+	decorator: radial-gradient(circle, #fff3c4, #ffae2b 45%, #ff4d1a00 100%);
+}
+
+/* the crosshair, which turns into a red cross for a moment when a bolt hits */
+
+#crosshair
+{
+	position: absolute;
+	left: 50%;
+	top: 50%;
+	width: 0dp;
+	height: 0dp;
+}
+
+#crosshair .dot
+{
+	position: absolute;
+	left: -3dp;
+	top: -3dp;
+	width: 6dp;
+	height: 6dp;
+	border-radius: 3dp;
+	background-color: #ffffffd0;
+}
+
+#crosshair .cross
+{
+	display: none;
+	position: absolute;
+	left: -11dp;
+	top: -1.5dp;
+	width: 22dp;
+	height: 3dp;
+	border-radius: 1.5dp;
+	background-color: #ff3c28;
+}
+
+#crosshair .cross.a { transform: rotate(45deg); }
+#crosshair .cross.b { transform: rotate(-45deg); }
+#crosshair.hit .dot { display: none; }
+#crosshair.hit .cross { display: block; }

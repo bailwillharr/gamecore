@@ -194,6 +194,38 @@ target_include_directories(imgui PUBLIC ${imgui_SOURCE_DIR})
 target_link_libraries(imgui PRIVATE volk::volk)
 target_link_libraries(imgui PRIVATE SDL3::SDL3)
 
+# FreeType, for RmlUi's font engine. Built without its optional dependencies so that it never picks up a system library.
+cpmaddpackage(
+  NAME freetype
+  VERSION 2.13.3
+  URL https://github.com/freetype/freetype/archive/refs/tags/VER-2-13-3.zip
+  OPTIONS
+    "FT_DISABLE_ZLIB ON"
+    "FT_DISABLE_BZIP2 ON"
+    "FT_DISABLE_PNG ON"
+    "FT_DISABLE_HARFBUZZ ON"
+    "FT_DISABLE_BROTLI ON"
+  EXCLUDE_FROM_ALL YES
+  SYSTEM YES
+)
+# RmlUi looks for this target before it tries find_package(Freetype)
+add_library(Freetype::Freetype ALIAS freetype)
+
+# RmlUi (the game UI, see gc_ui.h). Its include directories come with the RmlUi::RmlUi target.
+# Static, and with its own RTTI because everything here is built with /GR-.
+cpmaddpackage(
+  NAME rmlui
+  VERSION 6.2
+  URL https://github.com/mikke89/RmlUi/archive/refs/tags/6.2.zip
+  OPTIONS
+    "BUILD_SHARED_LIBS OFF"
+    "RMLUI_FONT_ENGINE freetype"
+    "RMLUI_CUSTOM_RTTI ON"
+    "RMLUI_SAMPLES OFF"
+  EXCLUDE_FROM_ALL YES
+  SYSTEM YES
+)
+
 # tinygltf
 cpmaddpackage(
   NAME tinygltf
@@ -285,6 +317,19 @@ add_subdirectory(tools/gcpak_editor)
 add_subdirectory(tools/net_test)
 add_subdirectory(tools/prefab_test)
 add_subdirectory(tools/collision_test)
+
+# content/ui.gcpak: the UI's documents, style sheets, fonts and images (see gamecore/include/gamecore/gc_ui.h), packaged from
+# content/ui whenever a file there changes (or is added: the list of files is checked whenever the build runs)
+file(GLOB_RECURSE GC_UI_FILES CONFIGURE_DEPENDS "${CMAKE_SOURCE_DIR}/content/ui/*")
+set(GC_UI_PACKAGE "${CMAKE_SOURCE_DIR}/content/ui.gcpak")
+add_custom_command(
+  OUTPUT ${GC_UI_PACKAGE}
+  COMMAND gcpak_editor --pack "${CMAKE_SOURCE_DIR}/content/ui" --out ${GC_UI_PACKAGE}
+  DEPENDS ${GC_UI_FILES} gcpak_editor
+  COMMENT "Packaging the UI (content/ui)"
+  VERBATIM
+)
+add_custom_target(gamecore_ui_content ALL DEPENDS ${GC_UI_PACKAGE})
 
 if(Python3_FOUND)
     add_custom_target(

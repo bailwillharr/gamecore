@@ -27,6 +27,9 @@
 #include <gamecore/gc_shadow_map_component.h>
 #include <gamecore/gc_skybox_component.h>
 #include <gamecore/gc_transform_component.h>
+#include <gamecore/gc_ui.h>
+#include <gamecore/gc_ui_component.h>
+#include <gamecore/gc_ui_system.h>
 #include <gamecore/gc_window.h>
 #include <gamecore/gc_world.h>
 
@@ -245,6 +248,7 @@ int buildAndStartGame(gc::App& app, const Options& options)
     world.registerComponent<CharacterComponent, gc::ComponentArrayType::SPARSE>();
     world.registerComponent<PlayerModelComponent, gc::ComponentArrayType::SPARSE>();
     world.registerComponent<BotComponent, gc::ComponentArrayType::SPARSE>();
+    world.registerComponent<gc::UIComponent, gc::ComponentArrayType::SPARSE>(); // the HUD
 
     GameConfig config{};
     config.headless = headless;
@@ -278,7 +282,8 @@ int buildAndStartGame(gc::App& app, const Options& options)
     }
     if (!headless) {
         world.registerSystem<VisualsSystem>();
-        world.registerSystem<HudSystem>(replication, match);
+        world.registerSystem<HudSystem>(app.ui(), replication, match);
+        world.registerSystem<gc::UISystem>(app.ui()); // (after the HUD, which makes the data model that its document uses)
         world.registerSystem<gc::RenderSystem>(app.resourceManager(), app.renderBackend());
         world.registerSystem<gc::CameraSystem>();
         world.registerSystem<gc::LightSystem>();

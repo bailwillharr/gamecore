@@ -4,6 +4,8 @@
 #include <filesystem>
 #include <string>
 
+#include "gamecore/gc_collision_system.h"
+
 struct ImGuiContext;                               // forward-dec
 struct SDL_Window;                                 // forward-dec
 union SDL_Event;                                   // forward-dec
@@ -14,6 +16,7 @@ namespace gc {
 struct RenderBackendInfo; // forward-dec
 struct FrameState;        // forward-dec
 class Content;            // forward-dec
+class WorldDrawData;      // forward-dec
 
 // Owns ImGui. Anything can draw ImGui windows during the frame (a game's HUD, the editor's UI), and they get the mouse and keyboard
 // whenever the mouse isn't captured by the game.
@@ -42,6 +45,9 @@ class DebugUI {
     bool m_sky_lighting{true}; // image based lighting
     bool m_sky_visible{true};
     float m_exposure_compensation{0.0f}; // in EV: +1 doubles the brightness
+    bool m_has_collision_system{};
+    CollisionDebugDrawOptions m_collision_draw{};
+    CollisionDebugDrawStats m_collision_draw_stats{};
 
 public:
     // Whether the debug windows and their menu bar are shown (toggled with F10)
@@ -65,6 +71,10 @@ public:
 
     // Draws the menu bar
     void update(FrameState& frame_state);
+
+    // Draws the colliders that the Collision menu asks for. Call it every frame after the world's update and before update(),
+    // with the world's CollisionSystem, or null if it hasn't got one.
+    void drawCollision(const CollisionSystem* collision_system, const WorldDrawData& draw_data);
 
     // For a window that is only for debugging. Call it every frame, whether or not the window ends up being drawn, so that the
     // window is listed in the menu bar's Windows menu.

@@ -33,7 +33,7 @@ class Content {
         gcpak::GcpakAssetEntry entry;
     };
 
-    static constexpr uint32_t MAX_PAK_FILES = 8;
+    static constexpr uint32_t MAX_PAK_FILES = 16;
     gct::static_vector<mio::ummap_source, MAX_PAK_FILES> m_package_file_maps;
 
     std::unordered_map<Name, PackageAssetInfo> m_asset_infos;

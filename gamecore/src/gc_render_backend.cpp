@@ -22,6 +22,7 @@
 #include "gamecore/gc_vulkan_swapchain.h"
 #include "gclog/gclog.h"
 #include "gamecore/gc_world_draw_data.h"
+#include "gamecore/gc_ui_draw_data.h"
 #include "gamecore/gc_units.h"
 #include "gamecore/gc_render_world.h"
 #include "gamecore/gc_resources.h"
@@ -303,6 +304,45 @@ RenderBackend::RenderBackend(SDL_Window* window_handle)
         GC_CHECKVK(vkCreateDescriptorSetLayout(m_device.getHandle(), &info, nullptr, &m_terrain_set_layout));
     }
 
+    // The UI: one texture, and push constants (see UIPushConstants in gc_render_ui.cpp)
+    {
+        // Textures repeat, as RmlUi's tiled images go past the edges. No anisotropy: the UI faces the screen
+        VkSamplerCreateInfo sampler_info{};
+        sampler_info.sType = VK_STRUCTURE_TYPE_SAMPLER_CREATE_INFO;
+        sampler_info.magFilter = VK_FILTER_LINEAR;
+        sampler_info.minFilter = VK_FILTER_LINEAR;
+        sampler_info.mipmapMode = VK_SAMPLER_MIPMAP_MODE_LINEAR;
+        sampler_info.addressModeU = VK_SAMPLER_ADDRESS_MODE_REPEAT;
+        sampler_info.addressModeV = VK_SAMPLER_ADDRESS_MODE_REPEAT;
+        sampler_info.addressModeW = VK_SAMPLER_ADDRESS_MODE_REPEAT;
+        sampler_info.maxLod = VK_LOD_CLAMP_NONE;
+        GC_CHECKVK(vkCreateSampler(m_device.getHandle(), &sampler_info, nullptr, &m_ui_sampler));
+
+        VkDescriptorSetLayoutBinding binding{};
+        binding.binding = 0;
+        binding.descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
+        binding.descriptorCount = 1;
+        binding.stageFlags = VK_SHADER_STAGE_FRAGMENT_BIT;
+        binding.pImmutableSamplers = &m_ui_sampler;
+        VkDescriptorSetLayoutCreateInfo set_info{};
+        set_info.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_LAYOUT_CREATE_INFO;
+        set_info.bindingCount = 1;
+        set_info.pBindings = &binding;
+        GC_CHECKVK(vkCreateDescriptorSetLayout(m_device.getHandle(), &set_info, nullptr, &m_ui_set_layout));
+
+        VkPushConstantRange push_constant_range{};
+        push_constant_range.offset = 0;
+        push_constant_range.size = 128;
+        push_constant_range.stageFlags = VK_SHADER_STAGE_VERTEX_BIT | VK_SHADER_STAGE_FRAGMENT_BIT;
+        VkPipelineLayoutCreateInfo layout_info{};
+        layout_info.sType = VK_STRUCTURE_TYPE_PIPELINE_LAYOUT_CREATE_INFO;
+        layout_info.setLayoutCount = 1;
+        layout_info.pSetLayouts = &m_ui_set_layout;
+        layout_info.pushConstantRangeCount = 1;
+        layout_info.pPushConstantRanges = &push_constant_range;
+        GC_CHECKVK(vkCreatePipelineLayout(m_device.getHandle(), &layout_info, nullptr, &m_ui_pipeline_layout));
+    }
+
     // Pipeline layout. Every pipeline that draws the world uses it, so that descriptor sets stay bound when the pipeline changes.
     {
         const std::array set_layouts{m_frame_set_layout, m_material_set_layout, m_shadow_set_layout, m_environment_set_layout};
@@ -414,6 +454,10 @@ RenderBackend::RenderBackend(SDL_Window* window_handle)
         no_sky_pak[4] = 1;
         m_no_environment = std::make_unique<RenderEnvironment>(createEnvironment(no_sky_pak, no_sky_pak, no_sky_pak));
     }
+    {
+        const std::array<uint8_t, 4> white{0xff, 0xff, 0xff, 0xff};
+        m_ui_white_texture = createUITexture(white, 1, 1, false);
+    }
 
     // m_main_timeline_semaphore and the frame in flight command pools will be created when submitFrame() is called for the first time.
 
@@ -439,6 +483,12 @@ RenderBackend::~RenderBackend()
     // The destructors for these objects defer destruction until the resource is no longer in use by a GPU queue.
     m_no_shadow_map.reset();
     m_no_environment.reset();
+    m_ui_white_texture.reset();
+    for (auto& pipeline : m_ui_pipelines) {
+        pipeline.reset();
+    }
+    m_ui_vertex_buffer.reset();
+    m_ui_index_buffer.reset();
     m_sky_pipeline.reset();
     m_frame_uniform_buffer_set.reset();
     m_instancing_transforms_buffer.reset();
@@ -488,6 +538,12 @@ RenderBackend::~RenderBackend()
     vkDestroyImageView(m_device.getHandle(), m_depth_stencil_attachment_view, nullptr);
     vmaDestroyImage(m_allocator.getHandle(), m_depth_stencil_attachment_image, m_depth_stencil_attachment_allocation);
 
+    vkDestroyShaderModule(m_device.getHandle(), m_ui_fragment_module, nullptr);
+    vkDestroyShaderModule(m_device.getHandle(), m_ui_vertex_module, nullptr);
+    vkDestroyPipelineLayout(m_device.getHandle(), m_ui_pipeline_layout, nullptr);
+    vkDestroyDescriptorSetLayout(m_device.getHandle(), m_ui_set_layout, nullptr);
+    vkDestroySampler(m_device.getHandle(), m_ui_sampler, nullptr);
+
     vkDestroyShaderModule(m_device.getHandle(), m_terrain_fragment_module, nullptr);
     vkDestroyShaderModule(m_device.getHandle(), m_terrain_vertex_module, nullptr);
     vkDestroyShaderModule(m_device.getHandle(), m_sky_fragment_module, nullptr);
@@ -528,7 +584,8 @@ void RenderBackend::setSyncMode(RenderSyncMode mode)
     }
 }
 
-void RenderBackend::submitFrame(bool window_resized, const WorldDrawData& world_draw_data, bool (*post_render_callback)(VkCommandBuffer cmd))
+void RenderBackend::submitFrame(bool window_resized, const WorldDrawData& world_draw_data, const UIDrawData* ui_draw_data,
+                                bool (*post_render_callback)(VkCommandBuffer cmd))
 {
     ZoneScoped;
 
@@ -748,6 +805,41 @@ void RenderBackend::submitFrame(bool window_resized, const WorldDrawData& world_
         vkCmdPipelineBarrier2(stuff.cmd, &dep);
     }
 
+    const bool draw_ui = ui_draw_data && !ui_draw_data->empty() && hasUIShaders();
+    if (draw_ui) {
+        TracyVkZone(m_tracy_vulkan_context.ctx, stuff.cmd, "Copy UI geometry");
+
+        const auto& vertices = ui_draw_data->getVertices();
+        const auto& indices = ui_draw_data->getIndices();
+        m_ui_vertex_buffer->writeData(stuff.cmd, m_frame_count, m_main_timeline_semaphore, m_main_timeline_value + 1,
+                                      std::span(reinterpret_cast<const uint8_t*>(vertices.data()), vertices.size() * sizeof(vertices[0])));
+        m_ui_index_buffer->writeData(stuff.cmd, m_frame_count, m_main_timeline_semaphore, m_main_timeline_value + 1,
+                                     std::span(reinterpret_cast<const uint8_t*>(indices.data()), indices.size() * sizeof(indices[0])));
+
+        std::array<VkBufferMemoryBarrier2, 2> barriers{};
+        for (VkBufferMemoryBarrier2& b : barriers) {
+            b.sType = VK_STRUCTURE_TYPE_BUFFER_MEMORY_BARRIER_2;
+            b.srcStageMask = VK_PIPELINE_STAGE_2_COPY_BIT;
+            b.srcAccessMask = VK_ACCESS_2_TRANSFER_WRITE_BIT;
+            b.srcQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
+            b.dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
+            b.offset = 0;
+        }
+        barriers[0].dstStageMask = VK_PIPELINE_STAGE_2_VERTEX_ATTRIBUTE_INPUT_BIT;
+        barriers[0].dstAccessMask = VK_ACCESS_2_VERTEX_ATTRIBUTE_READ_BIT;
+        barriers[0].buffer = m_ui_vertex_buffer->getBuffer();
+        barriers[0].size = VkDeviceSize(vertices.size() * sizeof(vertices[0]));
+        barriers[1].dstStageMask = VK_PIPELINE_STAGE_2_INDEX_INPUT_BIT;
+        barriers[1].dstAccessMask = VK_ACCESS_2_INDEX_READ_BIT;
+        barriers[1].buffer = m_ui_index_buffer->getBuffer();
+        barriers[1].size = VkDeviceSize(indices.size() * sizeof(indices[0]));
+        VkDependencyInfo dep{};
+        dep.sType = VK_STRUCTURE_TYPE_DEPENDENCY_INFO;
+        dep.bufferMemoryBarrierCount = static_cast<uint32_t>(barriers.size());
+        dep.pBufferMemoryBarriers = barriers.data();
+        vkCmdPipelineBarrier2(stuff.cmd, &dep);
+    }
+
     {
         ZoneScopedN("Record render commands");
         ZoneValue(m_frame_count);
@@ -774,6 +866,9 @@ void RenderBackend::submitFrame(bool window_resized, const WorldDrawData& world_
         depth_attachment.loadOp = VK_ATTACHMENT_LOAD_OP_CLEAR;
         depth_attachment.storeOp = VK_ATTACHMENT_STORE_OP_DONT_CARE;
         depth_attachment.clearValue.depthStencil.depth = 0.0f;
+        // The stencil is only used by the UI, for its clip masks (the depth stencil format always has one)
+        VkRenderingAttachmentInfo stencil_attachment = depth_attachment;
+        stencil_attachment.clearValue.depthStencil.stencil = 0;
         VkRenderingInfo info{};
         info.sType = VK_STRUCTURE_TYPE_RENDERING_INFO;
         info.renderArea.offset.x = 0;
@@ -784,7 +879,7 @@ void RenderBackend::submitFrame(bool window_resized, const WorldDrawData& world_
         info.colorAttachmentCount = 1;
         info.pColorAttachments = &color_attachment;
         info.pDepthAttachment = &depth_attachment;
-        info.pStencilAttachment = nullptr;
+        info.pStencilAttachment = &stencil_attachment;
         vkCmdBeginRendering(stuff.cmd, &info);
 
         // Set viewport and scissor (dynamic states)
@@ -806,6 +901,12 @@ void RenderBackend::submitFrame(bool window_resized, const WorldDrawData& world_
                                      m_main_timeline_value + 1, world_draw_data, *m_frame_uniform_buffer_set, *shadow_map, *environment,
                                      draw_sky ? m_sky_pipeline.get() : nullptr, *m_instancing_transforms_buffer, m_terrain_pipeline_layout,
                                      m_terrain_pipelines, *m_terrain_patches_buffer);
+
+        if (draw_ui) {
+            TracyVkZone(m_tracy_vulkan_context.ctx, stuff.cmd, "Draw UI");
+            recordUIRenderingCommands(stuff.cmd, m_device.getHandle(), m_ui_pipeline_layout, m_ui_pipelines, *m_ui_white_texture, *m_ui_vertex_buffer,
+                                      *m_ui_index_buffer, swapchain_extent, m_main_timeline_semaphore, m_main_timeline_value + 1, *ui_draw_data);
+        }
 
         if (post_render_callback) {
             bool ret = post_render_callback(stuff.cmd);
@@ -950,6 +1051,192 @@ void RenderBackend::setTerrainShaders(std::span<const uint8_t> vertex_spv, std::
     }
     m_terrain_vertex_module = createShaderModule(m_device.getHandle(), vertex_spv);
     m_terrain_fragment_module = createShaderModule(m_device.getHandle(), fragment_spv);
+}
+
+void RenderBackend::setUIShaders(std::span<const uint8_t> vertex_spv, std::span<const uint8_t> fragment_spv)
+{
+    if (m_ui_vertex_module) {
+        abortGame("UI shaders already set!");
+    }
+    if (vertex_spv.empty() || fragment_spv.empty()) {
+        abortGame("setUIShaders() called with empty SPIRV code");
+    }
+    m_ui_vertex_module = createShaderModule(m_device.getHandle(), vertex_spv);
+    m_ui_fragment_module = createShaderModule(m_device.getHandle(), fragment_spv);
+    for (uint32_t i = 0; i < static_cast<uint32_t>(UIPipelineKind::COUNT); ++i) {
+        m_ui_pipelines[i] = std::make_unique<GPUPipeline>(createUIPipeline(static_cast<UIPipelineKind>(i)));
+    }
+}
+
+std::unique_ptr<RenderUITexture> RenderBackend::createUITexture(std::span<const uint8_t> texels, uint32_t width, uint32_t height, bool generate_mips)
+{
+    ZoneScoped;
+
+    GC_ASSERT(width != 0 && height != 0);
+    GC_ASSERT(texels.size() == static_cast<size_t>(width) * static_cast<size_t>(height) * 4);
+
+    // UNORM: the shader decodes the sRGB itself, as the alpha has to be taken out first
+    const uint32_t mip_levels = generate_mips ? getMipLevels(width, height) : 1;
+    RenderTexture texture(m_uploader->uploadImage(VK_FORMAT_R8G8B8A8_UNORM, width, height, mip_levels, false, {texels}, RenderUploadMode::IMMEDIATE));
+
+    VkDescriptorSet descriptor_set{};
+    VkDescriptorSetAllocateInfo info{};
+    info.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_ALLOCATE_INFO;
+    info.descriptorPool = m_main_descriptor_pool;
+    info.descriptorSetCount = 1;
+    info.pSetLayouts = &m_ui_set_layout;
+    GC_CHECKVK(vkAllocateDescriptorSets(m_device.getHandle(), &info, &descriptor_set));
+
+    return std::make_unique<RenderUITexture>(std::move(texture), GPUDescriptorSet(m_delete_queue, m_main_descriptor_pool, descriptor_set));
+}
+
+// RmlUi's triangles, in pixels. Drawn without depth, in the order they are given
+GPUPipeline RenderBackend::createUIPipeline(UIPipelineKind kind)
+{
+    ZoneScoped;
+
+    std::array<VkPipelineShaderStageCreateInfo, 2> stage_infos{};
+    stage_infos[0].sType = VK_STRUCTURE_TYPE_PIPELINE_SHADER_STAGE_CREATE_INFO;
+    stage_infos[0].pName = "main";
+    stage_infos[1] = stage_infos[0];
+    stage_infos[0].stage = VK_SHADER_STAGE_VERTEX_BIT;
+    stage_infos[0].module = m_ui_vertex_module;
+    stage_infos[1].stage = VK_SHADER_STAGE_FRAGMENT_BIT;
+    stage_infos[1].module = m_ui_fragment_module;
+
+    VkVertexInputBindingDescription binding{};
+    binding.binding = 0;
+    binding.stride = sizeof(UIVertex);
+    binding.inputRate = VK_VERTEX_INPUT_RATE_VERTEX;
+    std::array<VkVertexInputAttributeDescription, 3> attributes{};
+    attributes[0].location = 0;
+    attributes[0].binding = 0;
+    attributes[0].format = VK_FORMAT_R32G32_SFLOAT;
+    attributes[0].offset = offsetof(UIVertex, position);
+    attributes[1].location = 1;
+    attributes[1].binding = 0;
+    attributes[1].format = VK_FORMAT_R8G8B8A8_UNORM;
+    attributes[1].offset = offsetof(UIVertex, color);
+    attributes[2].location = 2;
+    attributes[2].binding = 0;
+    attributes[2].format = VK_FORMAT_R32G32_SFLOAT;
+    attributes[2].offset = offsetof(UIVertex, uv);
+    VkPipelineVertexInputStateCreateInfo vertex_input_state{};
+    vertex_input_state.sType = VK_STRUCTURE_TYPE_PIPELINE_VERTEX_INPUT_STATE_CREATE_INFO;
+    vertex_input_state.vertexBindingDescriptionCount = 1;
+    vertex_input_state.pVertexBindingDescriptions = &binding;
+    vertex_input_state.vertexAttributeDescriptionCount = static_cast<uint32_t>(attributes.size());
+    vertex_input_state.pVertexAttributeDescriptions = attributes.data();
+
+    VkPipelineInputAssemblyStateCreateInfo input_assembly_state{};
+    input_assembly_state.sType = VK_STRUCTURE_TYPE_PIPELINE_INPUT_ASSEMBLY_STATE_CREATE_INFO;
+    input_assembly_state.topology = VK_PRIMITIVE_TOPOLOGY_TRIANGLE_LIST;
+
+    VkPipelineViewportStateCreateInfo viewport_state{};
+    viewport_state.sType = VK_STRUCTURE_TYPE_PIPELINE_VIEWPORT_STATE_CREATE_INFO;
+    viewport_state.viewportCount = 1;
+    viewport_state.scissorCount = 1;
+
+    VkPipelineRasterizationStateCreateInfo rasterization_state{};
+    rasterization_state.sType = VK_STRUCTURE_TYPE_PIPELINE_RASTERIZATION_STATE_CREATE_INFO;
+    rasterization_state.polygonMode = VK_POLYGON_MODE_FILL;
+    rasterization_state.lineWidth = 1.0f;
+    rasterization_state.cullMode = VK_CULL_MODE_NONE; // (transforms can flip triangles over)
+    rasterization_state.frontFace = VK_FRONT_FACE_COUNTER_CLOCKWISE;
+
+    const VkFormat color_attachment_format = m_swapchain.getSurfaceFormat().format;
+    VkPipelineRenderingCreateInfo rendering_info{};
+    rendering_info.sType = VK_STRUCTURE_TYPE_PIPELINE_RENDERING_CREATE_INFO;
+    rendering_info.colorAttachmentCount = 1;
+    rendering_info.pColorAttachmentFormats = &color_attachment_format;
+    rendering_info.depthAttachmentFormat = m_depth_stencil_attachment_format;
+    rendering_info.stencilAttachmentFormat = m_depth_stencil_attachment_format;
+
+    VkPipelineMultisampleStateCreateInfo multisample_state{};
+    multisample_state.sType = VK_STRUCTURE_TYPE_PIPELINE_MULTISAMPLE_STATE_CREATE_INFO;
+    multisample_state.rasterizationSamples = m_msaa_samples;
+    multisample_state.minSampleShading = 1.0f;
+
+    // The stencil buffer holds the clip mask. RmlUi's clip masks work as in its OpenGL 3 renderer: set it to the reference value
+    // (after clearing it), add 1 to intersect, and draw where it is the reference value.
+    const bool writes_mask = (kind == UIPipelineKind::CLIP_REPLACE || kind == UIPipelineKind::CLIP_INCREMENT);
+    VkStencilOpState stencil{};
+    stencil.failOp = VK_STENCIL_OP_KEEP;
+    stencil.depthFailOp = VK_STENCIL_OP_KEEP;
+    stencil.compareMask = 0xff;
+    switch (kind) {
+    case UIPipelineKind::DRAW:
+    case UIPipelineKind::COUNT:
+        stencil.passOp = VK_STENCIL_OP_KEEP;
+        stencil.compareOp = VK_COMPARE_OP_ALWAYS;
+        break;
+    case UIPipelineKind::DRAW_CLIPPED:
+        stencil.passOp = VK_STENCIL_OP_KEEP;
+        stencil.compareOp = VK_COMPARE_OP_EQUAL;
+        break;
+    case UIPipelineKind::CLIP_REPLACE:
+        stencil.passOp = VK_STENCIL_OP_REPLACE;
+        stencil.compareOp = VK_COMPARE_OP_ALWAYS;
+        stencil.writeMask = 0xff;
+        break;
+    case UIPipelineKind::CLIP_INCREMENT:
+        stencil.passOp = VK_STENCIL_OP_INCREMENT_AND_CLAMP;
+        stencil.compareOp = VK_COMPARE_OP_ALWAYS;
+        stencil.writeMask = 0xff;
+        break;
+    }
+    VkPipelineDepthStencilStateCreateInfo depth_stencil_state{};
+    depth_stencil_state.sType = VK_STRUCTURE_TYPE_PIPELINE_DEPTH_STENCIL_STATE_CREATE_INFO;
+    depth_stencil_state.depthTestEnable = VK_FALSE;
+    depth_stencil_state.depthWriteEnable = VK_FALSE;
+    depth_stencil_state.stencilTestEnable = (kind == UIPipelineKind::DRAW) ? VK_FALSE : VK_TRUE;
+    depth_stencil_state.front = stencil;
+    depth_stencil_state.back = stencil;
+    depth_stencil_state.minDepthBounds = 0.0f;
+    depth_stencil_state.maxDepthBounds = 1.0f;
+
+    // Premultiplied alpha, as RmlUi's colors and textures are
+    VkPipelineColorBlendAttachmentState color_blend_attachment{};
+    color_blend_attachment.colorWriteMask =
+        writes_mask ? 0 : (VK_COLOR_COMPONENT_R_BIT | VK_COLOR_COMPONENT_G_BIT | VK_COLOR_COMPONENT_B_BIT | VK_COLOR_COMPONENT_A_BIT);
+    color_blend_attachment.blendEnable = writes_mask ? VK_FALSE : VK_TRUE;
+    color_blend_attachment.srcColorBlendFactor = VK_BLEND_FACTOR_ONE;
+    color_blend_attachment.dstColorBlendFactor = VK_BLEND_FACTOR_ONE_MINUS_SRC_ALPHA;
+    color_blend_attachment.colorBlendOp = VK_BLEND_OP_ADD;
+    color_blend_attachment.srcAlphaBlendFactor = VK_BLEND_FACTOR_ONE;
+    color_blend_attachment.dstAlphaBlendFactor = VK_BLEND_FACTOR_ONE_MINUS_SRC_ALPHA;
+    color_blend_attachment.alphaBlendOp = VK_BLEND_OP_ADD;
+    VkPipelineColorBlendStateCreateInfo color_blend_state{};
+    color_blend_state.sType = VK_STRUCTURE_TYPE_PIPELINE_COLOR_BLEND_STATE_CREATE_INFO;
+    color_blend_state.attachmentCount = 1;
+    color_blend_state.pAttachments = &color_blend_attachment;
+
+    std::array dynamic_states{VK_DYNAMIC_STATE_VIEWPORT, VK_DYNAMIC_STATE_SCISSOR, VK_DYNAMIC_STATE_STENCIL_REFERENCE};
+    VkPipelineDynamicStateCreateInfo dynamic_state{};
+    dynamic_state.sType = VK_STRUCTURE_TYPE_PIPELINE_DYNAMIC_STATE_CREATE_INFO;
+    dynamic_state.dynamicStateCount = static_cast<uint32_t>(dynamic_states.size());
+    dynamic_state.pDynamicStates = dynamic_states.data();
+
+    VkGraphicsPipelineCreateInfo info{};
+    info.sType = VK_STRUCTURE_TYPE_GRAPHICS_PIPELINE_CREATE_INFO;
+    info.pNext = &rendering_info;
+    info.stageCount = static_cast<uint32_t>(stage_infos.size());
+    info.pStages = stage_infos.data();
+    info.pVertexInputState = &vertex_input_state;
+    info.pInputAssemblyState = &input_assembly_state;
+    info.pViewportState = &viewport_state;
+    info.pRasterizationState = &rasterization_state;
+    info.pMultisampleState = &multisample_state;
+    info.pDepthStencilState = &depth_stencil_state;
+    info.pColorBlendState = &color_blend_state;
+    info.pDynamicState = &dynamic_state;
+    info.layout = m_ui_pipeline_layout;
+    info.basePipelineIndex = -1;
+
+    VkPipeline handle{};
+    GC_CHECKVK(vkCreateGraphicsPipelines(m_device.getHandle(), VK_NULL_HANDLE, 1, &info, nullptr, &handle));
+
+    return GPUPipeline(m_delete_queue, handle);
 }
 
 // One triangle, made by the vertex shader, that is drawn wherever the depth buffer still has nothing in it
@@ -1697,6 +1984,13 @@ void RenderBackend::recreateFramesInFlightResources()
     constexpr VkDeviceSize TERRAIN_PATCHES_BUFFER_INITIAL_SIZE = sizeof(TerrainPatch) * 1024;
     m_terrain_patches_buffer = std::make_unique<RenderBuffer>(m_delete_queue, m_allocator.getHandle(), static_cast<uint32_t>(m_fif.size()),
                                                               TERRAIN_PATCHES_BUFFER_INITIAL_SIZE, VK_BUFFER_USAGE_VERTEX_BUFFER_BIT);
+
+    constexpr VkDeviceSize UI_VERTEX_BUFFER_INITIAL_SIZE = sizeof(UIVertex) * 16384;
+    m_ui_vertex_buffer = std::make_unique<RenderBuffer>(m_delete_queue, m_allocator.getHandle(), static_cast<uint32_t>(m_fif.size()),
+                                                        UI_VERTEX_BUFFER_INITIAL_SIZE, VK_BUFFER_USAGE_VERTEX_BUFFER_BIT);
+    constexpr VkDeviceSize UI_INDEX_BUFFER_INITIAL_SIZE = sizeof(uint32_t) * 32768;
+    m_ui_index_buffer = std::make_unique<RenderBuffer>(m_delete_queue, m_allocator.getHandle(), static_cast<uint32_t>(m_fif.size()),
+                                                       UI_INDEX_BUFFER_INITIAL_SIZE, VK_BUFFER_USAGE_INDEX_BUFFER_BIT);
     {
         VkDescriptorSet ds{};
         VkDescriptorSetAllocateInfo info{};

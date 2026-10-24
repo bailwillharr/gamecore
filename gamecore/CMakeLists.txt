@@ -45,6 +45,7 @@ set(SRC_FILES
   "src/gc_net_ui.cpp"
   "src/gc_world_ui.cpp"
   "src/gc_collision_system.cpp"
+  "src/gc_collision_debug_draw.cpp"
   "src/gc_collision_bvh.cpp"
   "src/gc_replication.cpp"
   "src/gc_byte_reader.cpp"
@@ -55,6 +56,13 @@ set(SRC_FILES
   "src/gc_terrain_builder.cpp"
   "src/gc_terrain_system.cpp"
   "src/gc_render_terrain.cpp"
+  "src/gc_render_ui.cpp"
+  "src/gc_ui.cpp"
+  "src/gc_ui_interfaces.h"
+  "src/gc_ui_interfaces.cpp"
+  "src/gc_ui_render_interface.h"
+  "src/gc_ui_render_interface.cpp"
+  "src/gc_ui_system.cpp"
 )
 
 # Public API includes
@@ -134,6 +142,11 @@ set(INCLUDE_FILES
   "include/gamecore/gc_terrain_system.h"
   "include/gamecore/gc_render_terrain.h"
   "include/gamecore/gc_fog_component.h"
+  "include/gamecore/gc_render_ui.h"
+  "include/gamecore/gc_ui.h"
+  "include/gamecore/gc_ui_component.h"
+  "include/gamecore/gc_ui_draw_data.h"
+  "include/gamecore/gc_ui_system.h"
 )
 
 # gamecore is a static library
@@ -186,6 +199,7 @@ target_link_libraries(${PROJECT_NAME} PUBLIC asio::asio)
 target_link_libraries(${PROJECT_NAME} PUBLIC nlohmann_json::nlohmann_json)
 target_link_libraries(${PROJECT_NAME} PUBLIC glm::glm)
 target_link_libraries(${PROJECT_NAME} PUBLIC imgui)
+target_link_libraries(${PROJECT_NAME} PUBLIC RmlUi::RmlUi)
 target_link_libraries(${PROJECT_NAME} PUBLIC tinygltf)
 target_link_libraries(${PROJECT_NAME} PUBLIC mio::mio)
 target_link_libraries(${PROJECT_NAME} PUBLIC stb)

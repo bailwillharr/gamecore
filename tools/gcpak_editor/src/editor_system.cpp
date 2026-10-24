@@ -54,6 +54,8 @@ static std::string getAssetTypeString(gcpak::GcpakAssetType type)
         return "Cube map";
     case GcpakAssetType::TERRAIN:
         return "Terrain";
+    case GcpakAssetType::RAW:
+        return "File";
     default:
         return "(unknown)";
     }

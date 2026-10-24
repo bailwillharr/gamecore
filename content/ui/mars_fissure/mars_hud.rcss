@@ -1,0 +1,214 @@
+/* Mars Fissure's HUD (mars_hud.rml). Sizes are in dp, so it looks the same at any resolution. */
+
+body
+{
+	font-size: 14dp;
+	color: #f3e6dc;
+}
+
+.panel
+{
+	background-color: #0d0705b8;
+	border-left: 3dp #e0643a;
+	border-radius: 4dp;
+	padding: 10dp 14dp;
+}
+
+.label
+{
+	color: #f3e6dc90;
+	font-size: 12dp;
+}
+
+.value
+{
+	font-weight: bold;
+}
+
+/* where the explorer is, top left */
+
+#explorer
+{
+	position: absolute;
+	left: 16dp;
+	top: 16dp;
+	width: 380dp;
+}
+
+.title
+{
+	font-size: 26dp;
+	font-weight: bold;
+	color: #ff8a5c;
+	font-effect: glow(0dp 6dp 0dp 0dp #e0643a60);
+}
+
+.subtitle
+{
+	font-size: 14dp;
+}
+
+.source
+{
+	font-size: 11dp;
+	color: #f3e6dc70;
+	margin-top: 2dp;
+}
+
+.rows
+{
+	margin-top: 10dp;
+	padding-top: 8dp;
+	border-top: 1dp #f3e6dc28;
+}
+
+.row
+{
+	display: flex;
+	align-items: center;
+	margin: 3dp 0dp;
+}
+
+.row .label
+{
+	width: 76dp;
+}
+
+.row .extra
+{
+	margin-left: 10dp;
+	color: #f3e6dcb0;
+}
+
+.survey
+{
+	margin-top: 10dp;
+	padding-top: 8dp;
+	border-top: 1dp #f3e6dc28;
+}
+
+.survey-heading
+{
+	display: flex;
+	justify-content: space-between;
+	align-items: center;
+}
+
+.count
+{
+	font-weight: bold;
+	color: #7fe0ff;
+}
+
+.survey-bar
+{
+	margin: 5dp 0dp 6dp 0dp;
+	height: 6dp;
+	border-radius: 3dp;
+	background-color: #ffffff1a;
+	overflow: hidden;
+}
+
+.survey-fill
+{
+	height: 100%;
+	decorator: linear-gradient(90deg, #3aa8e0, #7fe0ff);
+	transition: width 0.4s cubic-out;
+}
+
+.complete
+{
+	color: #79ff6c;
+	font-weight: bold;
+}
+
+/* how the terrain is doing, top right */
+
+#stats
+{
+	position: absolute;
+	right: 16dp;
+	top: 16dp;
+	text-align: right;
+	border-left: 0dp;
+	border-right: 3dp #e0643a;
+	font-size: 13dp;
+	line-height: 19dp;
+}
+
+#stats .fps
+{
+	font-size: 18dp;
+	font-weight: bold;
+	color: #ffb99c;
+}
+
+#stats .warning
+{
+	color: #ffcf6e;
+	font-weight: bold;
+}
+
+/* the controls, bottom left */
+
+#controls
+{
+	position: absolute;
+	left: 16dp;
+	bottom: 16dp;
+	font-size: 13dp;
+	line-height: 23dp;
+}
+
+.key
+{
+	color: #fff2e8;
+	background-color: #ffffff20;
+	border-bottom: 1dp #ffffff40;
+	border-radius: 3dp;
+	padding: 1dp 5dp;
+}
+
+/* the markers over the beacons. Each is centred on its beacon */
+
+#markers
+{
+	position: absolute;
+	left: 0dp;
+	top: 0dp;
+	width: 100%;
+	height: 100%;
+}
+
+.marker
+{
+	position: absolute;
+	width: 0dp;
+	height: 0dp;
+}
+
+.marker .ring
+{
+	position: absolute;
+	left: -9dp;
+	top: -9dp;
+	width: 14dp;
+	height: 14dp;
+	border: 2dp #5adcffe6;
+	border-radius: 9dp;
+}
+
+.marker .label
+{
+	position: absolute;
+	left: 13dp;
+	top: -9dp;
+	white-space: nowrap;
+	font-size: 13dp;
+	font-weight: bold;
+	color: #5adcff;
+	font-effect: shadow(1dp 1dp #000000b0);
+}
+
+.marker.found .ring { border-color: #6eff64c8; }
+.marker.found .label { color: #6eff64; }

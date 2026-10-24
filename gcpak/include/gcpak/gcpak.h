@@ -103,6 +103,8 @@ enum class GcpakAssetType : std::uint32_t {
                   // into the nodes, 0xffffffff for none) and a uint32_t of flags. The top level's nodes come first. Then each
                   // node's tile, in the same order: (quads + 1)^2 samples, rows first, one uint32_t each: the height in the low
                   // 16 bits, then the normal's x and y (int8_t each, of 127). See gc::ResourceTerrain
+    RAW = 11, // The bytes of a file, as they are: the documents (.rml), style sheets (.rcss) and fonts (.ttf, .otf) of the game's UI.
+              // See gc::UI
 };
 
 struct GcpakAssetEntry {

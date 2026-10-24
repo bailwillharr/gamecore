@@ -29,7 +29,7 @@ int main(int argc, char* argv[])
     init_options.author = "bailwillharr";
     init_options.version = "v0.1.0";
     // Only the package files that the game uses, rather than everything in the content directory
-    init_options.pak_files_override = {"shaders.gcpak", "mars.gcpak", "mars_terrain.gcpak"};
+    init_options.pak_files_override = {"shaders.gcpak", "mars.gcpak", "mars_terrain.gcpak", "ui.gcpak"};
 
     gc::App::initialise(init_options);
 
